@@ -77,12 +77,18 @@ func startServer(
 ) error {
 	wrapper := tgclient.NewWrapper(tgClient.API())
 
+	initDone := make(chan struct{})
+	opts := newServerOptions(wrapper)
+	opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
+		close(initDone)
+	}
+
 	server := mcp.NewServer(
 		&mcp.Implementation{
 			Name:    serverName,
 			Version: version + "+" + revision,
 		},
-		newServerOptions(wrapper),
+		opts,
 	)
 
 	registerTools(server, wrapper)
@@ -92,6 +98,12 @@ func startServer(
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
 		return errors.Wrap(err, "connecting stdio transport")
+	}
+
+	select {
+	case <-initDone:
+	case <-ctx.Done():
+		return errors.Wrap(ctx.Err(), "waiting for client initialization")
 	}
 
 	authenticator := tgclient.NewAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)

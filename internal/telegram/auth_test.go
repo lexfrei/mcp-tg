@@ -2,7 +2,6 @@ package telegram_test
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
@@ -21,12 +20,12 @@ func TestAuthenticator_Phone_WithValue(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_Phone_Empty(t *testing.T) {
+func TestAuthenticator_Phone_NoSessionNoEnv(t *testing.T) {
 	aut := telegram.NewAuthenticator("", "", "")
 
 	_, err := aut.Phone(context.Background())
 	if err == nil {
-		t.Fatal("expected error for empty phone")
+		t.Fatal("expected error when no phone and no session")
 	}
 }
 
@@ -43,12 +42,12 @@ func TestAuthenticator_Password_WithValue(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_Password_Empty(t *testing.T) {
+func TestAuthenticator_Password_NoSessionNoEnv(t *testing.T) {
 	aut := telegram.NewAuthenticator("", "", "")
 
 	_, err := aut.Password(context.Background())
 	if err == nil {
-		t.Fatal("expected error for empty password")
+		t.Fatal("expected error when no password and no session")
 	}
 }
 
@@ -65,25 +64,12 @@ func TestAuthenticator_Code_FromEnv(t *testing.T) {
 	}
 }
 
-func TestAuthenticator_Code_FromReader(t *testing.T) {
-	aut := telegram.NewAuthenticatorWithInput("", "", "", strings.NewReader("67890\n"))
-
-	code, err := aut.Code(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if code != "67890" {
-		t.Errorf("Code() = %q, want %q", code, "67890")
-	}
-}
-
-func TestAuthenticator_Code_EmptyReader(t *testing.T) {
-	aut := telegram.NewAuthenticatorWithInput("", "", "", strings.NewReader(""))
+func TestAuthenticator_Code_NoSessionNoEnv(t *testing.T) {
+	aut := telegram.NewAuthenticator("", "", "")
 
 	_, err := aut.Code(context.Background(), nil)
 	if err == nil {
-		t.Fatal("expected error for empty reader")
+		t.Fatal("expected error when no code and no session")
 	}
 }
 
@@ -102,27 +88,5 @@ func TestAuthenticator_AcceptTermsOfService(t *testing.T) {
 	err := aut.AcceptTermsOfService(context.Background(), telegram.EmptyTermsOfService())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestAuthenticator_Code_NoSession_FallsBackToStdin(t *testing.T) {
-	aut := telegram.NewAuthenticatorWithInput("", "", "", strings.NewReader("99999\n"))
-
-	code, err := aut.Code(context.Background(), nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if code != "99999" {
-		t.Errorf("Code() = %q, want %q (stdin fallback)", code, "99999")
-	}
-}
-
-func TestAuthenticator_Phone_NoSession_ReturnsError(t *testing.T) {
-	aut := telegram.NewAuthenticator("", "", "")
-
-	_, err := aut.Phone(context.Background())
-	if err == nil {
-		t.Fatal("expected error when no phone and no session")
 	}
 }

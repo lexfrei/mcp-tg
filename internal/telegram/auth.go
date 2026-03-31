@@ -1,10 +1,7 @@
 package telegram
 
 import (
-	"bufio"
 	"context"
-	"io"
-	"os"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -29,12 +26,12 @@ var ErrSignUpNotSupported = errors.New("sign up is not supported, use an existin
 var ErrElicitDeclined = errors.New("user declined authentication prompt")
 
 // Authenticator implements auth.UserAuthenticator using a cascade:
-// env var → MCP elicitation → stdin fallback.
+// env var → MCP elicitation → error.
+// Stdin fallback is NOT used because MCP stdio transport owns stdin.
 type Authenticator struct {
 	phone    string
 	password string
 	code     string
-	input    io.Reader
 	session  *mcp.ServerSession
 }
 
@@ -44,17 +41,6 @@ func NewAuthenticator(phone, password, code string) *Authenticator {
 		phone:    phone,
 		password: password,
 		code:     code,
-		input:    os.Stdin,
-	}
-}
-
-// NewAuthenticatorWithInput creates an authenticator with a custom input reader (for testing).
-func NewAuthenticatorWithInput(phone, password, code string, input io.Reader) *Authenticator {
-	return &Authenticator{
-		phone:    phone,
-		password: password,
-		code:     code,
-		input:    input,
 	}
 }
 
@@ -63,13 +49,13 @@ func (aut *Authenticator) SetSession(session *mcp.ServerSession) {
 	aut.session = session
 }
 
-// Phone returns the phone number for authentication.
+// Phone returns the phone number via cascade: env → elicitation → error.
 func (aut *Authenticator) Phone(ctx context.Context) (string, error) {
 	if aut.phone != "" {
 		return aut.phone, nil
 	}
 
-	phone, err := aut.elicitString(ctx, "Enter your Telegram phone number (E.164 format)", "phone")
+	phone, err := aut.elicitString(ctx, "Enter your Telegram phone number (E.164 format, e.g. +12025551234)", "phone")
 	if err == nil && phone != "" {
 		return phone, nil
 	}
@@ -91,7 +77,7 @@ func (aut *Authenticator) Password(ctx context.Context) (string, error) {
 	return "", ErrPasswordRequired
 }
 
-// Code returns the auth code via cascade: env → elicitation → stdin → error.
+// Code returns the auth code via cascade: env → elicitation → error.
 func (aut *Authenticator) Code(ctx context.Context, _ *tg.AuthSentCode) (string, error) {
 	if aut.code != "" {
 		return aut.code, nil
@@ -102,7 +88,7 @@ func (aut *Authenticator) Code(ctx context.Context, _ *tg.AuthSentCode) (string,
 		return code, nil
 	}
 
-	return aut.readFromStdin()
+	return "", ErrNoAuthCode
 }
 
 // AcceptTermsOfService always accepts the ToS.
@@ -122,7 +108,7 @@ func EmptyTermsOfService() tg.HelpTermsOfService {
 
 func (aut *Authenticator) elicitString(ctx context.Context, message, fieldName string) (string, error) {
 	if aut.session == nil {
-		return "", errors.New("no session available")
+		return "", errors.New("no MCP session available for elicitation")
 	}
 
 	result, err := aut.session.Elicit(ctx, &mcp.ElicitParams{
@@ -157,20 +143,4 @@ func (aut *Authenticator) elicitString(ctx context.Context, message, fieldName s
 	}
 
 	return strings.TrimSpace(str), nil
-}
-
-func (aut *Authenticator) readFromStdin() (string, error) {
-	_, _ = os.Stderr.WriteString("Enter authentication code: ")
-
-	scanner := bufio.NewScanner(aut.input)
-	if scanner.Scan() {
-		return strings.TrimSpace(scanner.Text()), nil
-	}
-
-	scanErr := scanner.Err()
-	if scanErr != nil {
-		return "", errors.Wrap(scanErr, "reading auth code")
-	}
-
-	return "", ErrNoAuthCode
 }

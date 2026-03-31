@@ -18,6 +18,7 @@ import (
 	"github.com/gotd/td/telegram/auth"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/lexfrei/mcp-tg/internal/completions"
 	"github.com/lexfrei/mcp-tg/internal/config"
 	"github.com/lexfrei/mcp-tg/internal/prompts"
 	"github.com/lexfrei/mcp-tg/internal/resources"
@@ -90,7 +91,7 @@ func run() error {
 
 		wrapper := tgclient.NewWrapper(tgClient.API())
 
-		serverOpts := newServerOptions()
+		serverOpts := newServerOptions(wrapper)
 		server := mcp.NewServer(
 			&mcp.Implementation{
 				Name:    serverName,
@@ -107,7 +108,7 @@ func run() error {
 	}), "telegram client stopped")
 }
 
-func newServerOptions() *mcp.ServerOptions {
+func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 	return &mcp.ServerOptions{
 		Instructions: "MCP server for Telegram Client API. " +
 			"Provides tools to manage messages, dialogs, contacts, groups, " +
@@ -117,7 +118,8 @@ func newServerOptions() *mcp.ServerOptions {
 		Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})),
-		KeepAlive: keepAliveInterval,
+		KeepAlive:         keepAliveInterval,
+		CompletionHandler: completions.NewHandler(client),
 	}
 }
 

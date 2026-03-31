@@ -26,7 +26,7 @@ type MessagesSearchResult struct {
 func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesSearchParams, MessagesSearchResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params MessagesSearchParams,
 	) (*mcp.CallToolResult, MessagesSearchResult, error) {
 		if params.Peer == "" {
@@ -39,6 +39,9 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 				validationErr(ErrQueryRequired)
 		}
 
+		token := req.Params.GetProgressToken()
+		notifyProgress(ctx, req.Session, token, 0, 1, "Resolving peer")
+
 		peer, err := client.ResolvePeer(ctx, params.Peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{},
@@ -46,6 +49,8 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 		}
 
 		opts := telegram.SearchOpts{Limit: deref(params.Limit)}
+
+		notifyProgress(ctx, req.Session, token, 0, 1, "Searching messages")
 
 		msgs, err := client.SearchMessages(ctx, peer, params.Query, opts)
 		if err != nil {

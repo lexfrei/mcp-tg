@@ -40,24 +40,9 @@ func NewMessagesSendFileHandler(
 				validationErr(ErrPathRequired)
 		}
 
-		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
-		if rootErr != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
-				validationErr(rootErr)
-		}
-
-		peer, err := client.ResolvePeer(ctx, params.Peer)
+		msg, err := uploadAndSendFile(ctx, client, req, params)
 		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
-				telegramErr("failed to resolve peer", err)
-		}
-
-		caption := deref(params.Caption)
-
-		msg, err := client.SendFile(ctx, peer, params.Path, caption)
-		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
-				telegramErr("failed to send file", err)
+			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{}, err
 		}
 
 		msgID := 0
@@ -70,6 +55,32 @@ func NewMessagesSendFileHandler(
 			Output:    fmt.Sprintf("File sent to %s (message ID: %d)", params.Peer, msgID),
 		}, nil
 	}
+}
+
+func uploadAndSendFile(
+	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params MessagesSendFileParams,
+) (*telegram.Message, error) {
+	rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+	if rootErr != nil {
+		return nil, validationErr(rootErr)
+	}
+
+	token := req.Params.GetProgressToken()
+	notifyProgress(ctx, req.Session, token, 0, 1, "Resolving peer")
+
+	peer, err := client.ResolvePeer(ctx, params.Peer)
+	if err != nil {
+		return nil, telegramErr("failed to resolve peer", err)
+	}
+
+	notifyProgress(ctx, req.Session, token, 0, 1, "Uploading file")
+
+	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption))
+	if err != nil {
+		return nil, telegramErr("failed to send file", err)
+	}
+
+	return msg, nil
 }
 
 // MessagesSendFileTool returns the MCP tool definition for tg_messages_send_file.

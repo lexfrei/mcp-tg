@@ -40,26 +40,9 @@ func NewMediaSendAlbumHandler(
 				validationErr(ErrPathsRequired)
 		}
 
-		for _, filePath := range params.Paths {
-			rootErr := validatePathAgainstRoots(ctx, req.Session, filePath)
-			if rootErr != nil {
-				return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
-					validationErr(rootErr)
-			}
-		}
-
-		peer, err := client.ResolvePeer(ctx, params.Peer)
+		msgs, err := sendAlbum(ctx, client, req, params)
 		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
-				telegramErr("failed to resolve peer", err)
-		}
-
-		caption := deref(params.Caption)
-
-		msgs, err := client.SendAlbum(ctx, peer, params.Paths, caption)
-		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
-				telegramErr("failed to send album", err)
+			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{}, err
 		}
 
 		return nil, MediaSendAlbumResult{
@@ -67,6 +50,38 @@ func NewMediaSendAlbumHandler(
 			Output: fmt.Sprintf("Sent album with %d file(s) to %s", len(msgs), params.Peer),
 		}, nil
 	}
+}
+
+func sendAlbum(
+	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params MediaSendAlbumParams,
+) ([]telegram.Message, error) {
+	token := req.Params.GetProgressToken()
+	total := float64(len(params.Paths))
+
+	for idx, filePath := range params.Paths {
+		notifyProgress(ctx, req.Session, token, float64(idx), total, "Validating file paths")
+
+		rootErr := validatePathAgainstRoots(ctx, req.Session, filePath)
+		if rootErr != nil {
+			return nil, validationErr(rootErr)
+		}
+	}
+
+	notifyProgress(ctx, req.Session, token, total/2, total, "Resolving peer")
+
+	peer, err := client.ResolvePeer(ctx, params.Peer)
+	if err != nil {
+		return nil, telegramErr("failed to resolve peer", err)
+	}
+
+	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
+
+	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption))
+	if err != nil {
+		return nil, telegramErr("failed to send album", err)
+	}
+
+	return msgs, nil
 }
 
 // MediaSendAlbumTool returns the MCP tool definition for tg_media_send_album.

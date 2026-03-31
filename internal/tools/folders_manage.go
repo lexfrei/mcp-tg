@@ -69,7 +69,7 @@ func FoldersCreateTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_folders_create",
 		Description: "Create a new Telegram chat folder",
-		Annotations: idempotentAnnotations(),
+		Annotations: writeAnnotations(),
 	}
 }
 

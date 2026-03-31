@@ -88,6 +88,6 @@ func MessagesSendFileTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_send_file",
 		Description: "Send a file to a Telegram chat",
-		Annotations: idempotentAnnotations(),
+		Annotations: writeAnnotations(),
 	}
 }

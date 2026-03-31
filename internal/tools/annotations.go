@@ -20,6 +20,14 @@ func idempotentAnnotations() *mcp.ToolAnnotations {
 	}
 }
 
+// writeAnnotations returns annotations for tools that create new entities (not idempotent, not destructive).
+func writeAnnotations() *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		DestructiveHint: new(false),
+		OpenWorldHint:   new(true),
+	}
+}
+
 // destructiveAnnotations returns annotations for tools that perform destructive operations.
 func destructiveAnnotations() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{

@@ -89,6 +89,6 @@ func MediaSendAlbumTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_media_send_album",
 		Description: "Send multiple files as an album to a Telegram chat",
-		Annotations: idempotentAnnotations(),
+		Annotations: writeAnnotations(),
 	}
 }

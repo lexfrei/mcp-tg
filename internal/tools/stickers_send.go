@@ -66,6 +66,6 @@ func StickersSendTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_stickers_send",
 		Description: "Send a sticker to a Telegram chat",
-		Annotations: idempotentAnnotations(),
+		Annotations: writeAnnotations(),
 	}
 }

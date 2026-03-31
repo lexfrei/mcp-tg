@@ -1,0 +1,893 @@
+package telegram
+
+import (
+	"context"
+	"os"
+	"path/filepath"
+
+	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/telegram/downloader"
+	"github.com/gotd/td/telegram/message"
+	"github.com/gotd/td/telegram/uploader"
+	"github.com/gotd/td/tg"
+)
+
+// Wrapper implements Client using gotd/td.
+type Wrapper struct {
+	api    *tg.Client
+	sender *message.Sender
+	up     *uploader.Uploader
+	down   *downloader.Downloader
+}
+
+// NewWrapper creates a new Wrapper around gotd/td client primitives.
+func NewWrapper(api *tg.Client) *Wrapper {
+	return &Wrapper{
+		api:    api,
+		sender: message.NewSender(api),
+		up:     uploader.NewUploader(api),
+		down:   downloader.NewDownloader(),
+	}
+}
+
+// ResolvePeer resolves a string identifier to an InputPeer.
+func (w *Wrapper) ResolvePeer(ctx context.Context, identifier string) (InputPeer, error) {
+	return Resolve(ctx, w.api, identifier)
+}
+
+// GetSelf returns the authenticated user's profile.
+func (w *Wrapper) GetSelf(ctx context.Context) (*User, error) {
+	full, err := w.api.UsersGetFullUser(ctx, &tg.InputUserSelf{})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting self")
+	}
+
+	for _, usr := range full.Users {
+		if u, ok := usr.(*tg.User); ok && u.Self {
+			result := ConvertUser(u)
+			result.Bio = full.FullUser.About
+
+			return &result, nil
+		}
+	}
+
+	return nil, errors.New("self user not found in response")
+}
+
+// GetDialogs returns a list of dialogs.
+func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+		Limit:      limit,
+		OffsetPeer: &tg.InputPeerEmpty{},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting dialogs")
+	}
+
+	return extractDialogs(result)
+}
+
+// SearchDialogs searches dialogs by query.
+func (w *Wrapper) SearchDialogs(ctx context.Context, query string) ([]Dialog, error) {
+	result, err := w.api.ContactsSearch(ctx, &tg.ContactsSearchRequest{
+		Q:     query,
+		Limit: defaultLimit,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "searching dialogs")
+	}
+
+	return dialogsFromSearch(result), nil
+}
+
+// GetPeerInfo returns metadata about a peer.
+func (w *Wrapper) GetPeerInfo(ctx context.Context, peer InputPeer) (*PeerInfo, error) {
+	switch peer.Type {
+	case PeerUser:
+		return w.getUserPeerInfo(ctx, peer)
+	case PeerChat:
+		return w.getChatPeerInfo(ctx, peer)
+	case PeerChannel:
+		return w.getChannelPeerInfo(ctx, peer)
+	default:
+		return nil, errors.New("unknown peer type")
+	}
+}
+
+// GetHistory retrieves message history from a chat.
+func (w *Wrapper) GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{
+		Peer:     InputPeerToTG(peer),
+		Limit:    limit,
+		OffsetID: opts.OffsetID,
+	})
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "getting history")
+	}
+
+	return extractMessages(result)
+}
+
+// GetMessages retrieves specific messages by ID.
+func (w *Wrapper) GetMessages(ctx context.Context, peer InputPeer, ids []int) ([]Message, error) {
+	inputIDs := make([]tg.InputMessageClass, len(ids))
+	for idx, msgID := range ids {
+		inputIDs[idx] = &tg.InputMessageID{ID: msgID}
+	}
+
+	var (
+		result tg.MessagesMessagesClass
+		err    error
+	)
+
+	if peer.Type == PeerChannel {
+		result, err = w.api.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
+			Channel: InputChannelFromPeer(peer),
+			ID:      inputIDs,
+		})
+	} else {
+		result, err = w.api.MessagesGetMessages(ctx, inputIDs)
+	}
+
+	if err != nil {
+		return nil, errors.Wrap(err, "getting messages")
+	}
+
+	msgs, _, extractErr := extractMessages(result)
+
+	return msgs, extractErr
+}
+
+// SearchMessages searches for messages in a chat.
+func (w *Wrapper) SearchMessages(ctx context.Context, peer InputPeer, query string, opts SearchOpts) ([]Message, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesSearch(ctx, &tg.MessagesSearchRequest{
+		Peer:     InputPeerToTG(peer),
+		Q:        query,
+		Filter:   &tg.InputMessagesFilterEmpty{},
+		Limit:    limit,
+		OffsetID: opts.OffsetID,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "searching messages")
+	}
+
+	msgs, _, extractErr := extractMessages(result)
+
+	return msgs, extractErr
+}
+
+// SendMessage sends a text message.
+func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, opts SendOpts) (*Message, error) {
+	req := &tg.MessagesSendMessageRequest{
+		Peer:    InputPeerToTG(peer),
+		Message: text,
+	}
+
+	if opts.ReplyTo > 0 {
+		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: opts.ReplyTo}
+	}
+
+	result, err := w.api.MessagesSendMessage(ctx, req)
+	if err != nil {
+		return nil, errors.Wrap(err, "sending message")
+	}
+
+	return messageFromUpdate(result), nil
+}
+
+// EditMessage edits an existing message.
+func (w *Wrapper) EditMessage(ctx context.Context, peer InputPeer, msgID int, text string) (*Message, error) {
+	result, err := w.api.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
+		Peer:    InputPeerToTG(peer),
+		ID:      msgID,
+		Message: text,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "editing message")
+	}
+
+	return messageFromUpdate(result), nil
+}
+
+// DeleteMessages deletes messages from a chat.
+func (w *Wrapper) DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error {
+	if peer.Type == PeerChannel {
+		_, err := w.api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
+			Channel: InputChannelFromPeer(peer),
+			ID:      ids,
+		})
+
+		return errors.Wrap(err, "deleting channel messages")
+	}
+
+	_, err := w.api.MessagesDeleteMessages(ctx, &tg.MessagesDeleteMessagesRequest{
+		ID:     ids,
+		Revoke: revoke,
+	})
+
+	return errors.Wrap(err, "deleting messages")
+}
+
+// ForwardMessages forwards messages from one chat to another.
+func (w *Wrapper) ForwardMessages(ctx context.Context, from, to InputPeer, ids []int) ([]Message, error) {
+	result, err := w.api.MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
+		FromPeer: InputPeerToTG(from),
+		ToPeer:   InputPeerToTG(to),
+		ID:       ids,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "forwarding messages")
+	}
+
+	return messagesFromUpdates(result), nil
+}
+
+// PinMessage pins or unpins a message in a chat.
+func (w *Wrapper) PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error {
+	_, err := w.api.MessagesUpdatePinnedMessage(ctx, &tg.MessagesUpdatePinnedMessageRequest{
+		Peer:  InputPeerToTG(peer),
+		ID:    msgID,
+		Unpin: unpin,
+	})
+
+	return errors.Wrap(err, "updating pinned message")
+}
+
+// SendReaction adds or removes a reaction on a message.
+func (w *Wrapper) SendReaction(ctx context.Context, peer InputPeer, msgID int, emoji string, remove bool) error {
+	var reactions []tg.ReactionClass
+	if !remove {
+		reactions = []tg.ReactionClass{&tg.ReactionEmoji{Emoticon: emoji}}
+	}
+
+	_, err := w.api.MessagesSendReaction(ctx, &tg.MessagesSendReactionRequest{
+		Peer:     InputPeerToTG(peer),
+		MsgID:    msgID,
+		Reaction: reactions,
+	})
+
+	return errors.Wrap(err, "sending reaction")
+}
+
+// MarkRead marks messages as read up to maxID.
+func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error {
+	if peer.Type == PeerChannel {
+		_, err := w.api.ChannelsReadHistory(ctx, &tg.ChannelsReadHistoryRequest{
+			Channel: InputChannelFromPeer(peer),
+			MaxID:   maxID,
+		})
+
+		return errors.Wrap(err, "marking channel messages read")
+	}
+
+	_, err := w.api.MessagesReadHistory(ctx, &tg.MessagesReadHistoryRequest{
+		Peer:  InputPeerToTG(peer),
+		MaxID: maxID,
+	})
+
+	return errors.Wrap(err, "marking messages read")
+}
+
+// SendFile sends a file with an optional caption.
+func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string) (*Message, error) {
+	file, err := w.up.FromPath(ctx, path)
+	if err != nil {
+		return nil, errors.Wrap(err, "uploading file")
+	}
+
+	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+		Peer: InputPeerToTG(peer),
+		Media: &tg.InputMediaUploadedDocument{
+			File: file,
+			Attributes: []tg.DocumentAttributeClass{
+				&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
+			},
+		},
+		Message: caption,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "sending file")
+	}
+
+	return messageFromUpdate(result), nil
+}
+
+// SendAlbum sends a group of media files.
+func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string) ([]Message, error) {
+	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
+
+	for idx, path := range paths {
+		file, err := w.up.FromPath(ctx, path)
+		if err != nil {
+			return nil, errors.Wrapf(err, "uploading file %d", idx)
+		}
+
+		media := tg.InputSingleMedia{
+			Media: &tg.InputMediaUploadedDocument{
+				File: file,
+				Attributes: []tg.DocumentAttributeClass{
+					&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
+				},
+			},
+		}
+
+		if idx == 0 {
+			media.Message = caption
+		}
+
+		multiMedia = append(multiMedia, media)
+	}
+
+	result, err := w.api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
+		Peer:       InputPeerToTG(peer),
+		MultiMedia: multiMedia,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "sending album")
+	}
+
+	return messagesFromUpdates(result), nil
+}
+
+// DownloadMedia downloads media from a message to the specified directory.
+func (w *Wrapper) DownloadMedia(_ context.Context, msg *Message, _ string) (string, error) {
+	if msg == nil {
+		return "", errors.New("nil message")
+	}
+
+	return "", errors.New("media download requires full message with media; use GetMessages first")
+}
+
+// UploadFile uploads a file and returns its metadata.
+func (w *Wrapper) UploadFile(ctx context.Context, path string) (*UploadedFile, error) {
+	_, err := w.up.FromPath(ctx, path)
+	if err != nil {
+		return nil, errors.Wrap(err, "uploading file")
+	}
+
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		return nil, errors.Wrap(statErr, "stat file")
+	}
+
+	return &UploadedFile{
+		Name: filepath.Base(path),
+		Size: info.Size(),
+	}, nil
+}
+
+// GetContact returns a user by peer.
+func (w *Wrapper) GetContact(ctx context.Context, peer InputPeer) (*User, error) {
+	return w.GetUser(ctx, peer)
+}
+
+// SearchContacts searches contacts by query.
+func (w *Wrapper) SearchContacts(ctx context.Context, query string, limit int) ([]User, error) {
+	result, err := w.api.ContactsSearch(ctx, &tg.ContactsSearchRequest{
+		Q:     query,
+		Limit: limit,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "searching contacts")
+	}
+
+	users := make([]User, 0, len(result.Users))
+
+	for _, usr := range result.Users {
+		if u, ok := usr.(*tg.User); ok {
+			users = append(users, ConvertUser(u))
+		}
+	}
+
+	return users, nil
+}
+
+// GetUser returns user info by peer.
+func (w *Wrapper) GetUser(ctx context.Context, peer InputPeer) (*User, error) {
+	full, err := w.api.UsersGetFullUser(ctx, InputUserFromPeer(peer))
+	if err != nil {
+		return nil, errors.Wrap(err, "getting user")
+	}
+
+	for _, usr := range full.Users {
+		if u, ok := usr.(*tg.User); ok && u.ID == peer.ID {
+			result := ConvertUser(u)
+			result.Bio = full.FullUser.About
+
+			return &result, nil
+		}
+	}
+
+	return nil, errors.New("user not found in response")
+}
+
+// GetUserPhotos returns profile photos for a user.
+func (w *Wrapper) GetUserPhotos(ctx context.Context, peer InputPeer, limit int) ([]Photo, error) {
+	result, err := w.api.PhotosGetUserPhotos(ctx, &tg.PhotosGetUserPhotosRequest{
+		UserID: InputUserFromPeer(peer),
+		Limit:  limit,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting user photos")
+	}
+
+	return extractPhotos(result), nil
+}
+
+// SetProfileName updates the authenticated user's name.
+func (w *Wrapper) SetProfileName(ctx context.Context, firstName, lastName string) error {
+	_, err := w.api.AccountUpdateProfile(ctx, &tg.AccountUpdateProfileRequest{
+		FirstName: firstName,
+		LastName:  lastName,
+	})
+
+	return errors.Wrap(err, "updating profile name")
+}
+
+// SetProfileBio updates the authenticated user's bio.
+func (w *Wrapper) SetProfileBio(ctx context.Context, bio string) error {
+	_, err := w.api.AccountUpdateProfile(ctx, &tg.AccountUpdateProfileRequest{
+		About: bio,
+	})
+
+	return errors.Wrap(err, "updating profile bio")
+}
+
+// SetProfilePhoto sets the authenticated user's profile photo.
+func (w *Wrapper) SetProfilePhoto(ctx context.Context, path string) error {
+	file, err := w.up.FromPath(ctx, path)
+	if err != nil {
+		return errors.Wrap(err, "uploading profile photo")
+	}
+
+	_, err = w.api.PhotosUploadProfilePhoto(ctx, &tg.PhotosUploadProfilePhotoRequest{
+		File: file,
+	})
+
+	return errors.Wrap(err, "setting profile photo")
+}
+
+// BlockUser blocks or unblocks a user.
+func (w *Wrapper) BlockUser(ctx context.Context, peer InputPeer, block bool) error {
+	if block {
+		_, err := w.api.ContactsBlock(ctx, &tg.ContactsBlockRequest{
+			ID: InputPeerToTG(peer),
+		})
+
+		return errors.Wrap(err, "blocking user")
+	}
+
+	_, err := w.api.ContactsUnblock(ctx, &tg.ContactsUnblockRequest{
+		ID: InputPeerToTG(peer),
+	})
+
+	return errors.Wrap(err, "unblocking user")
+}
+
+// GetCommonChats returns chats shared with a user.
+func (w *Wrapper) GetCommonChats(ctx context.Context, peer InputPeer) ([]PeerInfo, error) {
+	result, err := w.api.MessagesGetCommonChats(ctx, &tg.MessagesGetCommonChatsRequest{
+		UserID: InputUserFromPeer(peer),
+		Limit:  defaultLimit,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting common chats")
+	}
+
+	return peerInfosFromChats(result), nil
+}
+
+// GetGroupInfo returns detailed info about a group or channel.
+func (w *Wrapper) GetGroupInfo(ctx context.Context, peer InputPeer) (*GroupInfo, error) {
+	if peer.Type == PeerChannel {
+		return w.getChannelGroupInfo(ctx, peer)
+	}
+
+	return w.getChatGroupInfo(ctx, peer)
+}
+
+// JoinGroup joins a group or channel.
+func (w *Wrapper) JoinGroup(ctx context.Context, peer InputPeer) error {
+	if peer.Type == PeerChannel {
+		_, err := w.api.ChannelsJoinChannel(ctx, InputChannelFromPeer(peer))
+
+		return errors.Wrap(err, "joining channel")
+	}
+
+	return errors.New("joining basic chats requires an invite link")
+}
+
+// LeaveGroup leaves a group or channel.
+func (w *Wrapper) LeaveGroup(ctx context.Context, peer InputPeer) error {
+	if peer.Type == PeerChannel {
+		_, err := w.api.ChannelsLeaveChannel(ctx, InputChannelFromPeer(peer))
+
+		return errors.Wrap(err, "leaving channel")
+	}
+
+	_, err := w.api.MessagesDeleteChatUser(ctx, &tg.MessagesDeleteChatUserRequest{
+		ChatID: peer.ID,
+		UserID: &tg.InputUserSelf{},
+	})
+
+	return errors.Wrap(err, "leaving chat")
+}
+
+// RenameGroup renames a group or channel.
+func (w *Wrapper) RenameGroup(ctx context.Context, peer InputPeer, title string) error {
+	if peer.Type == PeerChannel {
+		_, err := w.api.ChannelsEditTitle(ctx, &tg.ChannelsEditTitleRequest{
+			Channel: InputChannelFromPeer(peer),
+			Title:   title,
+		})
+
+		return errors.Wrap(err, "renaming channel")
+	}
+
+	_, err := w.api.MessagesEditChatTitle(ctx, &tg.MessagesEditChatTitleRequest{
+		ChatID: peer.ID,
+		Title:  title,
+	})
+
+	return errors.Wrap(err, "renaming chat")
+}
+
+// AddGroupMember adds a user to a group.
+func (w *Wrapper) AddGroupMember(ctx context.Context, group, user InputPeer) error {
+	if group.Type == PeerChannel {
+		_, err := w.api.ChannelsInviteToChannel(ctx, &tg.ChannelsInviteToChannelRequest{
+			Channel: InputChannelFromPeer(group),
+			Users:   []tg.InputUserClass{InputUserFromPeer(user)},
+		})
+
+		return errors.Wrap(err, "adding channel member")
+	}
+
+	_, err := w.api.MessagesAddChatUser(ctx, &tg.MessagesAddChatUserRequest{
+		ChatID:   group.ID,
+		UserID:   InputUserFromPeer(user),
+		FwdLimit: defaultLimit,
+	})
+
+	return errors.Wrap(err, "adding chat member")
+}
+
+// RemoveGroupMember removes a user from a group.
+func (w *Wrapper) RemoveGroupMember(ctx context.Context, group, user InputPeer) error {
+	if group.Type == PeerChannel {
+		_, err := w.api.ChannelsEditBanned(ctx, &tg.ChannelsEditBannedRequest{
+			Channel:      InputChannelFromPeer(group),
+			Participant:  InputPeerToTG(user),
+			BannedRights: tg.ChatBannedRights{ViewMessages: true},
+		})
+
+		return errors.Wrap(err, "removing channel member")
+	}
+
+	_, err := w.api.MessagesDeleteChatUser(ctx, &tg.MessagesDeleteChatUserRequest{
+		ChatID: group.ID,
+		UserID: InputUserFromPeer(user),
+	})
+
+	return errors.Wrap(err, "removing chat member")
+}
+
+// GetInviteLink returns the invite link for a group or channel.
+func (w *Wrapper) GetInviteLink(ctx context.Context, peer InputPeer) (string, error) {
+	result, err := w.api.MessagesExportChatInvite(ctx, &tg.MessagesExportChatInviteRequest{
+		Peer: InputPeerToTG(peer),
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "exporting invite link")
+	}
+
+	if link, ok := result.(*tg.ChatInviteExported); ok {
+		return link.Link, nil
+	}
+
+	return "", errors.New("unexpected invite link type")
+}
+
+// RevokeInviteLink revokes an invite link.
+func (w *Wrapper) RevokeInviteLink(ctx context.Context, peer InputPeer, link string) error {
+	_, err := w.api.MessagesEditExportedChatInvite(ctx, &tg.MessagesEditExportedChatInviteRequest{
+		Peer:    InputPeerToTG(peer),
+		Link:    link,
+		Revoked: true,
+	})
+
+	return errors.Wrap(err, "revoking invite link")
+}
+
+// CreateChat creates a new group or channel.
+func (w *Wrapper) CreateChat(ctx context.Context, title string, users []InputPeer, isChannel bool) (*PeerInfo, error) {
+	if isChannel {
+		return w.createChannel(ctx, title)
+	}
+
+	return w.createBasicChat(ctx, title, users)
+}
+
+// ArchiveChat archives or unarchives a chat.
+func (w *Wrapper) ArchiveChat(ctx context.Context, peer InputPeer, archive bool) error {
+	folderID := 0
+	if archive {
+		folderID = 1
+	}
+
+	_, err := w.api.FoldersEditPeerFolders(ctx, []tg.InputFolderPeer{
+		{Peer: InputPeerToTG(peer), FolderID: folderID},
+	})
+
+	return errors.Wrap(err, "archiving chat")
+}
+
+// MuteChat mutes or unmutes a chat's notifications.
+func (w *Wrapper) MuteChat(ctx context.Context, peer InputPeer, muteUntil int) error {
+	settings := tg.InputPeerNotifySettings{
+		MuteUntil: muteUntil,
+	}
+
+	_, err := w.api.AccountUpdateNotifySettings(ctx, &tg.AccountUpdateNotifySettingsRequest{
+		Peer:     &tg.InputNotifyPeer{Peer: InputPeerToTG(peer)},
+		Settings: settings,
+	})
+
+	return errors.Wrap(err, "muting chat")
+}
+
+// DeleteChat deletes a chat.
+func (w *Wrapper) DeleteChat(ctx context.Context, peer InputPeer) error {
+	if peer.Type == PeerChannel {
+		_, err := w.api.ChannelsDeleteChannel(ctx, InputChannelFromPeer(peer))
+
+		return errors.Wrap(err, "deleting channel")
+	}
+
+	return errors.New("deleting basic chats is not supported by Telegram API")
+}
+
+// SetChatPhoto sets the photo for a group or channel.
+func (w *Wrapper) SetChatPhoto(ctx context.Context, peer InputPeer, path string) error {
+	file, err := w.up.FromPath(ctx, path)
+	if err != nil {
+		return errors.Wrap(err, "uploading chat photo")
+	}
+
+	chatPhoto := &tg.InputChatUploadedPhoto{File: file}
+
+	if peer.Type == PeerChannel {
+		_, editErr := w.api.ChannelsEditPhoto(ctx, &tg.ChannelsEditPhotoRequest{
+			Channel: InputChannelFromPeer(peer),
+			Photo:   chatPhoto,
+		})
+
+		return errors.Wrap(editErr, "setting channel photo")
+	}
+
+	_, editErr := w.api.MessagesEditChatPhoto(ctx, &tg.MessagesEditChatPhotoRequest{
+		ChatID: peer.ID,
+		Photo:  chatPhoto,
+	})
+
+	return errors.Wrap(editErr, "setting chat photo")
+}
+
+// SetChatAbout sets the description/about text for a group or channel.
+func (w *Wrapper) SetChatAbout(ctx context.Context, peer InputPeer, about string) error {
+	_, err := w.api.MessagesEditChatAbout(ctx, &tg.MessagesEditChatAboutRequest{
+		Peer:  InputPeerToTG(peer),
+		About: about,
+	})
+
+	return errors.Wrap(err, "setting chat about")
+}
+
+// GetChatAdmins returns the administrators of a chat.
+func (w *Wrapper) GetChatAdmins(ctx context.Context, peer InputPeer) ([]User, error) {
+	if peer.Type != PeerChannel {
+		return nil, errors.New("admin list is only available for channels and supergroups")
+	}
+
+	result, err := w.api.ChannelsGetParticipants(ctx, &tg.ChannelsGetParticipantsRequest{
+		Channel: InputChannelFromPeer(peer),
+		Filter:  &tg.ChannelParticipantsAdmins{},
+		Limit:   defaultLimit,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting chat admins")
+	}
+
+	return usersFromParticipants(result), nil
+}
+
+// SetChatPermissions sets default permissions for a chat.
+func (w *Wrapper) SetChatPermissions(ctx context.Context, peer InputPeer, perms ChatPermissions) error {
+	rights := convertPermissions(perms)
+
+	_, err := w.api.MessagesEditChatDefaultBannedRights(ctx, &tg.MessagesEditChatDefaultBannedRightsRequest{
+		Peer:         InputPeerToTG(peer),
+		BannedRights: rights,
+	})
+
+	return errors.Wrap(err, "setting chat permissions")
+}
+
+// GetForumTopics returns forum topics for a supergroup.
+func (w *Wrapper) GetForumTopics(ctx context.Context, peer InputPeer, opts TopicOpts) ([]ForumTopic, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesGetForumTopics(ctx, &tg.MessagesGetForumTopicsRequest{
+		Peer:  InputPeerToTG(peer),
+		Limit: limit,
+		Q:     opts.Query,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting forum topics")
+	}
+
+	return extractForumTopics(result), nil
+}
+
+// SearchStickerSets searches for sticker sets by query.
+func (w *Wrapper) SearchStickerSets(ctx context.Context, query string) ([]StickerSet, error) {
+	result, err := w.api.MessagesSearchStickerSets(ctx, &tg.MessagesSearchStickerSetsRequest{
+		Q: query,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "searching sticker sets")
+	}
+
+	return extractStickerSets(result), nil
+}
+
+// GetStickerSet returns a sticker set by short name.
+func (w *Wrapper) GetStickerSet(ctx context.Context, name string) (*StickerSetFull, error) {
+	result, err := w.api.MessagesGetStickerSet(ctx, &tg.MessagesGetStickerSetRequest{
+		Stickerset: &tg.InputStickerSetShortName{ShortName: name},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "getting sticker set")
+	}
+
+	stickerSet, ok := result.(*tg.MessagesStickerSet)
+	if !ok {
+		return nil, errors.New("unexpected sticker set type")
+	}
+
+	return convertStickerSetFull(stickerSet), nil
+}
+
+// SendSticker sends a sticker to a chat.
+func (w *Wrapper) SendSticker(ctx context.Context, peer InputPeer, stickerFileID int64) (*Message, error) {
+	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+		Peer: InputPeerToTG(peer),
+		Media: &tg.InputMediaDocument{
+			ID: &tg.InputDocument{ID: stickerFileID},
+		},
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "sending sticker")
+	}
+
+	return messageFromUpdate(result), nil
+}
+
+// SetDraft sets a draft message in a chat.
+func (w *Wrapper) SetDraft(ctx context.Context, peer InputPeer, text string, _ int) error {
+	_, err := w.api.MessagesSaveDraft(ctx, &tg.MessagesSaveDraftRequest{
+		Peer:    InputPeerToTG(peer),
+		Message: text,
+	})
+
+	return errors.Wrap(err, "setting draft")
+}
+
+// ClearDraft clears a draft message in a chat.
+func (w *Wrapper) ClearDraft(ctx context.Context, peer InputPeer) error {
+	_, err := w.api.MessagesSaveDraft(ctx, &tg.MessagesSaveDraftRequest{
+		Peer:    InputPeerToTG(peer),
+		Message: "",
+	})
+
+	return errors.Wrap(err, "clearing draft")
+}
+
+// GetFolders returns chat folders.
+func (w *Wrapper) GetFolders(ctx context.Context) ([]Folder, error) {
+	result, err := w.api.MessagesGetDialogFilters(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting folders")
+	}
+
+	return extractFolders(result), nil
+}
+
+// CreateFolder creates a new chat folder.
+func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
+	includePeers := make([]tg.InputPeerClass, len(peers))
+	for idx, peer := range peers {
+		includePeers[idx] = InputPeerToTG(peer)
+	}
+
+	filter := tg.DialogFilter{
+		Title:        tg.TextWithEntities{Text: title},
+		IncludePeers: includePeers,
+	}
+
+	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+		Filter: &filter,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "creating folder")
+	}
+
+	return &Folder{Title: title, Peers: peers}, nil
+}
+
+// EditFolder updates an existing chat folder.
+func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error {
+	includePeers := make([]tg.InputPeerClass, len(peers))
+	for idx, peer := range peers {
+		includePeers[idx] = InputPeerToTG(peer)
+	}
+
+	filter := tg.DialogFilter{
+		ID:           folderID,
+		Title:        tg.TextWithEntities{Text: title},
+		IncludePeers: includePeers,
+	}
+
+	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+		ID:     folderID,
+		Filter: &filter,
+	})
+
+	return errors.Wrap(err, "editing folder")
+}
+
+// DeleteFolder deletes a chat folder.
+func (w *Wrapper) DeleteFolder(ctx context.Context, folderID int) error {
+	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+		ID: folderID,
+	})
+
+	return errors.Wrap(err, "deleting folder")
+}
+
+// SendTyping sends a typing indicator.
+func (w *Wrapper) SendTyping(ctx context.Context, peer InputPeer, action string) error {
+	tgAction := typingAction(action)
+
+	_, err := w.api.MessagesSetTyping(ctx, &tg.MessagesSetTypingRequest{
+		Peer:   InputPeerToTG(peer),
+		Action: tgAction,
+	})
+
+	return errors.Wrap(err, "sending typing")
+}
+
+// SetOnlineStatus sets the online/offline status.
+func (w *Wrapper) SetOnlineStatus(ctx context.Context, online bool) error {
+	_, err := w.api.AccountUpdateStatus(ctx, !online)
+
+	return errors.Wrap(err, "setting online status")
+}

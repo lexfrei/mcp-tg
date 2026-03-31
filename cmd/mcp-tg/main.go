@@ -130,6 +130,25 @@ func registerTools(server *mcp.Server, client tgclient.Client) {
 	mcp.AddTool(server, tools.MessagesPinTool(), tools.NewMessagesPinHandler(client))
 	mcp.AddTool(server, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
 	mcp.AddTool(server, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
+
+	// Phase 2: Contacts, Users, Groups, Chat management tools.
+	mcp.AddTool(server, tools.ContactsGetTool(), tools.NewContactsGetHandler(client))
+	mcp.AddTool(server, tools.ContactsSearchTool(), tools.NewContactsSearchHandler(client))
+	mcp.AddTool(server, tools.UsersGetTool(), tools.NewUsersGetHandler(client))
+	mcp.AddTool(server, tools.UsersPhotosTool(), tools.NewUsersPhotosHandler(client))
+	mcp.AddTool(server, tools.UsersBlockTool(), tools.NewUsersBlockHandler(client))
+	mcp.AddTool(server, tools.UsersCommonChatsTool(), tools.NewUsersCommonChatsHandler(client))
+	mcp.AddTool(server, tools.GroupsListTool(), tools.NewGroupsListHandler(client))
+	mcp.AddTool(server, tools.GroupsInfoTool(), tools.NewGroupsInfoHandler(client))
+	mcp.AddTool(server, tools.GroupsJoinTool(), tools.NewGroupsJoinHandler(client))
+	mcp.AddTool(server, tools.GroupsLeaveTool(), tools.NewGroupsLeaveHandler(client))
+	mcp.AddTool(server, tools.GroupsRenameTool(), tools.NewGroupsRenameHandler(client))
+	mcp.AddTool(server, tools.GroupsMembersAddTool(), tools.NewGroupsMembersAddHandler(client))
+	mcp.AddTool(server, tools.GroupsMembersRemoveTool(), tools.NewGroupsMembersRemoveHandler(client))
+	mcp.AddTool(server, tools.GroupsInviteLinkGetTool(), tools.NewGroupsInviteLinkGetHandler(client))
+	mcp.AddTool(server, tools.GroupsInviteLinkRevokeTool(), tools.NewGroupsInviteLinkRevokeHandler(client))
+	mcp.AddTool(server, tools.ChatsAdminsTool(), tools.NewChatsAdminsHandler(client))
+	mcp.AddTool(server, tools.ChatsPermissionsTool(), tools.NewChatsPermissionsHandler(client))
 }
 
 func runTransports(ctx context.Context, cancel context.CancelFunc, server *mcp.Server, cfg *config.Config) error {

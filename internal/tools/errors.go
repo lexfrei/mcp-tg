@@ -24,6 +24,18 @@ var ErrQueryRequired = errors.New("query is required")
 // ErrNegativeLimit is returned when a numeric limit parameter is negative.
 var ErrNegativeLimit = errors.New("numeric limits must not be negative")
 
+// ErrTitleRequired is returned when a title parameter is missing.
+var ErrTitleRequired = errors.New("title is required")
+
+// ErrGroupRequired is returned when a group parameter is missing.
+var ErrGroupRequired = errors.New("group is required")
+
+// ErrUserRequired is returned when a user parameter is missing.
+var ErrUserRequired = errors.New("user is required")
+
+// ErrLinkRequired is returned when a link parameter is missing.
+var ErrLinkRequired = errors.New("link is required")
+
 // validationErr marks an error as a validation error.
 func validationErr(err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category, the caller already provides context.

@@ -164,6 +164,21 @@ func registerTools(server *mcp.Server, client tgclient.Client) {
 	mcp.AddTool(server, tools.ProfileSetNameTool(), tools.NewProfileSetNameHandler(client))
 	mcp.AddTool(server, tools.ProfileSetBioTool(), tools.NewProfileSetBioHandler(client))
 	mcp.AddTool(server, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client))
+
+	// Phase 4: Topics, Stickers, Drafts, Folders, Status tools.
+	mcp.AddTool(server, tools.TopicsListTool(), tools.NewTopicsListHandler(client))
+	mcp.AddTool(server, tools.TopicsSearchTool(), tools.NewTopicsSearchHandler(client))
+	mcp.AddTool(server, tools.StickersSearchTool(), tools.NewStickersSearchHandler(client))
+	mcp.AddTool(server, tools.StickersGetSetTool(), tools.NewStickersGetSetHandler(client))
+	mcp.AddTool(server, tools.StickersSendTool(), tools.NewStickersSendHandler(client))
+	mcp.AddTool(server, tools.DraftsSetTool(), tools.NewDraftsSetHandler(client))
+	mcp.AddTool(server, tools.DraftsClearTool(), tools.NewDraftsClearHandler(client))
+	mcp.AddTool(server, tools.FoldersListTool(), tools.NewFoldersListHandler(client))
+	mcp.AddTool(server, tools.FoldersCreateTool(), tools.NewFoldersCreateHandler(client))
+	mcp.AddTool(server, tools.FoldersEditTool(), tools.NewFoldersEditHandler(client))
+	mcp.AddTool(server, tools.FoldersDeleteTool(), tools.NewFoldersDeleteHandler(client))
+	mcp.AddTool(server, tools.TypingSendTool(), tools.NewTypingSendHandler(client))
+	mcp.AddTool(server, tools.OnlineStatusSetTool(), tools.NewOnlineStatusSetHandler(client))
 }
 
 func runTransports(ctx context.Context, cancel context.CancelFunc, server *mcp.Server, cfg *config.Config) error {

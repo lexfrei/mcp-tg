@@ -48,6 +48,15 @@ var ErrFirstNameRequired = errors.New("first name is required")
 // ErrMessageNotFound is returned when a message cannot be found.
 var ErrMessageNotFound = errors.New("message not found")
 
+// ErrNameRequired is returned when a name parameter is missing.
+var ErrNameRequired = errors.New("name is required")
+
+// ErrFolderIDRequired is returned when a folder ID parameter is missing.
+var ErrFolderIDRequired = errors.New("folder ID is required")
+
+// ErrStickerFileIDRequired is returned when a sticker file ID parameter is missing.
+var ErrStickerFileIDRequired = errors.New("sticker file ID is required")
+
 // validationErr marks an error as a validation error.
 func validationErr(err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category, the caller already provides context.

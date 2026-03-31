@@ -24,12 +24,18 @@ type MediaUploadResult struct {
 func NewMediaUploadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaUploadParams, MediaUploadResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params MediaUploadParams,
 	) (*mcp.CallToolResult, MediaUploadResult, error) {
 		if params.Path == "" {
 			return &mcp.CallToolResult{IsError: true}, MediaUploadResult{},
 				validationErr(ErrPathRequired)
+		}
+
+		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		if rootErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MediaUploadResult{},
+				validationErr(rootErr)
 		}
 
 		uploaded, err := client.UploadFile(ctx, params.Path)

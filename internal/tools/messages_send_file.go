@@ -27,7 +27,7 @@ func NewMessagesSendFileHandler(
 ) mcp.ToolHandlerFor[MessagesSendFileParams, MessagesSendFileResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params MessagesSendFileParams,
 	) (*mcp.CallToolResult, MessagesSendFileResult, error) {
 		if params.Peer == "" {
@@ -38,6 +38,12 @@ func NewMessagesSendFileHandler(
 		if params.Path == "" {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
 				validationErr(ErrPathRequired)
+		}
+
+		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		if rootErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
+				validationErr(rootErr)
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)

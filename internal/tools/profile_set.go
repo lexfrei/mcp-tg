@@ -115,12 +115,18 @@ type ProfileSetPhotoResult struct {
 func NewProfileSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[ProfileSetPhotoParams, ProfileSetPhotoResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params ProfileSetPhotoParams,
 	) (*mcp.CallToolResult, ProfileSetPhotoResult, error) {
 		if params.Path == "" {
 			return &mcp.CallToolResult{IsError: true}, ProfileSetPhotoResult{},
 				validationErr(ErrPathRequired)
+		}
+
+		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		if rootErr != nil {
+			return &mcp.CallToolResult{IsError: true}, ProfileSetPhotoResult{},
+				validationErr(rootErr)
 		}
 
 		err := client.SetProfilePhoto(ctx, params.Path)

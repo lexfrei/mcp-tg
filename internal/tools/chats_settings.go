@@ -26,7 +26,7 @@ type ChatsSetPhotoResult struct {
 func NewChatsSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsSetPhotoParams, ChatsSetPhotoResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params ChatsSetPhotoParams,
 	) (*mcp.CallToolResult, ChatsSetPhotoResult, error) {
 		if params.Peer == "" {
@@ -37,6 +37,12 @@ func NewChatsSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsSet
 		if params.Path == "" {
 			return &mcp.CallToolResult{IsError: true}, ChatsSetPhotoResult{},
 				validationErr(ErrPathRequired)
+		}
+
+		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		if rootErr != nil {
+			return &mcp.CallToolResult{IsError: true}, ChatsSetPhotoResult{},
+				validationErr(rootErr)
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)

@@ -27,7 +27,7 @@ func NewMediaSendAlbumHandler(
 ) mcp.ToolHandlerFor[MediaSendAlbumParams, MediaSendAlbumResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params MediaSendAlbumParams,
 	) (*mcp.CallToolResult, MediaSendAlbumResult, error) {
 		if params.Peer == "" {
@@ -38,6 +38,14 @@ func NewMediaSendAlbumHandler(
 		if len(params.Paths) == 0 {
 			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
 				validationErr(ErrPathsRequired)
+		}
+
+		for _, filePath := range params.Paths {
+			rootErr := validatePathAgainstRoots(ctx, req.Session, filePath)
+			if rootErr != nil {
+				return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
+					validationErr(rootErr)
+			}
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)

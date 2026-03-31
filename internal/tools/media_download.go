@@ -21,10 +21,12 @@ type MediaDownloadResult struct {
 }
 
 // NewMediaDownloadHandler creates a handler for the tg_media_download tool.
-func NewMediaDownloadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaDownloadParams, MediaDownloadResult] {
+func NewMediaDownloadHandler(
+	client telegram.Client,
+) mcp.ToolHandlerFor[MediaDownloadParams, MediaDownloadResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params MediaDownloadParams,
 	) (*mcp.CallToolResult, MediaDownloadResult, error) {
 		if params.Peer == "" {
@@ -37,32 +39,20 @@ func NewMediaDownloadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaDow
 				validationErr(ErrMessageIDRequired)
 		}
 
-		peer, err := client.ResolvePeer(ctx, params.Peer)
-		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MediaDownloadResult{},
-				telegramErr("failed to resolve peer", err)
-		}
-
-		msgs, err := client.GetMessages(ctx, peer, []int{params.MessageID})
-		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MediaDownloadResult{},
-				telegramErr("failed to get message", err)
-		}
-
-		if len(msgs) == 0 {
-			return &mcp.CallToolResult{IsError: true}, MediaDownloadResult{},
-				telegramErr("failed to find message", ErrMessageNotFound)
-		}
-
 		outDir := deref(params.OutputDir)
 		if outDir == "" {
 			outDir = "."
 		}
 
-		filePath, err := client.DownloadMedia(ctx, &msgs[0], outDir)
-		if err != nil {
+		rootErr := validatePathAgainstRoots(ctx, req.Session, outDir)
+		if rootErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaDownloadResult{},
-				telegramErr("failed to download media", err)
+				validationErr(rootErr)
+		}
+
+		filePath, err := downloadMedia(ctx, client, params, outDir)
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, MediaDownloadResult{}, err
 		}
 
 		return nil, MediaDownloadResult{
@@ -70,6 +60,22 @@ func NewMediaDownloadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaDow
 			Output:   "Downloaded media to " + filePath,
 		}, nil
 	}
+}
+
+func downloadMedia(
+	ctx context.Context, client telegram.Client, params MediaDownloadParams, outDir string,
+) (string, error) {
+	peer, err := client.ResolvePeer(ctx, params.Peer)
+	if err != nil {
+		return "", telegramErr("failed to resolve peer", err)
+	}
+
+	filePath, err := client.DownloadMedia(ctx, peer, params.MessageID, outDir)
+	if err != nil {
+		return "", telegramErr("failed to download media", err)
+	}
+
+	return filePath, nil
 }
 
 // MediaDownloadTool returns the MCP tool definition for tg_media_download.

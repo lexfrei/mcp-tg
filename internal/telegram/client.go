@@ -39,7 +39,7 @@ type MessageClient interface {
 type MediaClient interface {
 	SendFile(ctx context.Context, peer InputPeer, path string, caption string) (*Message, error)
 	SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string) ([]Message, error)
-	DownloadMedia(ctx context.Context, msg *Message, outputDir string) (string, error)
+	DownloadMedia(ctx context.Context, peer InputPeer, msgID int, outputDir string) (string, error)
 	UploadFile(ctx context.Context, path string) (*UploadedFile, error)
 }
 

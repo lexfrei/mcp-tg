@@ -345,12 +345,30 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 }
 
 // DownloadMedia downloads media from a message to the specified directory.
-func (w *Wrapper) DownloadMedia(_ context.Context, msg *Message, _ string) (string, error) {
-	if msg == nil {
-		return "", errors.New("nil message")
+func (w *Wrapper) DownloadMedia(ctx context.Context, peer InputPeer, msgID int, outputDir string) (string, error) {
+	rawMsg, err := w.getRawMessage(ctx, peer, msgID)
+	if err != nil {
+		return "", errors.Wrap(err, "getting message for download")
 	}
 
-	return "", errors.New("media download requires full message with media; use GetMessages first")
+	location, fileName := extractMediaLocation(rawMsg)
+	if location == nil {
+		return "", errors.New("message has no downloadable media")
+	}
+
+	mkdirErr := os.MkdirAll(outputDir, outputDirPerms)
+	if mkdirErr != nil {
+		return "", errors.Wrap(mkdirErr, "creating output directory")
+	}
+
+	outPath := filepath.Join(outputDir, fileName)
+
+	_, err = w.down.Download(w.api, location).ToPath(ctx, outPath)
+	if err != nil {
+		return "", errors.Wrap(err, "downloading media")
+	}
+
+	return outPath, nil
 }
 
 // UploadFile uploads a file and returns its metadata.
@@ -890,6 +908,30 @@ func (w *Wrapper) SetOnlineStatus(ctx context.Context, online bool) error {
 	_, err := w.api.AccountUpdateStatus(ctx, !online)
 
 	return errors.Wrap(err, "setting online status")
+}
+
+func (w *Wrapper) getRawMessage(ctx context.Context, peer InputPeer, msgID int) (*tg.Message, error) {
+	inputIDs := []tg.InputMessageClass{&tg.InputMessageID{ID: msgID}}
+
+	var (
+		result tg.MessagesMessagesClass
+		err    error
+	)
+
+	if peer.Type == PeerChannel {
+		result, err = w.api.ChannelsGetMessages(ctx, &tg.ChannelsGetMessagesRequest{
+			Channel: InputChannelFromPeer(peer),
+			ID:      inputIDs,
+		})
+	} else {
+		result, err = w.api.MessagesGetMessages(ctx, inputIDs)
+	}
+
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching message")
+	}
+
+	return firstRawMessage(result)
 }
 
 func (w *Wrapper) findFolderByTitle(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {

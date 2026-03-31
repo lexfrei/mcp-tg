@@ -63,7 +63,7 @@ func (NoopClient) SendAlbum(_ context.Context, _ telegram.InputPeer, _ []string,
 	return nil, nil
 }
 
-func (NoopClient) DownloadMedia(_ context.Context, _ *telegram.Message, _ string) (string, error) {
+func (NoopClient) DownloadMedia(_ context.Context, _ telegram.InputPeer, _ int, _ string) (string, error) {
 	return "", nil
 }
 

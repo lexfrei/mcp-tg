@@ -118,7 +118,7 @@ func (m *mockClient) SendAlbum(_ context.Context, peer telegram.InputPeer, _ []s
 	return m.messages, m.err
 }
 
-func (m *mockClient) DownloadMedia(_ context.Context, _ *telegram.Message, _ string) (string, error) {
+func (m *mockClient) DownloadMedia(_ context.Context, _ telegram.InputPeer, _ int, _ string) (string, error) {
 	return m.filePath, m.err
 }
 

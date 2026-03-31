@@ -8,7 +8,10 @@ import (
 	"github.com/gotd/td/tg"
 )
 
-const defaultLimit = 100
+const (
+	defaultLimit   = 100
+	outputDirPerms = 0o750
+)
 
 func typingAction(action string) tg.SendMessageActionClass {
 	switch action {
@@ -648,4 +651,101 @@ func extractFolders(result *tg.MessagesDialogFilters) []Folder {
 	}
 
 	return folders
+}
+
+func firstRawMessage(result tg.MessagesMessagesClass) (*tg.Message, error) {
+	var rawMsgs []tg.MessageClass
+
+	switch res := result.(type) {
+	case *tg.MessagesMessages:
+		rawMsgs = res.Messages
+	case *tg.MessagesMessagesSlice:
+		rawMsgs = res.Messages
+	case *tg.MessagesChannelMessages:
+		rawMsgs = res.Messages
+	}
+
+	for _, raw := range rawMsgs {
+		if msg, ok := raw.(*tg.Message); ok {
+			return msg, nil
+		}
+	}
+
+	return nil, errors.New("message not found")
+}
+
+//nolint:gocritic // unnamedResult: names add no clarity for extraction functions.
+func extractMediaLocation(msg *tg.Message) (tg.InputFileLocationClass, string) {
+	if msg == nil || msg.Media == nil {
+		return nil, ""
+	}
+
+	switch media := msg.Media.(type) {
+	case *tg.MessageMediaDocument:
+		return extractDocumentLocation(media)
+	case *tg.MessageMediaPhoto:
+		return extractPhotoLocation(media)
+	default:
+		return nil, ""
+	}
+}
+
+//nolint:gocritic // unnamedResult: names add no clarity for extraction functions.
+func extractDocumentLocation(media *tg.MessageMediaDocument) (tg.InputFileLocationClass, string) {
+	doc, ok := media.Document.(*tg.Document)
+	if !ok {
+		return nil, ""
+	}
+
+	fileName := documentFileName(doc)
+
+	return &tg.InputDocumentFileLocation{
+		ID:            doc.ID,
+		AccessHash:    doc.AccessHash,
+		FileReference: doc.FileReference,
+	}, fileName
+}
+
+//nolint:gocritic // unnamedResult: names add no clarity for extraction functions.
+func extractPhotoLocation(media *tg.MessageMediaPhoto) (tg.InputFileLocationClass, string) {
+	photo, ok := media.Photo.(*tg.Photo)
+	if !ok || len(photo.Sizes) == 0 {
+		return nil, ""
+	}
+
+	return &tg.InputPhotoFileLocation{
+		ID:            photo.ID,
+		AccessHash:    photo.AccessHash,
+		FileReference: photo.FileReference,
+		ThumbSize:     largestPhotoSize(photo.Sizes),
+	}, fmt.Sprintf("photo_%d.jpg", photo.ID)
+}
+
+func documentFileName(doc *tg.Document) string {
+	for _, attr := range doc.Attributes {
+		if fname, ok := attr.(*tg.DocumentAttributeFilename); ok {
+			return fname.FileName
+		}
+	}
+
+	return fmt.Sprintf("document_%d", doc.ID)
+}
+
+func largestPhotoSize(sizes []tg.PhotoSizeClass) string {
+	best := ""
+
+	for _, size := range sizes {
+		switch typed := size.(type) {
+		case *tg.PhotoSize:
+			best = typed.Type
+		case *tg.PhotoSizeProgressive:
+			best = typed.Type
+		}
+	}
+
+	if best == "" {
+		best = "x"
+	}
+
+	return best
 }

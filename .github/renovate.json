@@ -1,0 +1,53 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "docker:enableMajor",
+    ":separateMajorReleases",
+    ":prHourlyLimitNone",
+    ":prConcurrentLimitNone"
+  ],
+  "labels": ["dependencies"],
+  "rangeStrategy": "pin",
+  "platformAutomerge": true,
+  "automergeStrategy": "squash",
+  "postUpdateOptions": ["gomodTidy"],
+  "packageRules": [
+    {
+      "description": "Group all Go module updates",
+      "matchManagers": ["gomod"],
+      "groupName": "go modules",
+      "groupSlug": "go-modules"
+    },
+    {
+      "description": "Group all GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions",
+      "groupSlug": "github-actions"
+    },
+    {
+      "description": "Automerge patch updates for Go modules",
+      "matchManagers": ["gomod"],
+      "matchUpdateTypes": ["patch"],
+      "automerge": true
+    },
+    {
+      "description": "Automerge all GitHub Actions updates including major",
+      "matchManagers": ["github-actions"],
+      "automerge": true
+    },
+    {
+      "description": "Pin and update Go version in Containerfile",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["docker.io/library/golang"],
+      "versioning": "docker"
+    },
+    {
+      "description": "Bump Go version in go.mod to latest minor",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
+    }
+  ]
+}

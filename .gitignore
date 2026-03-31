@@ -1,0 +1,43 @@
+# Binaries
+/mcp-tg
+*.exe
+*.dll
+*.so
+*.dylib
+dist/
+
+# Test coverage
+*.out
+coverage.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+tmp/
+temp/
+
+# Secrets and credentials
+*credentials*.yaml
+*.key
+*.pem
+.env
+*.secret
+
+# Build artifacts
+*.log
+
+# Personal notes
+TODO.md
+
+# Telegram session files
+session.json
+*.session

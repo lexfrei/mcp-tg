@@ -49,6 +49,12 @@ func normalizePeerIdentifier(ident string) string {
 	return strings.TrimPrefix(ident, "@")
 }
 
+// resolveByID builds an InputPeer from a numeric (bot-API style) ID.
+//
+// WARNING: The returned peer has AccessHash=0. This works for basic chat
+// operations (PeerChat) but may fail for users and channels that require
+// a valid access hash (e.g. getting full info, sending messages to users
+// not in your contacts). Prefer @username resolution when possible.
 func resolveByID(numID int64) InputPeer {
 	switch {
 	case numID > 0:

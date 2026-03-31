@@ -19,6 +19,7 @@ import (
 
 	"github.com/lexfrei/mcp-tg/internal/config"
 	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
+	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -74,7 +75,7 @@ func run() error {
 		signal.Stop(sigChan)
 	}()
 
-	return tgClient.Run(ctx, func(ctx context.Context) error {
+	return errors.Wrap(tgClient.Run(ctx, func(ctx context.Context) error {
 		authenticator := tgclient.NewEnvCodeAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)
 		flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
 
@@ -97,7 +98,7 @@ func run() error {
 		registerTools(server, wrapper)
 
 		return runTransports(ctx, cancel, server, cfg)
-	})
+	}), "telegram client stopped")
 }
 
 func newServerOptions() *mcp.ServerOptions {
@@ -114,8 +115,21 @@ func newServerOptions() *mcp.ServerOptions {
 }
 
 func registerTools(server *mcp.Server, client tgclient.Client) {
-	_ = server
-	_ = client
+	mcp.AddTool(server, tools.ProfileGetTool(), tools.NewProfileGetHandler(client))
+	mcp.AddTool(server, tools.DialogsListTool(), tools.NewDialogsListHandler(client))
+	mcp.AddTool(server, tools.DialogsSearchTool(), tools.NewDialogsSearchHandler(client))
+	mcp.AddTool(server, tools.DialogsGetInfoTool(), tools.NewDialogsGetInfoHandler(client))
+	mcp.AddTool(server, tools.MessagesListTool(), tools.NewMessagesListHandler(client))
+	mcp.AddTool(server, tools.MessagesGetTool(), tools.NewMessagesGetHandler(client))
+	mcp.AddTool(server, tools.MessagesContextTool(), tools.NewMessagesContextHandler(client))
+	mcp.AddTool(server, tools.MessagesSearchTool(), tools.NewMessagesSearchHandler(client))
+	mcp.AddTool(server, tools.MessagesSendTool(), tools.NewMessagesSendHandler(client))
+	mcp.AddTool(server, tools.MessagesEditTool(), tools.NewMessagesEditHandler(client))
+	mcp.AddTool(server, tools.MessagesDeleteTool(), tools.NewMessagesDeleteHandler(client))
+	mcp.AddTool(server, tools.MessagesForwardTool(), tools.NewMessagesForwardHandler(client))
+	mcp.AddTool(server, tools.MessagesPinTool(), tools.NewMessagesPinHandler(client))
+	mcp.AddTool(server, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
+	mcp.AddTool(server, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
 }
 
 func runTransports(ctx context.Context, cancel context.CancelFunc, server *mcp.Server, cfg *config.Config) error {
@@ -141,7 +155,7 @@ func runTransports(ctx context.Context, cancel context.CancelFunc, server *mcp.S
 		})
 	}
 
-	return group.Wait()
+	return group.Wait() //nolint:wrapcheck // errors are already wrapped inside group goroutines.
 }
 
 func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {

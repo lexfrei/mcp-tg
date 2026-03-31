@@ -53,9 +53,7 @@ func run() error {
 		return errors.Wrap(cfgErr, "invalid configuration")
 	}
 
-	sessionDir := filepath.Dir(cfg.SessionFile)
-
-	mkdirErr := os.MkdirAll(sessionDir, 0o700)
+	mkdirErr := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700)
 	if mkdirErr != nil {
 		return errors.Wrap(mkdirErr, "creating session directory")
 	}
@@ -67,6 +65,81 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	setupSignalHandler(ctx, cancel)
+
+	return errors.Wrap(tgClient.Run(ctx, func(ctx context.Context) error {
+		return startServer(ctx, cancel, tgClient, cfg)
+	}), "telegram client stopped")
+}
+
+func startServer(
+	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client, cfg *config.Config,
+) error {
+	wrapper := tgclient.NewWrapper(tgClient.API())
+
+	server := mcp.NewServer(
+		&mcp.Implementation{
+			Name:    serverName,
+			Version: version + "+" + revision,
+		},
+		newServerOptions(wrapper),
+	)
+
+	registerTools(server, wrapper)
+	resources.Register(server, wrapper)
+	prompts.Register(server, wrapper)
+
+	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
+	if err != nil {
+		return errors.Wrap(err, "connecting stdio transport")
+	}
+
+	authenticator := tgclient.NewAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)
+	authenticator.SetSession(stdioSession)
+
+	flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
+
+	authErr := tgClient.Auth().IfNecessary(ctx, flow)
+	if authErr != nil {
+		return errors.Wrap(authErr, "authentication failed")
+	}
+
+	return waitForTransports(ctx, cancel, server, stdioSession, cfg)
+}
+
+func waitForTransports(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	server *mcp.Server,
+	stdioSession *mcp.ServerSession,
+	cfg *config.Config,
+) error {
+	group, groupCtx := errgroup.WithContext(ctx)
+	httpEnabled := cfg.HTTPEnabled()
+
+	group.Go(func() error {
+		waitErr := stdioSession.Wait()
+		if waitErr != nil && groupCtx.Err() == nil {
+			return errors.Wrap(waitErr, "stdio session ended")
+		}
+
+		if !httpEnabled {
+			cancel()
+		}
+
+		return nil
+	})
+
+	if httpEnabled {
+		group.Go(func() error {
+			return runHTTPServer(groupCtx, server, cfg.HTTPAddr())
+		})
+	}
+
+	return group.Wait() //nolint:wrapcheck // errors are already wrapped inside group goroutines.
+}
+
+func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
@@ -79,33 +152,6 @@ func run() error {
 
 		signal.Stop(sigChan)
 	}()
-
-	return errors.Wrap(tgClient.Run(ctx, func(ctx context.Context) error {
-		authenticator := tgclient.NewEnvCodeAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)
-		flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
-
-		authErr := tgClient.Auth().IfNecessary(ctx, flow)
-		if authErr != nil {
-			return errors.Wrap(authErr, "authentication failed")
-		}
-
-		wrapper := tgclient.NewWrapper(tgClient.API())
-
-		serverOpts := newServerOptions(wrapper)
-		server := mcp.NewServer(
-			&mcp.Implementation{
-				Name:    serverName,
-				Version: version + "+" + revision,
-			},
-			serverOpts,
-		)
-
-		registerTools(server, wrapper)
-		resources.Register(server, wrapper)
-		prompts.Register(server, wrapper)
-
-		return runTransports(ctx, cancel, server, cfg)
-	}), "telegram client stopped")
 }
 
 func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
@@ -188,32 +234,6 @@ func registerTools(server *mcp.Server, client tgclient.Client) {
 	mcp.AddTool(server, tools.FoldersDeleteTool(), tools.NewFoldersDeleteHandler(client))
 	mcp.AddTool(server, tools.TypingSendTool(), tools.NewTypingSendHandler(client))
 	mcp.AddTool(server, tools.OnlineStatusSetTool(), tools.NewOnlineStatusSetHandler(client))
-}
-
-func runTransports(ctx context.Context, cancel context.CancelFunc, server *mcp.Server, cfg *config.Config) error {
-	group, groupCtx := errgroup.WithContext(ctx)
-	httpEnabled := cfg.HTTPEnabled()
-
-	group.Go(func() error {
-		runErr := server.Run(groupCtx, &mcp.StdioTransport{})
-		if runErr != nil && groupCtx.Err() == nil {
-			return errors.Wrap(runErr, "stdio server failed")
-		}
-
-		if !httpEnabled {
-			cancel()
-		}
-
-		return nil
-	})
-
-	if httpEnabled {
-		group.Go(func() error {
-			return runHTTPServer(groupCtx, server, cfg.HTTPAddr())
-		})
-	}
-
-	return group.Wait() //nolint:wrapcheck // errors are already wrapped inside group goroutines.
 }
 
 func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {

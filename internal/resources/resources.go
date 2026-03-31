@@ -100,7 +100,7 @@ func profileHandler(client telegram.Client) mcp.ResourceHandler {
 
 func chatInfoHandler(client telegram.Client) mcp.ResourceHandler {
 	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		peerStr := extractPeer(req.Params.URI, "tg://chat/", "/messages")
+		peerStr := extractPeer(req.Params.URI)
 		if peerStr == "" {
 			return nil, errors.New("missing peer in URI")
 		}
@@ -130,7 +130,7 @@ func chatInfoHandler(client telegram.Client) mcp.ResourceHandler {
 
 func chatMessagesHandler(client telegram.Client) mcp.ResourceHandler {
 	return func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		peerStr := extractPeer(req.Params.URI, "tg://chat/", "/messages")
+		peerStr := extractPeer(req.Params.URI)
 		if peerStr == "" {
 			return nil, errors.New("missing peer in URI")
 		}
@@ -159,13 +159,18 @@ func chatMessagesHandler(client telegram.Client) mcp.ResourceHandler {
 	}
 }
 
-func extractPeer(uri, prefix, suffix string) string {
-	after, found := strings.CutPrefix(uri, prefix)
+const (
+	chatURIPrefix  = "tg://chat/"
+	messagesSuffix = "/messages"
+)
+
+func extractPeer(uri string) string {
+	after, found := strings.CutPrefix(uri, chatURIPrefix)
 	if !found {
 		return ""
 	}
 
-	before, _ := strings.CutSuffix(after, suffix)
+	before, _ := strings.CutSuffix(after, messagesSuffix)
 
 	return before
 }

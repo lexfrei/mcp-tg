@@ -36,6 +36,18 @@ var ErrUserRequired = errors.New("user is required")
 // ErrLinkRequired is returned when a link parameter is missing.
 var ErrLinkRequired = errors.New("link is required")
 
+// ErrPathRequired is returned when a file path parameter is missing.
+var ErrPathRequired = errors.New("path is required")
+
+// ErrPathsRequired is returned when a paths list parameter is missing.
+var ErrPathsRequired = errors.New("paths list is required")
+
+// ErrFirstNameRequired is returned when a first name parameter is missing.
+var ErrFirstNameRequired = errors.New("first name is required")
+
+// ErrMessageNotFound is returned when a message cannot be found.
+var ErrMessageNotFound = errors.New("message not found")
+
 // validationErr marks an error as a validation error.
 func validationErr(err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category, the caller already provides context.

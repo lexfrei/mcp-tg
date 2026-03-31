@@ -149,6 +149,21 @@ func registerTools(server *mcp.Server, client tgclient.Client) {
 	mcp.AddTool(server, tools.GroupsInviteLinkRevokeTool(), tools.NewGroupsInviteLinkRevokeHandler(client))
 	mcp.AddTool(server, tools.ChatsAdminsTool(), tools.NewChatsAdminsHandler(client))
 	mcp.AddTool(server, tools.ChatsPermissionsTool(), tools.NewChatsPermissionsHandler(client))
+
+	// Phase 3: Media, Files, Chat Management, Profile tools.
+	mcp.AddTool(server, tools.MessagesSendFileTool(), tools.NewMessagesSendFileHandler(client))
+	mcp.AddTool(server, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client))
+	mcp.AddTool(server, tools.MediaUploadTool(), tools.NewMediaUploadHandler(client))
+	mcp.AddTool(server, tools.MediaSendAlbumTool(), tools.NewMediaSendAlbumHandler(client))
+	mcp.AddTool(server, tools.ChatsCreateTool(), tools.NewChatsCreateHandler(client))
+	mcp.AddTool(server, tools.ChatsArchiveTool(), tools.NewChatsArchiveHandler(client))
+	mcp.AddTool(server, tools.ChatsMuteTool(), tools.NewChatsMuteHandler(client))
+	mcp.AddTool(server, tools.ChatsDeleteTool(), tools.NewChatsDeleteHandler(client))
+	mcp.AddTool(server, tools.ChatsSetPhotoTool(), tools.NewChatsSetPhotoHandler(client))
+	mcp.AddTool(server, tools.ChatsSetDescriptionTool(), tools.NewChatsSetDescriptionHandler(client))
+	mcp.AddTool(server, tools.ProfileSetNameTool(), tools.NewProfileSetNameHandler(client))
+	mcp.AddTool(server, tools.ProfileSetBioTool(), tools.NewProfileSetBioHandler(client))
+	mcp.AddTool(server, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client))
 }
 
 func runTransports(ctx context.Context, cancel context.CancelFunc, server *mcp.Server, cfg *config.Config) error {

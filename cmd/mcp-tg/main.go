@@ -19,6 +19,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/lexfrei/mcp-tg/internal/config"
+	"github.com/lexfrei/mcp-tg/internal/prompts"
 	"github.com/lexfrei/mcp-tg/internal/resources"
 	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/tools"
@@ -100,6 +101,7 @@ func run() error {
 
 		registerTools(server, wrapper)
 		resources.Register(server, wrapper)
+		prompts.Register(server, wrapper)
 
 		return runTransports(ctx, cancel, server, cfg)
 	}), "telegram client stopped")

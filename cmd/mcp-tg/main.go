@@ -20,6 +20,7 @@ import (
 
 	"github.com/lexfrei/mcp-tg/internal/completions"
 	"github.com/lexfrei/mcp-tg/internal/config"
+	mcpmw "github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/prompts"
 	"github.com/lexfrei/mcp-tg/internal/resources"
 	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
@@ -94,6 +95,7 @@ func startServer(
 	registerTools(server, wrapper)
 	resources.Register(server, wrapper)
 	prompts.Register(server, wrapper)
+	server.AddReceivingMiddleware(mcpmw.NewLogging(opts.Logger))
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -167,17 +169,22 @@ func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
 }
 
 func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
 	return &mcp.ServerOptions{
 		Instructions: "MCP server for Telegram Client API. " +
 			"Provides tools to manage messages, dialogs, contacts, groups, " +
 			"channels, stickers, folders, and user profile. " +
 			"Uses MTProto protocol via user account (not bot). " +
 			"Requires TELEGRAM_APP_ID and TELEGRAM_APP_HASH from my.telegram.org.",
-		Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-			Level: slog.LevelInfo,
-		})),
+		Logger:            logger,
 		KeepAlive:         keepAliveInterval,
 		CompletionHandler: completions.NewHandler(client),
+		RootsListChangedHandler: func(_ context.Context, _ *mcp.RootsListChangedRequest) {
+			logger.Info("client roots list changed")
+		},
 	}
 }
 

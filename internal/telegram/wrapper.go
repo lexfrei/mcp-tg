@@ -840,7 +840,7 @@ func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputP
 		return nil, errors.Wrap(err, "creating folder")
 	}
 
-	return &Folder{Title: title, Peers: peers}, nil
+	return w.findFolderByTitle(ctx, title, peers)
 }
 
 // EditFolder updates an existing chat folder.
@@ -890,4 +890,19 @@ func (w *Wrapper) SetOnlineStatus(ctx context.Context, online bool) error {
 	_, err := w.api.AccountUpdateStatus(ctx, !online)
 
 	return errors.Wrap(err, "setting online status")
+}
+
+func (w *Wrapper) findFolderByTitle(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
+	folders, err := w.GetFolders(ctx)
+	if err != nil {
+		return &Folder{Title: title, Peers: peers}, nil //nolint:nilerr // best-effort: return without ID if listing fails.
+	}
+
+	for _, folder := range folders {
+		if folder.Title == title {
+			return &Folder{ID: folder.ID, Title: title, Peers: peers}, nil
+		}
+	}
+
+	return &Folder{Title: title, Peers: peers}, nil
 }

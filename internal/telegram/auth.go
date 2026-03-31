@@ -128,6 +128,10 @@ func (aut *Authenticator) elicitString(ctx context.Context, message, fieldName s
 		return "", errors.Wrap(err, "elicitation failed")
 	}
 
+	if result == nil {
+		return "", errors.New("elicitation returned empty result")
+	}
+
 	if result.Action != "accept" {
 		return "", ErrElicitDeclined
 	}

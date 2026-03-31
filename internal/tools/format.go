@@ -26,6 +26,10 @@ func formatTimestamp(unix int) string {
 
 // formatMessage returns a single-line summary of a message.
 func formatMessage(msg *telegram.Message) string {
+	if msg == nil {
+		return unknownValue
+	}
+
 	text := msg.Text
 	if len(text) > maxTextLen {
 		text = text[:maxTextLen] + "..."
@@ -42,6 +46,10 @@ func formatMessage(msg *telegram.Message) string {
 
 // formatDialog returns a single-line summary of a dialog.
 func formatDialog(dlg *telegram.Dialog) string {
+	if dlg == nil {
+		return unknownValue
+	}
+
 	peerType := peerUser
 	if dlg.IsChannel {
 		peerType = peerChannel

@@ -230,6 +230,10 @@ func buildDialogs(dialogs []tg.DialogClass, chats []tg.ChatClass, users []tg.Use
 			continue
 		}
 
+		if dialog.Peer == nil {
+			continue
+		}
+
 		entry := Dialog{UnreadCount: dialog.UnreadCount}
 		fillDialogPeer(&entry, dialog.Peer, chatMap, userMap)
 

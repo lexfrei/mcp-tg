@@ -77,7 +77,7 @@ func (a *EnvCodeAuthenticator) Password(_ context.Context) (string, error) {
 }
 
 // Code returns the authentication code from env var or stdin prompt.
-func (a *EnvCodeAuthenticator) Code(_ context.Context) (string, error) {
+func (a *EnvCodeAuthenticator) Code(_ context.Context, _ *tg.AuthSentCode) (string, error) {
 	if a.code != "" {
 		return a.code, nil
 	}

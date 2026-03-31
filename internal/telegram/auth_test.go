@@ -55,7 +55,7 @@ func TestEnvCodeAuthenticator_Password_Empty(t *testing.T) {
 func TestEnvCodeAuthenticator_Code_FromEnv(t *testing.T) {
 	auth := telegram.NewEnvCodeAuthenticator("", "", "12345")
 
-	code, err := auth.Code(context.Background())
+	code, err := auth.Code(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestEnvCodeAuthenticator_Code_FromEnv(t *testing.T) {
 func TestEnvCodeAuthenticator_Code_FromReader(t *testing.T) {
 	auth := telegram.NewEnvCodeAuthenticatorWithInput("", "", "", strings.NewReader("67890\n"))
 
-	code, err := auth.Code(context.Background())
+	code, err := auth.Code(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestEnvCodeAuthenticator_Code_FromReader(t *testing.T) {
 func TestEnvCodeAuthenticator_Code_EmptyReader(t *testing.T) {
 	auth := telegram.NewEnvCodeAuthenticatorWithInput("", "", "", strings.NewReader(""))
 
-	_, err := auth.Code(context.Background())
+	_, err := auth.Code(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for empty reader")
 	}

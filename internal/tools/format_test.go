@@ -7,8 +7,6 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
-const unknownTimestamp = "unknown"
-
 func TestFormatTimestamp(t *testing.T) {
 	got := formatTimestamp(1700000000)
 	want := "2023-11-14T22:13:20Z"
@@ -20,7 +18,7 @@ func TestFormatTimestamp(t *testing.T) {
 
 func TestFormatTimestamp_Zero(t *testing.T) {
 	got := formatTimestamp(0)
-	want := unknownTimestamp
+	want := unknownValue
 
 	if got != want {
 		t.Errorf("formatTimestamp(0) = %q, want %q", got, want)

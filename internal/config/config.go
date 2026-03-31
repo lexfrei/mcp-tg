@@ -42,43 +42,19 @@ type Config struct {
 
 // Load reads configuration from environment variables and returns a Config.
 func Load() (*Config, error) {
-	appIDStr := os.Getenv("TELEGRAM_APP_ID")
-	if appIDStr == "" {
-		return nil, ErrAppIDRequired
+	appID, err := loadAppID()
+	if err != nil {
+		return nil, err
 	}
 
-	appID, err := strconv.Atoi(appIDStr)
-	if err != nil || appID < 1 {
-		return nil, ErrInvalidAppID
+	appHash, err := loadAppHash()
+	if err != nil {
+		return nil, err
 	}
 
-	appHash := os.Getenv("TELEGRAM_APP_HASH")
-	if appHash == "" {
-		return nil, ErrAppHashRequired
-	}
-
-	sessionFile := os.Getenv("TELEGRAM_SESSION_FILE")
-	if sessionFile == "" {
-		home, _ := os.UserHomeDir()
-		sessionFile = filepath.Join(home, defaultDir, "session.json")
-	}
-
-	downloadDir := os.Getenv("TELEGRAM_DOWNLOAD_DIR")
-	if downloadDir == "" {
-		downloadDir = filepath.Join(os.TempDir(), "mcp-tg", "downloads")
-	}
-
-	httpPort := os.Getenv("MCP_HTTP_PORT")
-	if httpPort != "" {
-		port, portErr := strconv.Atoi(httpPort)
-		if portErr != nil || port < 1 || port > maxPort {
-			return nil, ErrInvalidHTTPPort
-		}
-	}
-
-	httpHost := os.Getenv("MCP_HTTP_HOST")
-	if httpHost == "" {
-		httpHost = "127.0.0.1"
+	httpPort, err := loadHTTPPort()
+	if err != nil {
+		return nil, err
 	}
 
 	return &Config{
@@ -86,25 +62,91 @@ func Load() (*Config, error) {
 		AppHash:     appHash,
 		Phone:       os.Getenv("TELEGRAM_PHONE"),
 		Password:    os.Getenv("TELEGRAM_PASSWORD"),
-		SessionFile: sessionFile,
+		SessionFile: loadSessionFile(),
 		AuthCode:    os.Getenv("TELEGRAM_AUTH_CODE"),
-		DownloadDir: downloadDir,
+		DownloadDir: loadDownloadDir(),
 		HTTPPort:    httpPort,
-		HTTPHost:    httpHost,
+		HTTPHost:    loadHTTPHost(),
 	}, nil
 }
 
 // HasPassword returns true if a 2FA password is configured.
-func (c *Config) HasPassword() bool {
-	return c.Password != ""
+func (cfg *Config) HasPassword() bool {
+	return cfg.Password != ""
 }
 
 // HTTPEnabled returns true if HTTP transport should be enabled.
-func (c *Config) HTTPEnabled() bool {
-	return c.HTTPPort != ""
+func (cfg *Config) HTTPEnabled() bool {
+	return cfg.HTTPPort != ""
 }
 
 // HTTPAddr returns the full host:port address for the HTTP server.
-func (c *Config) HTTPAddr() string {
-	return net.JoinHostPort(c.HTTPHost, c.HTTPPort)
+func (cfg *Config) HTTPAddr() string {
+	return net.JoinHostPort(cfg.HTTPHost, cfg.HTTPPort)
+}
+
+func loadAppID() (int, error) {
+	raw := os.Getenv("TELEGRAM_APP_ID")
+	if raw == "" {
+		return 0, ErrAppIDRequired
+	}
+
+	appID, err := strconv.Atoi(raw)
+	if err != nil || appID < 1 {
+		return 0, ErrInvalidAppID
+	}
+
+	return appID, nil
+}
+
+func loadAppHash() (string, error) {
+	appHash := os.Getenv("TELEGRAM_APP_HASH")
+	if appHash == "" {
+		return "", ErrAppHashRequired
+	}
+
+	return appHash, nil
+}
+
+func loadSessionFile() string {
+	sessionFile := os.Getenv("TELEGRAM_SESSION_FILE")
+	if sessionFile != "" {
+		return sessionFile
+	}
+
+	home, _ := os.UserHomeDir()
+
+	return filepath.Join(home, defaultDir, "session.json")
+}
+
+func loadDownloadDir() string {
+	dir := os.Getenv("TELEGRAM_DOWNLOAD_DIR")
+	if dir != "" {
+		return dir
+	}
+
+	return filepath.Join(os.TempDir(), "mcp-tg", "downloads")
+}
+
+func loadHTTPPort() (string, error) {
+	httpPort := os.Getenv("MCP_HTTP_PORT")
+	if httpPort == "" {
+		return "", nil
+	}
+
+	port, err := strconv.Atoi(httpPort)
+	if err != nil || port < 1 || port > maxPort {
+		return "", ErrInvalidHTTPPort
+	}
+
+	return httpPort, nil
+}
+
+func loadHTTPHost() string {
+	host := os.Getenv("MCP_HTTP_HOST")
+	if host != "" {
+		return host
+	}
+
+	return "127.0.0.1"
 }

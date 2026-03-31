@@ -59,32 +59,32 @@ func EmptyTermsOfService() tg.HelpTermsOfService {
 }
 
 // Phone returns the phone number for authentication.
-func (a *EnvCodeAuthenticator) Phone(_ context.Context) (string, error) {
-	if a.phone != "" {
-		return a.phone, nil
+func (eca *EnvCodeAuthenticator) Phone(_ context.Context) (string, error) {
+	if eca.phone != "" {
+		return eca.phone, nil
 	}
 
 	return "", ErrPhoneRequired
 }
 
 // Password returns the 2FA password.
-func (a *EnvCodeAuthenticator) Password(_ context.Context) (string, error) {
-	if a.password != "" {
-		return a.password, nil
+func (eca *EnvCodeAuthenticator) Password(_ context.Context) (string, error) {
+	if eca.password != "" {
+		return eca.password, nil
 	}
 
 	return "", ErrPasswordRequired
 }
 
 // Code returns the authentication code from env var or stdin prompt.
-func (a *EnvCodeAuthenticator) Code(_ context.Context, _ *tg.AuthSentCode) (string, error) {
-	if a.code != "" {
-		return a.code, nil
+func (eca *EnvCodeAuthenticator) Code(_ context.Context, _ *tg.AuthSentCode) (string, error) {
+	if eca.code != "" {
+		return eca.code, nil
 	}
 
 	_, _ = os.Stderr.WriteString("Enter authentication code: ")
 
-	scanner := bufio.NewScanner(a.input)
+	scanner := bufio.NewScanner(eca.input)
 	if scanner.Scan() {
 		return strings.TrimSpace(scanner.Text()), nil
 	}
@@ -98,11 +98,11 @@ func (a *EnvCodeAuthenticator) Code(_ context.Context, _ *tg.AuthSentCode) (stri
 }
 
 // AcceptTermsOfService always accepts the ToS.
-func (a *EnvCodeAuthenticator) AcceptTermsOfService(_ context.Context, _ tg.HelpTermsOfService) error {
+func (eca *EnvCodeAuthenticator) AcceptTermsOfService(_ context.Context, _ tg.HelpTermsOfService) error {
 	return nil
 }
 
 // SignUp is not supported; we require an existing account.
-func (a *EnvCodeAuthenticator) SignUp(_ context.Context) (auth.UserInfo, error) {
+func (eca *EnvCodeAuthenticator) SignUp(_ context.Context) (auth.UserInfo, error) {
 	return auth.UserInfo{}, ErrSignUpNotSupported
 }

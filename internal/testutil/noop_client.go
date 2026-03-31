@@ -28,11 +28,11 @@ func (NoopClient) SearchMessages(_ context.Context, _ telegram.InputPeer, _ stri
 }
 
 func (NoopClient) SendMessage(_ context.Context, _ telegram.InputPeer, _ string, _ telegram.SendOpts) (*telegram.Message, error) {
-	return nil, nil //nolint:nilnil // noop client returns zero values by design.
+	return nil, nil
 }
 
 func (NoopClient) EditMessage(_ context.Context, _ telegram.InputPeer, _ int, _ string) (*telegram.Message, error) {
-	return nil, nil //nolint:nilnil // noop client returns zero values by design.
+	return nil, nil
 }
 
 func (NoopClient) DeleteMessages(_ context.Context, _ telegram.InputPeer, _ []int, _ bool) error {
@@ -56,7 +56,7 @@ func (NoopClient) MarkRead(_ context.Context, _ telegram.InputPeer, _ int) error
 }
 
 func (NoopClient) SendFile(_ context.Context, _ telegram.InputPeer, _, _ string) (*telegram.Message, error) {
-	return nil, nil //nolint:nilnil // noop client returns zero values by design.
+	return nil, nil
 }
 
 func (NoopClient) SendAlbum(_ context.Context, _ telegram.InputPeer, _ []string, _ string) ([]telegram.Message, error) {

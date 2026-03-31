@@ -410,22 +410,35 @@ func messageFromUpdate(result tg.UpdatesClass) *Message {
 			Date: upd.Date,
 		}
 	case *tg.Updates:
-		for _, update := range upd.Updates {
-			if newMsg, ok := update.(*tg.UpdateNewMessage); ok {
-				if msg, ok := newMsg.Message.(*tg.Message); ok {
-					converted := ConvertMessage(msg)
+		return firstMessageFromUpdates(upd.Updates)
+	}
 
-					return &converted
-				}
-			}
+	return nil
+}
 
-			if newMsg, ok := update.(*tg.UpdateNewChannelMessage); ok {
-				if msg, ok := newMsg.Message.(*tg.Message); ok {
-					converted := ConvertMessage(msg)
+func firstMessageFromUpdates(updates []tg.UpdateClass) *Message {
+	for _, update := range updates {
+		if msg := extractMessageFromUpdate(update); msg != nil {
+			return msg
+		}
+	}
 
-					return &converted
-				}
-			}
+	return nil
+}
+
+func extractMessageFromUpdate(update tg.UpdateClass) *Message {
+	switch upd := update.(type) {
+	case *tg.UpdateNewMessage:
+		if msg, ok := upd.Message.(*tg.Message); ok {
+			converted := ConvertMessage(msg)
+
+			return &converted
+		}
+	case *tg.UpdateNewChannelMessage:
+		if msg, ok := upd.Message.(*tg.Message); ok {
+			converted := ConvertMessage(msg)
+
+			return &converted
 		}
 	}
 

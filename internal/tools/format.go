@@ -7,10 +7,18 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
+const (
+	unknownValue = "unknown"
+	peerUser     = "user"
+	peerChannel  = "channel"
+	peerGroup    = "group"
+	maxTextLen   = 100
+)
+
 // formatTimestamp converts a Unix timestamp to a human-readable string.
 func formatTimestamp(unix int) string {
 	if unix == 0 {
-		return "unknown"
+		return unknownValue
 	}
 
 	return time.Unix(int64(unix), 0).UTC().Format(time.RFC3339)
@@ -19,8 +27,8 @@ func formatTimestamp(unix int) string {
 // formatMessage returns a single-line summary of a message.
 func formatMessage(msg *telegram.Message) string {
 	text := msg.Text
-	if len(text) > 100 {
-		text = text[:100] + "..."
+	if len(text) > maxTextLen {
+		text = text[:maxTextLen] + "..."
 	}
 
 	timestamp := formatTimestamp(msg.Date)
@@ -34,11 +42,11 @@ func formatMessage(msg *telegram.Message) string {
 
 // formatDialog returns a single-line summary of a dialog.
 func formatDialog(dlg *telegram.Dialog) string {
-	peerType := "user"
+	peerType := peerUser
 	if dlg.IsChannel {
-		peerType = "channel"
+		peerType = peerChannel
 	} else if dlg.IsGroup {
-		peerType = "group"
+		peerType = peerGroup
 	}
 
 	unread := ""

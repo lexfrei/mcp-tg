@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -47,38 +48,51 @@ func NewMessagesContextHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 				telegramErr("failed to resolve peer", err)
 		}
 
-		radius := deref(params.Radius)
-		if radius <= 0 {
-			radius = defaultContextRadius
-		}
-
-		opts := telegram.HistoryOpts{
-			Limit:    radius*2 + 1,
-			OffsetID: params.MessageID + radius,
-		}
-
-		msgs, _, err := client.GetHistory(ctx, peer, opts)
+		msgs, err := fetchContext(ctx, client, peer, params)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesContextResult{},
 				telegramErr("failed to get message context", err)
 		}
 
-		var buf strings.Builder
-
-		for idx := range msgs {
-			marker := "  "
-			if msgs[idx].ID == params.MessageID {
-				marker = "> "
-			}
-
-			fmt.Fprintf(&buf, "%s%s\n", marker, formatMessage(&msgs[idx]))
-		}
-
 		return nil, MessagesContextResult{
 			Count:  len(msgs),
-			Output: buf.String(),
+			Output: formatContextMessages(msgs, params.MessageID),
 		}, nil
 	}
+}
+
+func fetchContext(ctx context.Context, client telegram.Client, peer telegram.InputPeer, params MessagesContextParams) ([]telegram.Message, error) {
+	radius := deref(params.Radius)
+	if radius <= 0 {
+		radius = defaultContextRadius
+	}
+
+	opts := telegram.HistoryOpts{
+		Limit:    radius*2 + 1,
+		OffsetID: params.MessageID + radius,
+	}
+
+	msgs, _, err := client.GetHistory(ctx, peer, opts)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting history")
+	}
+
+	return msgs, nil
+}
+
+func formatContextMessages(msgs []telegram.Message, targetID int) string {
+	var buf strings.Builder
+
+	for idx := range msgs {
+		marker := "  "
+		if msgs[idx].ID == targetID {
+			marker = "> "
+		}
+
+		fmt.Fprintf(&buf, "%s%s\n", marker, formatMessage(&msgs[idx]))
+	}
+
+	return buf.String()
 }
 
 // MessagesContextTool returns the MCP tool definition for tg_messages_context.

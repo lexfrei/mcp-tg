@@ -5,21 +5,16 @@ linters:
   disable:
     - depguard
     - exhaustruct
-    - gochecknoinits
-    - wsl
-    - lll
-    - errchkjson
     - ireturn
   settings:
     dupl:
-      threshold: 150
+      threshold: 100
     goconst:
       min-len: 2
-      min-occurrences: 3
+      min-occurrences: 2
     gocritic:
       disabled-checks:
         - dupImport
-        - unnamedResult
       enabled-tags:
         - diagnostic
         - experimental
@@ -27,22 +22,23 @@ linters:
         - performance
         - style
     funlen:
-      lines: 60
-      statements: 60
+      lines: 50
+      statements: 40
     gocyclo:
-      min-complexity: 15
+      min-complexity: 10
     cyclop:
-      max-complexity: 15
+      max-complexity: 10
+    gocognit:
+      min-complexity: 15
+    lll:
+      line-length: 140
     mnd:
       ignored-numbers:
+        - "0"
+        - "1"
+        - "2"
         - "10"
         - "100"
-        - "1000"
-        - "2"
-        - "60"
-        - "60.0"
-        - "64"
-        - "500"
     nolintlint:
       require-explanation: true
       require-specific: true
@@ -50,7 +46,7 @@ linters:
     varnamelen:
       max-distance: 5
       min-name-length: 3
-      check-receiver: false
+      check-receiver: true
       check-return: false
       ignore-type-assert-ok: false
       ignore-map-index-ok: false
@@ -73,7 +69,6 @@ linters:
   exclusions:
     generated: lax
     presets:
-      - comments
       - common-false-positives
       - legacy
       - std-error-handling
@@ -107,6 +102,7 @@ linters:
           - godox
           - revive
           - gochecknoglobals
+          - exhaustruct
         path: _test\.go
       - linters:
           - gochecknoglobals
@@ -120,6 +116,7 @@ linters:
         path: cmd/
       - linters:
           - nilnil
+          - revive
         path: internal/testutil/
 formatters:
   enable:

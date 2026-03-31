@@ -61,7 +61,9 @@ func NewMessagesContextHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 	}
 }
 
-func fetchContext(ctx context.Context, client telegram.Client, peer telegram.InputPeer, params MessagesContextParams) ([]telegram.Message, error) {
+func fetchContext(
+	ctx context.Context, client telegram.Client, peer telegram.InputPeer, params MessagesContextParams,
+) ([]telegram.Message, error) {
 	radius := deref(params.Radius)
 	if radius <= 0 {
 		radius = defaultContextRadius

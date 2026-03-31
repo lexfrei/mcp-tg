@@ -14,8 +14,9 @@ type GroupsLeaveParams struct {
 
 // GroupsLeaveResult is the output of the tg_groups_leave tool.
 type GroupsLeaveResult struct {
-	Peer   string `json:"peer"`
-	Output string `json:"output"`
+	Peer    string `json:"peer"`
+	Success bool   `json:"success"`
+	Output  string `json:"output"`
 }
 
 // NewGroupsLeaveHandler creates a handler for the tg_groups_leave tool.
@@ -43,8 +44,9 @@ func NewGroupsLeaveHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsLeav
 		}
 
 		return nil, GroupsLeaveResult{
-			Peer:   params.Peer,
-			Output: "Left group " + params.Peer,
+			Peer:    params.Peer,
+			Success: true,
+			Output:  "Left group " + params.Peer,
 		}, nil
 	}
 }

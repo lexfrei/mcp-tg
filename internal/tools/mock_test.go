@@ -55,7 +55,9 @@ func (m *mockClient) GetHistory(_ context.Context, peer telegram.InputPeer, _ te
 	return m.messages, m.total, m.err
 }
 
-func (m *mockClient) SearchMessages(_ context.Context, peer telegram.InputPeer, query string, _ telegram.SearchOpts) ([]telegram.Message, error) {
+func (m *mockClient) SearchMessages(
+	_ context.Context, peer telegram.InputPeer, query string, _ telegram.SearchOpts,
+) ([]telegram.Message, error) {
 	m.lastPeer = peer
 	m.lastQuery = query
 

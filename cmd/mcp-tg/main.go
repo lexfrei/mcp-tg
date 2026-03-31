@@ -1,3 +1,4 @@
+// Package main provides the entry point for the mcp-tg MCP server.
 package main
 
 import (

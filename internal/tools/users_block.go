@@ -59,5 +59,6 @@ func UsersBlockTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_users_block",
 		Description: "Block or unblock a Telegram user",
+		Annotations: destructiveAnnotations(),
 	}
 }

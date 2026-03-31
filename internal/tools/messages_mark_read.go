@@ -59,5 +59,6 @@ func MessagesMarkReadTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_mark_read",
 		Description: "Mark messages as read in a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }

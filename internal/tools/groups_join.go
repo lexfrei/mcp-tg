@@ -52,5 +52,6 @@ func GroupsJoinTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_join",
 		Description: "Join a Telegram group by ID, @username, or invite link",
+		Annotations: idempotentAnnotations(),
 	}
 }

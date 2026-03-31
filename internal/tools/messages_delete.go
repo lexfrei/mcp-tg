@@ -67,5 +67,6 @@ func MessagesDeleteTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_delete",
 		Description: "Delete messages from a Telegram chat",
+		Annotations: destructiveAnnotations(),
 	}
 }

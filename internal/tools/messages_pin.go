@@ -67,5 +67,6 @@ func MessagesPinTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_pin",
 		Description: "Pin or unpin a message in a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }

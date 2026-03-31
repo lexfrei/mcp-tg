@@ -65,5 +65,6 @@ func ContactsGetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_contacts_get",
 		Description: "Get information about a Telegram contact",
+		Annotations: readOnlyAnnotations(),
 	}
 }

@@ -77,5 +77,6 @@ func MediaDownloadTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_media_download",
 		Description: "Download media from a Telegram message to a local file",
+		Annotations: readOnlyAnnotations(),
 	}
 }

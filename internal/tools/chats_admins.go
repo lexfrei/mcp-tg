@@ -62,5 +62,6 @@ func ChatsAdminsTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_get_admins",
 		Description: "Get the list of administrators in a Telegram chat or channel",
+		Annotations: readOnlyAnnotations(),
 	}
 }

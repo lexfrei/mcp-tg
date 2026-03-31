@@ -73,5 +73,6 @@ func GroupsRenameTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_rename",
 		Description: "Rename a Telegram group",
+		Annotations: idempotentAnnotations(),
 	}
 }

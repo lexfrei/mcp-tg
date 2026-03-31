@@ -72,5 +72,6 @@ func MessagesEditTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_edit",
 		Description: "Edit an existing message in a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }

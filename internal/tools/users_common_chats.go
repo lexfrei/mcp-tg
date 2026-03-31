@@ -62,5 +62,6 @@ func UsersCommonChatsTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_users_get_common_chats",
 		Description: "Get chats in common with a Telegram user",
+		Annotations: readOnlyAnnotations(),
 	}
 }

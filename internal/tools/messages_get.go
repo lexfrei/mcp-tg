@@ -68,5 +68,6 @@ func MessagesGetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_get",
 		Description: "Get specific messages by their IDs from a Telegram chat",
+		Annotations: readOnlyAnnotations(),
 	}
 }

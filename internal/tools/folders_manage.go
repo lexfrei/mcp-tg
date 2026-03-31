@@ -69,6 +69,7 @@ func FoldersCreateTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_folders_create",
 		Description: "Create a new Telegram chat folder",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -131,6 +132,7 @@ func FoldersEditTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_folders_edit",
 		Description: "Edit a Telegram chat folder's title and included peers",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -177,5 +179,6 @@ func FoldersDeleteTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_folders_delete",
 		Description: "Delete a Telegram chat folder",
+		Annotations: destructiveAnnotations(),
 	}
 }

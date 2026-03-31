@@ -68,5 +68,6 @@ func MessagesForwardTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_forward",
 		Description: "Forward messages from one Telegram chat to another",
+		Annotations: idempotentAnnotations(),
 	}
 }

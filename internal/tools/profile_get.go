@@ -51,5 +51,6 @@ func ProfileGetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_profile_get",
 		Description: "Get the authenticated user's Telegram profile information",
+		Annotations: readOnlyAnnotations(),
 	}
 }

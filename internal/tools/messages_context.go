@@ -102,5 +102,6 @@ func MessagesContextTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_context",
 		Description: "Get messages around a specific message in a Telegram chat",
+		Annotations: readOnlyAnnotations(),
 	}
 }

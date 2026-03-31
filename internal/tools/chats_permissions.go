@@ -88,5 +88,6 @@ func ChatsPermissionsTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_set_permissions",
 		Description: "Set default chat permissions for a Telegram group or channel",
+		Annotations: idempotentAnnotations(),
 	}
 }

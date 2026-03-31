@@ -65,5 +65,6 @@ func UsersPhotosTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_users_get_photos",
 		Description: "Get profile photos of a Telegram user",
+		Annotations: readOnlyAnnotations(),
 	}
 }

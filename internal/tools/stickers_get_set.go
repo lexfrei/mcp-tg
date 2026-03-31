@@ -60,5 +60,6 @@ func StickersGetSetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_stickers_get_set",
 		Description: "Get details and sticker list for a Telegram sticker set",
+		Annotations: readOnlyAnnotations(),
 	}
 }

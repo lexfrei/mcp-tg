@@ -71,5 +71,6 @@ func TopicsSearchTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_topics_search",
 		Description: "Search forum topics by title in a Telegram supergroup",
+		Annotations: readOnlyAnnotations(),
 	}
 }

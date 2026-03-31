@@ -48,5 +48,6 @@ func OnlineStatusSetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_online_status_set",
 		Description: "Set the authenticated user's online or offline status",
+		Annotations: idempotentAnnotations(),
 	}
 }

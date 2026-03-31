@@ -87,5 +87,6 @@ func ChatsCreateTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_create",
 		Description: "Create a new Telegram group or channel",
+		Annotations: idempotentAnnotations(),
 	}
 }

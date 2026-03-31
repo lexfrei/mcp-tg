@@ -60,5 +60,6 @@ func TypingSendTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_typing_send",
 		Description: "Send a typing indicator to a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }

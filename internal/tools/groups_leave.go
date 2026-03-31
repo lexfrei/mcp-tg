@@ -56,5 +56,6 @@ func GroupsLeaveTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_leave",
 		Description: "Leave a Telegram group or supergroup",
+		Annotations: destructiveAnnotations(),
 	}
 }

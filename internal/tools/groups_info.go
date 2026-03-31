@@ -70,5 +70,6 @@ func GroupsInfoTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_info",
 		Description: "Get detailed information about a Telegram group",
+		Annotations: readOnlyAnnotations(),
 	}
 }

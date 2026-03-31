@@ -64,6 +64,7 @@ func ChatsSetPhotoTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_set_photo",
 		Description: "Set the photo of a Telegram chat, group, or channel",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -121,5 +122,6 @@ func ChatsSetDescriptionTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_set_description",
 		Description: "Set the description (about text) of a Telegram chat, group, or channel",
+		Annotations: idempotentAnnotations(),
 	}
 }

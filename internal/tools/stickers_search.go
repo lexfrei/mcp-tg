@@ -56,5 +56,6 @@ func StickersSearchTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_stickers_search",
 		Description: "Search for Telegram sticker sets by keyword",
+		Annotations: readOnlyAnnotations(),
 	}
 }

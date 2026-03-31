@@ -70,5 +70,6 @@ func TopicsListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_topics_list",
 		Description: "List forum topics in a Telegram supergroup",
+		Annotations: readOnlyAnnotations(),
 	}
 }

@@ -28,6 +28,7 @@ const (
 	serverName        = "mcp-tg"
 	readHeaderTimeout = 10 * time.Second
 	shutdownTimeout   = 5 * time.Second
+	keepAliveInterval = 30 * time.Second
 )
 
 var (
@@ -112,6 +113,7 @@ func newServerOptions() *mcp.ServerOptions {
 		Logger: slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		})),
+		KeepAlive: keepAliveInterval,
 	}
 }
 

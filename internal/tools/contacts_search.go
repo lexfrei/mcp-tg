@@ -59,5 +59,6 @@ func ContactsSearchTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_contacts_search",
 		Description: "Search Telegram contacts by query",
+		Annotations: readOnlyAnnotations(),
 	}
 }

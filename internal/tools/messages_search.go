@@ -71,5 +71,6 @@ func MessagesSearchTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_search",
 		Description: "Search for messages in a Telegram chat",
+		Annotations: readOnlyAnnotations(),
 	}
 }

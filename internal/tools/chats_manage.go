@@ -66,6 +66,7 @@ func ChatsArchiveTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_archive",
 		Description: "Archive or unarchive a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -126,6 +127,7 @@ func ChatsMuteTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_mute",
 		Description: "Mute or unmute notifications for a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -176,5 +178,6 @@ func ChatsDeleteTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_delete",
 		Description: "Delete a Telegram chat and clear its history",
+		Annotations: destructiveAnnotations(),
 	}
 }

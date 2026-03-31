@@ -69,6 +69,7 @@ func GroupsMembersAddTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_members_add",
 		Description: "Add a user to a Telegram group",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -131,5 +132,6 @@ func GroupsMembersRemoveTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_members_remove",
 		Description: "Remove a user from a Telegram group",
+		Annotations: destructiveAnnotations(),
 	}
 }

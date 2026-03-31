@@ -61,5 +61,6 @@ func DialogsGetInfoTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_dialogs_get_info",
 		Description: "Get metadata about a Telegram chat, group, or channel",
+		Annotations: readOnlyAnnotations(),
 	}
 }

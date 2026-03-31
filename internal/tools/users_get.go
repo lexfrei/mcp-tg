@@ -69,5 +69,6 @@ func UsersGetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_users_get",
 		Description: "Get detailed information about a Telegram user",
+		Annotations: readOnlyAnnotations(),
 	}
 }

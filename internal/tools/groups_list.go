@@ -61,5 +61,6 @@ func GroupsListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_list",
 		Description: "List all Telegram groups from the dialog list",
+		Annotations: readOnlyAnnotations(),
 	}
 }

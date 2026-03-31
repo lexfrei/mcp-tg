@@ -69,5 +69,6 @@ func MessagesSendTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_send",
 		Description: "Send a text message to a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }

@@ -56,5 +56,6 @@ func DialogsSearchTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_dialogs_search",
 		Description: "Search Telegram dialogs by query",
+		Annotations: readOnlyAnnotations(),
 	}
 }

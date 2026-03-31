@@ -53,5 +53,6 @@ func DialogsListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_dialogs_list",
 		Description: "List all Telegram dialogs (chats, groups, channels)",
+		Annotations: readOnlyAnnotations(),
 	}
 }

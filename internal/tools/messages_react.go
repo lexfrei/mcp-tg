@@ -68,5 +68,6 @@ func MessagesReactTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_react",
 		Description: "Add or remove a reaction on a Telegram message",
+		Annotations: idempotentAnnotations(),
 	}
 }

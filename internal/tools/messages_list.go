@@ -71,5 +71,6 @@ func MessagesListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_list",
 		Description: "List messages in a Telegram chat",
+		Annotations: readOnlyAnnotations(),
 	}
 }

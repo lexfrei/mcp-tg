@@ -51,5 +51,6 @@ func MediaUploadTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_media_upload",
 		Description: "Upload a local file to Telegram and return its metadata",
+		Annotations: idempotentAnnotations(),
 	}
 }

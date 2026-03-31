@@ -49,5 +49,6 @@ func FoldersListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_folders_list",
 		Description: "List all Telegram chat folders",
+		Annotations: readOnlyAnnotations(),
 	}
 }

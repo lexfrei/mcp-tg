@@ -54,6 +54,7 @@ func GroupsInviteLinkGetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_invite_link_get",
 		Description: "Get the invite link for a Telegram group",
+		Annotations: readOnlyAnnotations(),
 	}
 }
 
@@ -112,5 +113,6 @@ func GroupsInviteLinkRevokeTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_invite_link_revoke",
 		Description: "Revoke an invite link for a Telegram group",
+		Annotations: idempotentAnnotations(),
 	}
 }

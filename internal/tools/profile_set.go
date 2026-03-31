@@ -53,6 +53,7 @@ func ProfileSetNameTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_profile_set_name",
 		Description: "Set the authenticated user's first and last name",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -94,6 +95,7 @@ func ProfileSetBioTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_profile_set_bio",
 		Description: "Set the authenticated user's bio text",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -138,5 +140,6 @@ func ProfileSetPhotoTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_profile_set_photo",
 		Description: "Set the authenticated user's profile photo",
+		Annotations: idempotentAnnotations(),
 	}
 }

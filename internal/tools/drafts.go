@@ -63,6 +63,7 @@ func DraftsSetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_drafts_set",
 		Description: "Set a draft message in a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }
 
@@ -115,5 +116,6 @@ func DraftsClearTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_drafts_clear",
 		Description: "Clear the draft message in a Telegram chat",
+		Annotations: idempotentAnnotations(),
 	}
 }

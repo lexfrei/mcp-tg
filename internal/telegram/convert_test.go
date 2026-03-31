@@ -69,6 +69,24 @@ func TestConvertMessage(t *testing.T) {
 	}
 }
 
+func TestConvertMessage_WithPeerID(t *testing.T) {
+	raw := &tg.Message{
+		ID:     99,
+		Date:   1700000000,
+		PeerID: &tg.PeerChannel{ChannelID: 555},
+	}
+
+	got := ConvertMessage(raw)
+
+	if got.PeerID.Type != PeerChannel {
+		t.Errorf("PeerID.Type = %d, want PeerChannel", got.PeerID.Type)
+	}
+
+	if got.PeerID.ID != 555 {
+		t.Errorf("PeerID.ID = %d, want 555", got.PeerID.ID)
+	}
+}
+
 func TestConvertMessage_Nil(t *testing.T) {
 	got := ConvertMessage(nil)
 

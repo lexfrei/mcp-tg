@@ -34,10 +34,28 @@ func ConvertMessage(raw *tg.Message) Message {
 		MediaType: MessageMediaType(raw.Media),
 	}
 
+	msg.PeerID = extractPeerID(raw.PeerID)
 	msg.FromID = extractFromID(raw.FromID)
 	msg.ReplyTo = extractReplyTo(raw.ReplyTo)
 
 	return msg
+}
+
+func extractPeerID(peer tg.PeerClass) InputPeer {
+	if peer == nil {
+		return InputPeer{}
+	}
+
+	switch typed := peer.(type) {
+	case *tg.PeerUser:
+		return InputPeer{Type: PeerUser, ID: typed.UserID}
+	case *tg.PeerChat:
+		return InputPeer{Type: PeerChat, ID: typed.ChatID}
+	case *tg.PeerChannel:
+		return InputPeer{Type: PeerChannel, ID: typed.ChannelID}
+	default:
+		return InputPeer{}
+	}
 }
 
 func extractFromID(from tg.PeerClass) int64 {

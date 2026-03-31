@@ -118,6 +118,9 @@ linters:
           - noinlineerr
           - mnd
         path: cmd/
+      - linters:
+          - nilnil
+        path: internal/testutil/
 formatters:
   enable:
     - gofmt

@@ -38,6 +38,11 @@ func NewMessagesReactHandler(client telegram.Client) mcp.ToolHandlerFor[Messages
 				validationErr(ErrMessageIDRequired)
 		}
 
+		if params.Emoji == "" {
+			return &mcp.CallToolResult{IsError: true}, MessagesReactResult{},
+				validationErr(ErrEmojiRequired)
+		}
+
 		peer, err := client.ResolvePeer(ctx, params.Peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesReactResult{},

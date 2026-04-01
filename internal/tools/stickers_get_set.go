@@ -44,7 +44,7 @@ func NewStickersGetSetHandler(client telegram.Client) mcp.ToolHandlerFor[Sticker
 		fmt.Fprintf(&buf, "Set: %s (%s) — %d stickers\n", full.Title, full.Name, len(full.Stickers))
 
 		for _, stk := range full.Stickers {
-			fmt.Fprintf(&buf, "  %s fileID:%d (emoji: %s)\n", full.Name, stk.FileID, stk.Emoji)
+			fmt.Fprintf(&buf, "  fileID:%d (emoji: %s)\n", stk.FileID, stk.Emoji)
 		}
 
 		return nil, StickersGetSetResult{

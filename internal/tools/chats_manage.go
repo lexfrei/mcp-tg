@@ -177,7 +177,7 @@ func NewChatsDeleteHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsDelet
 func ChatsDeleteTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_chats_delete",
-		Description: "Delete a Telegram chat and clear its history",
+		Description: "Delete a Telegram channel or supergroup (basic group deletion is not supported by API)",
 		Annotations: destructiveAnnotations(),
 	}
 }

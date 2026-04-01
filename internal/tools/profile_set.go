@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -43,7 +44,7 @@ func NewProfileSetNameHandler(client telegram.Client) mcp.ToolHandlerFor[Profile
 		return nil, ProfileSetNameResult{
 			FirstName: params.FirstName,
 			LastName:  params.LastName,
-			Output:    "Updated profile name to " + params.FirstName + " " + params.LastName,
+			Output:    "Updated profile name to " + strings.TrimSpace(params.FirstName+" "+params.LastName),
 		}, nil
 	}
 }

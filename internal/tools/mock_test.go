@@ -82,8 +82,8 @@ func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, 
 	return m.err
 }
 
-func (m *mockClient) ForwardMessages(_ context.Context, _, to telegram.InputPeer, _ []int) ([]telegram.Message, error) {
-	m.lastPeer = to
+func (m *mockClient) ForwardMessages(_ context.Context, _, dest telegram.InputPeer, _ []int) ([]telegram.Message, error) {
+	m.lastPeer = dest
 
 	return m.messages, m.err
 }

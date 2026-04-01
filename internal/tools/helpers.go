@@ -18,6 +18,15 @@ func deref[T any](ptr *T) T {
 	return *ptr
 }
 
+// validateLimit returns an error if limit is negative.
+func validateLimit(limit int) error {
+	if limit < 0 {
+		return ErrNegativeLimit
+	}
+
+	return nil
+}
+
 // formatPeer returns a human-readable string for an InputPeer.
 func formatPeer(peer telegram.InputPeer) string {
 	switch peer.Type {

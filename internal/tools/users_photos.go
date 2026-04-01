@@ -41,6 +41,12 @@ func NewUsersPhotosHandler(client telegram.Client) mcp.ToolHandlerFor[UsersPhoto
 
 		limit := deref(params.Limit)
 
+		limitErr := validateLimit(limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, UsersPhotosResult{},
+				validationErr(limitErr)
+		}
+
 		photos, err := client.GetUserPhotos(ctx, peer, limit)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, UsersPhotosResult{},

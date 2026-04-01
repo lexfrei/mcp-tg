@@ -41,8 +41,16 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 				telegramErr("failed to resolve peer", err)
 		}
 
+		limit := deref(params.Limit)
+
+		limitErr := validateLimit(limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
+				validationErr(limitErr)
+		}
+
 		opts := telegram.HistoryOpts{
-			Limit:    deref(params.Limit),
+			Limit:    limit,
 			OffsetID: deref(params.OffsetID),
 		}
 

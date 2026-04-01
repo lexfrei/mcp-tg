@@ -2,31 +2,58 @@ package telegram
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"os"
 	"path/filepath"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/telegram/downloader"
-	"github.com/gotd/td/telegram/message"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
 )
 
 // Wrapper implements Client using gotd/td.
 type Wrapper struct {
-	api    *tg.Client
-	sender *message.Sender
-	up     *uploader.Uploader
-	down   *downloader.Downloader
+	api  *tg.Client
+	up   *uploader.Uploader
+	down *downloader.Downloader
+}
+
+// cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
+// Telegram requires a unique RandomID per request to prevent duplicate sends on retry.
+func cryptoRandID() (int64, error) {
+	var buf [8]byte
+
+	_, err := rand.Read(buf[:])
+	if err != nil {
+		return 0, errors.Wrap(err, "generating random ID")
+	}
+
+	return int64(binary.LittleEndian.Uint64(buf[:])), nil //nolint:gosec // Intentional: RandomID is opaque, overflow is harmless.
+}
+
+func cryptoRandIDs(count int) ([]int64, error) {
+	ids := make([]int64, count)
+
+	for idx := range ids {
+		randID, err := cryptoRandID()
+		if err != nil {
+			return nil, err
+		}
+
+		ids[idx] = randID
+	}
+
+	return ids, nil
 }
 
 // NewWrapper creates a new Wrapper around gotd/td client primitives.
 func NewWrapper(api *tg.Client) *Wrapper {
 	return &Wrapper{
-		api:    api,
-		sender: message.NewSender(api),
-		up:     uploader.NewUploader(api),
-		down:   downloader.NewDownloader(),
+		api:  api,
+		up:   uploader.NewUploader(api),
+		down: downloader.NewDownloader(),
 	}
 }
 
@@ -173,9 +200,15 @@ func (w *Wrapper) SearchMessages(ctx context.Context, peer InputPeer, query stri
 
 // SendMessage sends a text message.
 func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, opts SendOpts) (*Message, error) {
+	randID, err := cryptoRandID()
+	if err != nil {
+		return nil, err
+	}
+
 	req := &tg.MessagesSendMessageRequest{
-		Peer:    InputPeerToTG(peer),
-		Message: text,
+		Peer:     InputPeerToTG(peer),
+		Message:  text,
+		RandomID: randID,
 	}
 
 	if opts.ReplyTo > 0 {
@@ -224,11 +257,17 @@ func (w *Wrapper) DeleteMessages(ctx context.Context, peer InputPeer, ids []int,
 }
 
 // ForwardMessages forwards messages from one chat to another.
-func (w *Wrapper) ForwardMessages(ctx context.Context, from, to InputPeer, ids []int) ([]Message, error) {
+func (w *Wrapper) ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int) ([]Message, error) {
+	randIDs, err := cryptoRandIDs(len(ids))
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := w.api.MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
 		FromPeer: InputPeerToTG(from),
-		ToPeer:   InputPeerToTG(to),
+		ToPeer:   InputPeerToTG(dest),
 		ID:       ids,
+		RandomID: randIDs,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "forwarding messages")
@@ -290,6 +329,11 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, errors.Wrap(err, "uploading file")
 	}
 
+	randID, err := cryptoRandID()
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaUploadedDocument{
@@ -299,7 +343,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 				&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
 			},
 		},
-		Message: caption,
+		Message:  caption,
+		RandomID: randID,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "sending file")
@@ -318,7 +363,13 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 			return nil, errors.Wrapf(err, "uploading file %d", idx)
 		}
 
+		randID, randErr := cryptoRandID()
+		if randErr != nil {
+			return nil, randErr
+		}
+
 		media := tg.InputSingleMedia{
+			RandomID: randID,
 			Media: &tg.InputMediaUploadedDocument{
 				File:     file,
 				MimeType: mimeByPath(path),
@@ -803,11 +854,17 @@ func (w *Wrapper) GetStickerSet(ctx context.Context, name string) (*StickerSetFu
 
 // SendSticker sends a sticker to a chat.
 func (w *Wrapper) SendSticker(ctx context.Context, peer InputPeer, stickerFileID int64) (*Message, error) {
+	randID, err := cryptoRandID()
+	if err != nil {
+		return nil, err
+	}
+
 	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaDocument{
 			ID: &tg.InputDocument{ID: stickerFileID},
 		},
+		RandomID: randID,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "sending sticker")

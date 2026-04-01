@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -48,27 +46,37 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 				telegramErr("failed to resolve peer", err)
 		}
 
-		opts := telegram.SearchOpts{Limit: deref(params.Limit)}
+		limit := deref(params.Limit)
+
+		limitErr := validateLimit(limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{},
+				validationErr(limitErr)
+		}
 
 		notifyProgress(ctx, req.Session, token, 0, 1, "Searching messages")
 
-		msgs, err := client.SearchMessages(ctx, peer, params.Query, opts)
+		result, err := executeSearch(ctx, client, peer, params.Query, limit)
 		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{},
-				telegramErr("failed to search messages", err)
+			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{}, err
 		}
 
-		var buf strings.Builder
-
-		for idx := range msgs {
-			fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
-		}
-
-		return nil, MessagesSearchResult{
-			Count:  len(msgs),
-			Output: buf.String(),
-		}, nil
+		return nil, result, nil
 	}
+}
+
+func executeSearch(
+	ctx context.Context, client telegram.Client, peer telegram.InputPeer, query string, limit int,
+) (MessagesSearchResult, error) {
+	msgs, err := client.SearchMessages(ctx, peer, query, telegram.SearchOpts{Limit: limit})
+	if err != nil {
+		return MessagesSearchResult{}, telegramErr("failed to search messages", err)
+	}
+
+	return MessagesSearchResult{
+		Count:  len(msgs),
+		Output: formatMessages(msgs),
+	}, nil
 }
 
 // MessagesSearchTool returns the MCP tool definition for tg_messages_search.

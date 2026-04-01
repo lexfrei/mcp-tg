@@ -35,6 +35,12 @@ func NewContactsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Contact
 
 		limit := deref(params.Limit)
 
+		limitErr := validateLimit(limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, ContactsSearchResult{},
+				validationErr(limitErr)
+		}
+
 		users, err := client.SearchContacts(ctx, params.Query, limit)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, ContactsSearchResult{},

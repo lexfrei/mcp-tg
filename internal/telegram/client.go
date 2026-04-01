@@ -29,7 +29,7 @@ type MessageClient interface {
 	SendMessage(ctx context.Context, peer InputPeer, text string, opts SendOpts) (*Message, error)
 	EditMessage(ctx context.Context, peer InputPeer, msgID int, text string) (*Message, error)
 	DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error
-	ForwardMessages(ctx context.Context, from, to InputPeer, ids []int) ([]Message, error)
+	ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int) ([]Message, error)
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error
 	SendReaction(ctx context.Context, peer InputPeer, msgID int, emoji string, remove bool) error
 	MarkRead(ctx context.Context, peer InputPeer, maxID int) error

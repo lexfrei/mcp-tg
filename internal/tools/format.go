@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
@@ -42,6 +43,17 @@ func formatMessage(msg *telegram.Message) string {
 	}
 
 	return fmt.Sprintf("[%d] %s %s", msg.ID, timestamp, text)
+}
+
+// formatMessages formats a slice of messages as newline-separated lines.
+func formatMessages(msgs []telegram.Message) string {
+	var buf strings.Builder
+
+	for idx := range msgs {
+		fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
+	}
+
+	return buf.String()
 }
 
 // formatDialog returns a single-line summary of a dialog.

@@ -40,8 +40,16 @@ func NewTopicsListHandler(client telegram.Client) mcp.ToolHandlerFor[TopicsListP
 				telegramErr("failed to resolve peer", err)
 		}
 
+		limit := deref(params.Limit)
+
+		limitErr := validateLimit(limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, TopicsListResult{},
+				validationErr(limitErr)
+		}
+
 		opts := telegram.TopicOpts{
-			Limit: deref(params.Limit),
+			Limit: limit,
 			Query: deref(params.Query),
 		}
 

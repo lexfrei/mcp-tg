@@ -27,9 +27,15 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 		_ *mcp.CallToolRequest,
 		params DialogsListParams,
 	) (*mcp.CallToolResult, DialogsListResult, error) {
-		opts := telegram.DialogOpts{Limit: deref(params.Limit)}
+		limit := deref(params.Limit)
 
-		dialogs, err := client.GetDialogs(ctx, opts)
+		limitErr := validateLimit(limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, DialogsListResult{},
+				validationErr(limitErr)
+		}
+
+		dialogs, err := client.GetDialogs(ctx, telegram.DialogOpts{Limit: limit})
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, DialogsListResult{},
 				telegramErr("failed to list dialogs", err)

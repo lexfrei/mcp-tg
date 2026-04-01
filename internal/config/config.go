@@ -114,7 +114,10 @@ func loadSessionFile() string {
 		return sessionFile
 	}
 
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return filepath.Join(os.TempDir(), defaultDir, "session.json")
+	}
 
 	return filepath.Join(home, defaultDir, "session.json")
 }

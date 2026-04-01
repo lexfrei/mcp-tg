@@ -17,5 +17,5 @@ func TestRegisterTools(t *testing.T) {
 	)
 
 	client := testutil.NoopClient{}
-	registerTools(server, client)
+	registerTools(server, client, "/tmp/mcp-tg/downloads")
 }

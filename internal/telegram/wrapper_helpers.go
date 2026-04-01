@@ -520,6 +520,10 @@ func extractPhotos(result tg.PhotosPhotosClass) []Photo {
 }
 
 func extractForumTopics(result *tg.MessagesForumTopics) []ForumTopic {
+	if result == nil {
+		return nil
+	}
+
 	topics := make([]ForumTopic, 0, len(result.Topics))
 
 	for _, t := range result.Topics {

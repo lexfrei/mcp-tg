@@ -92,7 +92,7 @@ func startServer(
 		opts,
 	)
 
-	registerTools(server, wrapper)
+	registerTools(server, wrapper, cfg.DownloadDir)
 	resources.Register(server, wrapper)
 	prompts.Register(server, wrapper)
 	server.AddReceivingMiddleware(mcpmw.NewLogging(opts.Logger))
@@ -188,7 +188,7 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 	}
 }
 
-func registerTools(server *mcp.Server, client tgclient.Client) {
+func registerTools(server *mcp.Server, client tgclient.Client, downloadDir string) {
 	mcp.AddTool(server, tools.ProfileGetTool(), tools.NewProfileGetHandler(client))
 	mcp.AddTool(server, tools.DialogsListTool(), tools.NewDialogsListHandler(client))
 	mcp.AddTool(server, tools.DialogsSearchTool(), tools.NewDialogsSearchHandler(client))
@@ -226,7 +226,7 @@ func registerTools(server *mcp.Server, client tgclient.Client) {
 
 	// Phase 3: Media, Files, Chat Management, Profile tools.
 	mcp.AddTool(server, tools.MessagesSendFileTool(), tools.NewMessagesSendFileHandler(client))
-	mcp.AddTool(server, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client))
+	mcp.AddTool(server, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client, downloadDir))
 	mcp.AddTool(server, tools.MediaUploadTool(), tools.NewMediaUploadHandler(client))
 	mcp.AddTool(server, tools.MediaSendAlbumTool(), tools.NewMediaSendAlbumHandler(client))
 	mcp.AddTool(server, tools.ChatsCreateTool(), tools.NewChatsCreateHandler(client))

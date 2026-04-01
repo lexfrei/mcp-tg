@@ -293,7 +293,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaUploadedDocument{
-			File: file,
+			File:     file,
+			MimeType: mimeByPath(path),
 			Attributes: []tg.DocumentAttributeClass{
 				&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
 			},
@@ -319,7 +320,8 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 
 		media := tg.InputSingleMedia{
 			Media: &tg.InputMediaUploadedDocument{
-				File: file,
+				File:     file,
+				MimeType: mimeByPath(path),
 				Attributes: []tg.DocumentAttributeClass{
 					&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
 				},
@@ -373,7 +375,7 @@ func (w *Wrapper) DownloadMedia(ctx context.Context, peer InputPeer, msgID int, 
 
 // UploadFile uploads a file and returns its metadata.
 func (w *Wrapper) UploadFile(ctx context.Context, path string) (*UploadedFile, error) {
-	_, err := w.up.FromPath(ctx, path)
+	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
 	}
@@ -384,6 +386,7 @@ func (w *Wrapper) UploadFile(ctx context.Context, path string) (*UploadedFile, e
 	}
 
 	return &UploadedFile{
+		ID:   uploadedFileID(file),
 		Name: filepath.Base(path),
 		Size: info.Size(),
 	}, nil

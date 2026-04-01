@@ -3,6 +3,8 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"mime"
+	"path/filepath"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
@@ -11,7 +13,34 @@ import (
 const (
 	defaultLimit   = 100
 	outputDirPerms = 0o750
+	fallbackMIME   = "application/octet-stream"
 )
+
+func uploadedFileID(file tg.InputFileClass) int64 {
+	switch typed := file.(type) {
+	case *tg.InputFile:
+		return typed.ID
+	case *tg.InputFileBig:
+		return typed.ID
+	default:
+		return 0
+	}
+}
+
+// mimeByPath guesses MIME type from file extension, falling back to octet-stream.
+func mimeByPath(path string) string {
+	ext := filepath.Ext(path)
+	if ext == "" {
+		return fallbackMIME
+	}
+
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		return fallbackMIME
+	}
+
+	return mimeType
+}
 
 func typingAction(action string) tg.SendMessageActionClass {
 	switch action {
@@ -187,7 +216,12 @@ func (w *Wrapper) createChannel(ctx context.Context, title string) (*PeerInfo, e
 		return nil, errors.Wrap(err, "creating channel")
 	}
 
-	return firstChatFromUpdates(result), nil
+	info := firstChatFromUpdates(result)
+	if info == nil {
+		return nil, errors.New("channel created but could not extract info from response")
+	}
+
+	return info, nil
 }
 
 func (w *Wrapper) createBasicChat(ctx context.Context, title string, users []InputPeer) (*PeerInfo, error) {
@@ -204,7 +238,12 @@ func (w *Wrapper) createBasicChat(ctx context.Context, title string, users []Inp
 		return nil, errors.Wrap(err, "creating chat")
 	}
 
-	return firstChatFromUpdates(result.Updates), nil
+	info := firstChatFromUpdates(result.Updates)
+	if info == nil {
+		return nil, errors.New("chat created but could not extract info from response")
+	}
+
+	return info, nil
 }
 
 func extractDialogs(result tg.MessagesDialogsClass) ([]Dialog, error) {

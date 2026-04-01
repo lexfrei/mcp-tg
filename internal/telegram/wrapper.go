@@ -817,11 +817,17 @@ func (w *Wrapper) SendSticker(ctx context.Context, peer InputPeer, stickerFileID
 }
 
 // SetDraft sets a draft message in a chat.
-func (w *Wrapper) SetDraft(ctx context.Context, peer InputPeer, text string, _ int) error {
-	_, err := w.api.MessagesSaveDraft(ctx, &tg.MessagesSaveDraftRequest{
+func (w *Wrapper) SetDraft(ctx context.Context, peer InputPeer, text string, replyTo int) error {
+	req := &tg.MessagesSaveDraftRequest{
 		Peer:    InputPeerToTG(peer),
 		Message: text,
-	})
+	}
+
+	if replyTo > 0 {
+		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: replyTo}
+	}
+
+	_, err := w.api.MessagesSaveDraft(ctx, req)
 
 	return errors.Wrap(err, "setting draft")
 }

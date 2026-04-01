@@ -35,7 +35,7 @@ func formatPeer(peer telegram.InputPeer) string {
 // formatUserName builds a display name from first/last name and username.
 func formatUserName(user *telegram.User) string {
 	if user == nil {
-		return "unknown"
+		return unknownValue
 	}
 
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)

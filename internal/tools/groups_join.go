@@ -9,7 +9,7 @@ import (
 
 // GroupsJoinParams defines the parameters for the tg_groups_join tool.
 type GroupsJoinParams struct {
-	Peer string `json:"peer" jsonschema:"Group ID, @username, or invite link"`
+	Peer string `json:"peer" jsonschema:"Channel/supergroup ID or @username"`
 }
 
 // GroupsJoinResult is the output of the tg_groups_join tool.
@@ -51,7 +51,7 @@ func NewGroupsJoinHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsJoinP
 func GroupsJoinTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_join",
-		Description: "Join a Telegram group by ID, @username, or invite link",
+		Description: "Join a public Telegram channel or supergroup by ID or @username",
 		Annotations: idempotentAnnotations(),
 	}
 }

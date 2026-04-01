@@ -99,3 +99,49 @@ func TestFormatDialog_Group(t *testing.T) {
 		t.Errorf("formatDialog() = %q, want %q", got, want)
 	}
 }
+
+func TestFormatTimestamp_Negative(t *testing.T) {
+	got := formatTimestamp(-1)
+
+	if got == "" {
+		t.Error("formatTimestamp(-1) should return non-empty string")
+	}
+}
+
+func TestFormatMessage_Nil(t *testing.T) {
+	got := formatMessage(nil)
+
+	if got != unknownValue {
+		t.Errorf("formatMessage(nil) = %q, want %q", got, unknownValue)
+	}
+}
+
+func TestFormatDialog_Nil(t *testing.T) {
+	got := formatDialog(nil)
+
+	if got != unknownValue {
+		t.Errorf("formatDialog(nil) = %q, want %q", got, unknownValue)
+	}
+}
+
+func TestFormatMessage_EmptyText(t *testing.T) {
+	msg := &telegram.Message{ID: 1, Date: 1700000000}
+	got := formatMessage(msg)
+
+	if got == unknownValue {
+		t.Error("formatMessage(empty text) should not return unknown")
+	}
+
+	if !strings.Contains(got, "[1]") {
+		t.Errorf("formatMessage() = %q, should contain message ID", got)
+	}
+}
+
+func TestFormatDialog_ZeroUnread(t *testing.T) {
+	dlg := &telegram.Dialog{Title: "Test", UnreadCount: 0}
+	got := formatDialog(dlg)
+
+	if strings.Contains(got, "unread") {
+		t.Errorf("formatDialog() = %q, should not mention unread when count is 0", got)
+	}
+}

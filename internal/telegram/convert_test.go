@@ -170,3 +170,80 @@ func TestInputPeerToTG_Channel(t *testing.T) {
 		t.Errorf("AccessHash = %d, want 222", tgPeer.AccessHash)
 	}
 }
+
+func TestExtractPeerID_User(t *testing.T) {
+	got := extractPeerID(&tg.PeerUser{UserID: 1})
+
+	if got.Type != PeerUser {
+		t.Errorf("Type = %d, want PeerUser", got.Type)
+	}
+
+	if got.ID != 1 {
+		t.Errorf("ID = %d, want 1", got.ID)
+	}
+}
+
+func TestExtractPeerID_Chat(t *testing.T) {
+	got := extractPeerID(&tg.PeerChat{ChatID: 2})
+
+	if got.Type != PeerChat {
+		t.Errorf("Type = %d, want PeerChat", got.Type)
+	}
+
+	if got.ID != 2 {
+		t.Errorf("ID = %d, want 2", got.ID)
+	}
+}
+
+func TestExtractPeerID_Channel(t *testing.T) {
+	got := extractPeerID(&tg.PeerChannel{ChannelID: 3})
+
+	if got.Type != PeerChannel {
+		t.Errorf("Type = %d, want PeerChannel", got.Type)
+	}
+
+	if got.ID != 3 {
+		t.Errorf("ID = %d, want 3", got.ID)
+	}
+}
+
+func TestExtractPeerID_Nil(t *testing.T) {
+	got := extractPeerID(nil)
+
+	if got != (InputPeer{}) {
+		t.Errorf("extractPeerID(nil) = %+v, want zero InputPeer", got)
+	}
+}
+
+func TestExtractFromID_User(t *testing.T) {
+	got := extractFromID(&tg.PeerUser{UserID: 10})
+
+	if got != 10 {
+		t.Errorf("extractFromID(PeerUser) = %d, want 10", got)
+	}
+}
+
+func TestExtractFromID_Nil(t *testing.T) {
+	got := extractFromID(nil)
+
+	if got != 0 {
+		t.Errorf("extractFromID(nil) = %d, want 0", got)
+	}
+}
+
+func TestExtractReplyTo_Header(t *testing.T) {
+	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 77}
+	got := extractReplyTo(hdr)
+
+	if got != 77 {
+		t.Errorf("extractReplyTo(header) = %d, want 77", got)
+	}
+}
+
+func TestExtractReplyTo_Nil(t *testing.T) {
+	got := extractReplyTo(nil)
+
+	if got != 0 {
+		t.Errorf("extractReplyTo(nil) = %d, want 0", got)
+	}
+}

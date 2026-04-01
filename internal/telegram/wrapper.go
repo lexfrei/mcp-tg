@@ -452,19 +452,21 @@ func (w *Wrapper) GetUserPhotos(ctx context.Context, peer InputPeer, limit int) 
 
 // SetProfileName updates the authenticated user's name.
 func (w *Wrapper) SetProfileName(ctx context.Context, firstName, lastName string) error {
-	_, err := w.api.AccountUpdateProfile(ctx, &tg.AccountUpdateProfileRequest{
-		FirstName: firstName,
-		LastName:  lastName,
-	})
+	req := &tg.AccountUpdateProfileRequest{}
+	req.SetFirstName(firstName)
+	req.SetLastName(lastName)
+
+	_, err := w.api.AccountUpdateProfile(ctx, req)
 
 	return errors.Wrap(err, "updating profile name")
 }
 
 // SetProfileBio updates the authenticated user's bio.
 func (w *Wrapper) SetProfileBio(ctx context.Context, bio string) error {
-	_, err := w.api.AccountUpdateProfile(ctx, &tg.AccountUpdateProfileRequest{
-		About: bio,
-	})
+	req := &tg.AccountUpdateProfileRequest{}
+	req.SetAbout(bio)
+
+	_, err := w.api.AccountUpdateProfile(ctx, req)
 
 	return errors.Wrap(err, "updating profile bio")
 }
@@ -591,10 +593,13 @@ func (w *Wrapper) AddGroupMember(ctx context.Context, group, user InputPeer) err
 // RemoveGroupMember removes a user from a group.
 func (w *Wrapper) RemoveGroupMember(ctx context.Context, group, user InputPeer) error {
 	if group.Type == PeerChannel {
+		rights := tg.ChatBannedRights{}
+		rights.SetViewMessages(true)
+
 		_, err := w.api.ChannelsEditBanned(ctx, &tg.ChannelsEditBannedRequest{
 			Channel:      InputChannelFromPeer(group),
 			Participant:  InputPeerToTG(user),
-			BannedRights: tg.ChatBannedRights{ViewMessages: true},
+			BannedRights: rights,
 		})
 
 		return errors.Wrap(err, "removing channel member")
@@ -660,9 +665,8 @@ func (w *Wrapper) ArchiveChat(ctx context.Context, peer InputPeer, archive bool)
 
 // MuteChat mutes or unmutes a chat's notifications.
 func (w *Wrapper) MuteChat(ctx context.Context, peer InputPeer, muteUntil int) error {
-	settings := tg.InputPeerNotifySettings{
-		MuteUntil: muteUntil,
-	}
+	settings := tg.InputPeerNotifySettings{}
+	settings.SetMuteUntil(muteUntil)
 
 	_, err := w.api.AccountUpdateNotifySettings(ctx, &tg.AccountUpdateNotifySettingsRequest{
 		Peer:     &tg.InputNotifyPeer{Peer: InputPeerToTG(peer)},

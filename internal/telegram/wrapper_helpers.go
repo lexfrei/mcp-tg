@@ -60,16 +60,18 @@ func typingAction(action string) tg.SendMessageActionClass {
 }
 
 func convertPermissions(perms ChatPermissions) tg.ChatBannedRights {
-	return tg.ChatBannedRights{
-		SendMessages: !perms.SendMessages,
-		SendMedia:    !perms.SendMedia,
-		SendStickers: !perms.SendStickers,
-		SendGifs:     !perms.SendGifs,
-		SendPolls:    !perms.SendPolls,
-		InviteUsers:  !perms.AddMembers,
-		PinMessages:  !perms.PinMessages,
-		ChangeInfo:   !perms.ChangeInfo,
-	}
+	var rights tg.ChatBannedRights
+
+	rights.SetSendMessages(!perms.SendMessages)
+	rights.SetSendMedia(!perms.SendMedia)
+	rights.SetSendStickers(!perms.SendStickers)
+	rights.SetSendGifs(!perms.SendGifs)
+	rights.SetSendPolls(!perms.SendPolls)
+	rights.SetInviteUsers(!perms.AddMembers)
+	rights.SetPinMessages(!perms.PinMessages)
+	rights.SetChangeInfo(!perms.ChangeInfo)
+
+	return rights
 }
 
 func (w *Wrapper) getUserPeerInfo(ctx context.Context, peer InputPeer) (*PeerInfo, error) {

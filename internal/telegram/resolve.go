@@ -27,6 +27,10 @@ func Resolve(ctx context.Context, api *tg.Client, identifier string) (InputPeer,
 
 	identifier = normalizePeerIdentifier(identifier)
 
+	if hash := extractInviteHash(identifier); hash != "" {
+		return resolveByInvite(ctx, api, hash)
+	}
+
 	numID, err := strconv.ParseInt(identifier, 10, 64)
 	if err == nil {
 		return resolveByID(numID), nil
@@ -75,6 +79,55 @@ func resolveByUsername(ctx context.Context, api *tg.Client, username string) (In
 	}
 
 	return peerFromResolved(resolved)
+}
+
+// extractInviteHash returns the invite hash from a normalized identifier,
+// or empty string if it's not an invite link. Recognizes:
+//   - "+hash" (from t.me/+hash)
+//   - "joinchat/hash" (from t.me/joinchat/hash)
+func extractInviteHash(identifier string) string {
+	if after, found := strings.CutPrefix(identifier, "+"); found && after != "" {
+		return after
+	}
+
+	if after, found := strings.CutPrefix(identifier, "joinchat/"); found && after != "" {
+		return after
+	}
+
+	return ""
+}
+
+func resolveByInvite(ctx context.Context, api *tg.Client, hash string) (InputPeer, error) {
+	result, err := api.MessagesCheckChatInvite(ctx, hash)
+	if err != nil {
+		return InputPeer{}, errors.Wrap(err, "checking invite link")
+	}
+
+	return peerFromInvite(result)
+}
+
+func peerFromInvite(invite tg.ChatInviteClass) (InputPeer, error) {
+	already, ok := invite.(*tg.ChatInviteAlready)
+	if !ok {
+		return InputPeer{}, errors.New("invite link: you must join this chat first")
+	}
+
+	return peerFromChat(already.Chat)
+}
+
+func peerFromChat(chat tg.ChatClass) (InputPeer, error) {
+	switch typed := chat.(type) {
+	case *tg.Chat:
+		return InputPeer{Type: PeerChat, ID: typed.ID}, nil
+	case *tg.Channel:
+		return InputPeer{
+			Type:       PeerChannel,
+			ID:         typed.ID,
+			AccessHash: typed.AccessHash,
+		}, nil
+	default:
+		return InputPeer{}, ErrPeerNotFound
+	}
 }
 
 func peerFromResolved(resolved *tg.ContactsResolvedPeer) (InputPeer, error) {

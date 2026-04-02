@@ -13,7 +13,6 @@ const (
 	peerUser     = "user"
 	peerChannel  = "channel"
 	peerGroup    = "group"
-	maxTextLen   = 500
 )
 
 // formatTimestamp converts a Unix timestamp to a human-readable string.
@@ -32,10 +31,6 @@ func formatMessage(msg *telegram.Message) string {
 	}
 
 	text := msg.Text
-	if len(text) > maxTextLen {
-		text = text[:maxTextLen] + "..."
-	}
-
 	timestamp := formatTimestamp(msg.Date)
 
 	if msg.MediaType != "" {

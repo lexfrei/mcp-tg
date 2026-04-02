@@ -16,8 +16,9 @@ type StickersSearchParams struct {
 
 // StickersSearchResult is the output of the tg_stickers_search tool.
 type StickersSearchResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count  int              `json:"count"`
+	Sets   []StickerSetItem `json:"sets"`
+	Output string           `json:"output"`
 }
 
 // NewStickersSearchHandler creates a handler for the tg_stickers_search tool.
@@ -46,6 +47,7 @@ func NewStickersSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Sticker
 
 		return nil, StickersSearchResult{
 			Count:  len(sets),
+			Sets:   stickerSetsToItems(sets),
 			Output: buf.String(),
 		}, nil
 	}

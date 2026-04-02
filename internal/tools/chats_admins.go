@@ -16,8 +16,9 @@ type ChatsAdminsParams struct {
 
 // ChatsAdminsResult is the output of the tg_chats_get_admins tool.
 type ChatsAdminsResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count  int        `json:"count"`
+	Admins []UserItem `json:"admins"`
+	Output string     `json:"output"`
 }
 
 // NewChatsAdminsHandler creates a handler for the tg_chats_get_admins tool.
@@ -52,6 +53,7 @@ func NewChatsAdminsHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsAdmin
 
 		return nil, ChatsAdminsResult{
 			Count:  len(admins),
+			Admins: usersToItems(admins),
 			Output: buf.String(),
 		}, nil
 	}

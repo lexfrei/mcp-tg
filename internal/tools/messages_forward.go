@@ -17,8 +17,9 @@ type MessagesForwardParams struct {
 
 // MessagesForwardResult is the output of the tg_messages_forward tool.
 type MessagesForwardResult struct {
-	Forwarded int    `json:"forwarded"`
-	Output    string `json:"output"`
+	Forwarded int           `json:"forwarded"`
+	Messages  []MessageItem `json:"messages"`
+	Output    string        `json:"output"`
 }
 
 // NewMessagesForwardHandler creates a handler for the tg_messages_forward tool.
@@ -58,6 +59,7 @@ func NewMessagesForwardHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 
 		return nil, MessagesForwardResult{
 			Forwarded: len(msgs),
+			Messages:  messagesToItems(msgs),
 			Output:    fmt.Sprintf("Forwarded %d message(s)", len(msgs)),
 		}, nil
 	}

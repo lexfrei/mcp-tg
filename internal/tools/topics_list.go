@@ -18,8 +18,9 @@ type TopicsListParams struct {
 
 // TopicsListResult is the output of the tg_topics_list tool.
 type TopicsListResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count  int         `json:"count"`
+	Topics []TopicItem `json:"topics"`
+	Output string      `json:"output"`
 }
 
 // NewTopicsListHandler creates a handler for the tg_topics_list tool.
@@ -68,6 +69,7 @@ func NewTopicsListHandler(client telegram.Client) mcp.ToolHandlerFor[TopicsListP
 
 		return nil, TopicsListResult{
 			Count:  len(topics),
+			Topics: topicsToItems(topics),
 			Output: buf.String(),
 		}, nil
 	}

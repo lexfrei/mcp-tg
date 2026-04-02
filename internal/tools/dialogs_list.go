@@ -17,8 +17,9 @@ type DialogsListParams struct {
 
 // DialogsListResult is the output of the tg_dialogs_list tool.
 type DialogsListResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count   int          `json:"count"`
+	Dialogs []DialogItem `json:"dialogs"`
+	Output  string       `json:"output"`
 }
 
 // NewDialogsListHandler creates a handler for the tg_dialogs_list tool.
@@ -47,15 +48,19 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 				telegramErr("failed to list dialogs", err)
 		}
 
+		items := make([]DialogItem, len(dialogs))
+
 		var buf strings.Builder
 
-		for _, dlg := range dialogs {
+		for idx, dlg := range dialogs {
+			items[idx] = dialogToItem(&dlg)
 			fmt.Fprintf(&buf, "%s (peer: %s)\n", formatDialog(&dlg), formatPeer(dlg.Peer))
 		}
 
 		return nil, DialogsListResult{
-			Count:  len(dialogs),
-			Output: buf.String(),
+			Count:   len(dialogs),
+			Dialogs: items,
+			Output:  buf.String(),
 		}, nil
 	}
 }

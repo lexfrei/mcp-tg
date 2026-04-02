@@ -14,8 +14,9 @@ type FoldersListParams struct{}
 
 // FoldersListResult is the output of the tg_folders_list tool.
 type FoldersListResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count   int          `json:"count"`
+	Folders []FolderItem `json:"folders"`
+	Output  string       `json:"output"`
 }
 
 // NewFoldersListHandler creates a handler for the tg_folders_list tool.
@@ -38,8 +39,9 @@ func NewFoldersListHandler(client telegram.Client) mcp.ToolHandlerFor[FoldersLis
 		}
 
 		return nil, FoldersListResult{
-			Count:  len(folders),
-			Output: buf.String(),
+			Count:   len(folders),
+			Folders: foldersToItems(folders),
+			Output:  buf.String(),
 		}, nil
 	}
 }

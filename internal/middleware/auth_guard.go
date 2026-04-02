@@ -31,6 +31,12 @@ func NewAuthGuard(authDone <-chan struct{}) mcp.Middleware {
 }
 
 func requiresAuth(method string) bool {
+	// Allow listing tools/resources/prompts before auth — clients need
+	// the catalog at connect time, and these don't call Telegram API.
+	if strings.HasSuffix(method, "/list") {
+		return false
+	}
+
 	return strings.HasPrefix(method, "tools/") ||
 		strings.HasPrefix(method, "resources/") ||
 		strings.HasPrefix(method, "prompts/")

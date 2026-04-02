@@ -53,9 +53,11 @@ func TestRequiresAuth(t *testing.T) {
 		want   bool
 	}{
 		{"tools/call", true},
-		{"tools/list", true},
+		{"tools/list", false},
 		{"resources/read", true},
+		{"resources/list", false},
 		{"prompts/get", true},
+		{"prompts/list", false},
 		{"initialize", false},
 		{"ping", false},
 		{"notifications/initialized", false},

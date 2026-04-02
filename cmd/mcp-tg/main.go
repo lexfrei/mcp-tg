@@ -79,6 +79,7 @@ func startServer(
 	wrapper := tgclient.NewWrapper(tgClient.API())
 
 	initDone := make(chan struct{})
+	authDone := make(chan struct{})
 	opts := newServerOptions(wrapper)
 	opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
 		close(initDone)
@@ -95,7 +96,7 @@ func startServer(
 	registerTools(server, wrapper, cfg.DownloadDir)
 	resources.Register(server, wrapper)
 	prompts.Register(server, wrapper)
-	server.AddReceivingMiddleware(mcpmw.NewLogging(opts.Logger))
+	server.AddReceivingMiddleware(mcpmw.NewAuthGuard(authDone), mcpmw.NewLogging(opts.Logger))
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -117,6 +118,8 @@ func startServer(
 	if authErr != nil {
 		return errors.Wrap(authErr, "authentication failed")
 	}
+
+	close(authDone)
 
 	return waitForTransports(ctx, cancel, server, stdioSession, cfg)
 }

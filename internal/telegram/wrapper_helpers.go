@@ -248,14 +248,14 @@ func (w *Wrapper) createBasicChat(ctx context.Context, title string, users []Inp
 	return info, nil
 }
 
-func extractDialogs(result tg.MessagesDialogsClass) ([]Dialog, error) {
+func extractDialogs(result tg.MessagesDialogsClass) []Dialog {
 	switch res := result.(type) {
 	case *tg.MessagesDialogs:
-		return buildDialogs(res.Dialogs, res.Chats, res.Users), nil
+		return buildDialogs(res.Dialogs, res.Chats, res.Users)
 	case *tg.MessagesDialogsSlice:
-		return buildDialogs(res.Dialogs, res.Chats, res.Users), nil
+		return buildDialogs(res.Dialogs, res.Chats, res.Users)
 	default:
-		return nil, nil
+		return nil
 	}
 }
 
@@ -317,6 +317,7 @@ func fillDialogPeer(entry *Dialog, peer tg.PeerClass, chatMap map[int64]tg.ChatC
 		entry.Peer = InputPeer{Type: PeerUser, ID: peerTyped.UserID}
 
 		if usr, ok := userMap[peerTyped.UserID]; ok {
+			entry.Peer.AccessHash = usr.AccessHash
 			entry.Title = fmt.Sprintf("%s %s", usr.FirstName, usr.LastName)
 			entry.Username = usr.Username
 		}

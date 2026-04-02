@@ -16,9 +16,10 @@ import (
 
 // Wrapper implements Client using gotd/td.
 type Wrapper struct {
-	api  *tg.Client
-	up   *uploader.Uploader
-	down *downloader.Downloader
+	api   *tg.Client
+	up    *uploader.Uploader
+	down  *downloader.Downloader
+	cache *PeerCache
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -52,15 +53,36 @@ func cryptoRandIDs(count int) ([]int64, error) {
 // NewWrapper creates a new Wrapper around gotd/td client primitives.
 func NewWrapper(api *tg.Client) *Wrapper {
 	return &Wrapper{
-		api:  api,
-		up:   uploader.NewUploader(api),
-		down: downloader.NewDownloader(),
+		api:   api,
+		up:    uploader.NewUploader(api),
+		down:  downloader.NewDownloader(),
+		cache: NewPeerCache(),
 	}
 }
 
 // ResolvePeer resolves a string identifier to an InputPeer.
-func (w *Wrapper) ResolvePeer(ctx context.Context, identifier string) (InputPeer, error) {
-	return Resolve(ctx, w.api, identifier)
+// Peers resolved with a valid AccessHash are cached so that
+// subsequent numeric-ID lookups can reuse the hash.
+func (w *Wrapper) ResolvePeer(
+	ctx context.Context,
+	identifier string,
+) (InputPeer, error) {
+	peer, err := Resolve(ctx, w.api, identifier)
+	if err != nil {
+		return InputPeer{}, err
+	}
+
+	if peer.AccessHash != 0 {
+		w.cache.Store(peer)
+
+		return peer, nil
+	}
+
+	if cached, hit := w.cache.Lookup(peer.ID); hit {
+		return cached, nil
+	}
+
+	return peer, nil
 }
 
 // GetSelf returns the authenticated user's profile.
@@ -97,7 +119,10 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 		return nil, errors.Wrap(err, "getting dialogs")
 	}
 
-	return extractDialogs(result)
+	dialogs := extractDialogs(result)
+	w.cacheDialogPeers(dialogs)
+
+	return dialogs, nil
 }
 
 // SearchDialogs searches dialogs by query.
@@ -110,7 +135,10 @@ func (w *Wrapper) SearchDialogs(ctx context.Context, query string) ([]Dialog, er
 		return nil, errors.Wrap(err, "searching dialogs")
 	}
 
-	return dialogsFromSearch(result), nil
+	dialogs := dialogsFromSearch(result)
+	w.cacheDialogPeers(dialogs)
+
+	return dialogs, nil
 }
 
 // GetPeerInfo returns metadata about a peer.
@@ -980,6 +1008,17 @@ func (w *Wrapper) SetOnlineStatus(ctx context.Context, online bool) error {
 	_, err := w.api.AccountUpdateStatus(ctx, !online)
 
 	return errors.Wrap(err, "setting online status")
+}
+
+// cacheDialogPeers stores all dialog peers with valid access hashes.
+func (w *Wrapper) cacheDialogPeers(dialogs []Dialog) {
+	peers := make([]InputPeer, 0, len(dialogs))
+
+	for _, dlg := range dialogs {
+		peers = append(peers, dlg.Peer)
+	}
+
+	w.cache.StoreAll(peers)
 }
 
 func (w *Wrapper) getRawMessage(ctx context.Context, peer InputPeer, msgID int) (*tg.Message, error) {

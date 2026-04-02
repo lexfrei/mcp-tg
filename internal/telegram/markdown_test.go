@@ -1,0 +1,257 @@
+package telegram
+
+import (
+	"testing"
+
+	"github.com/gotd/td/tg"
+)
+
+func TestParseMarkdown_Bold(t *testing.T) {
+	text, entities := ParseMarkdown("hello **world**")
+	if text != testMessageText {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	bold, ok := entities[0].(*tg.MessageEntityBold)
+	if !ok {
+		t.Fatalf("expected Bold, got %T", entities[0])
+	}
+
+	if bold.Offset != 6 || bold.Length != 5 {
+		t.Fatalf("offset=%d length=%d", bold.Offset, bold.Length)
+	}
+}
+
+func TestParseMarkdown_Italic(t *testing.T) {
+	text, entities := ParseMarkdown("hello *world*")
+	if text != testMessageText {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	ent, ok := entities[0].(*tg.MessageEntityItalic)
+	if !ok {
+		t.Fatalf("expected Italic, got %T", entities[0])
+	}
+
+	if ent.Offset != 6 || ent.Length != 5 {
+		t.Fatalf("offset=%d length=%d", ent.Offset, ent.Length)
+	}
+}
+
+func TestParseMarkdown_Code(t *testing.T) {
+	text, entities := ParseMarkdown("hello `world`")
+	if text != testMessageText {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	ent, ok := entities[0].(*tg.MessageEntityCode)
+	if !ok {
+		t.Fatalf("expected Code, got %T", entities[0])
+	}
+
+	if ent.Offset != 6 || ent.Length != 5 {
+		t.Fatalf("offset=%d length=%d", ent.Offset, ent.Length)
+	}
+}
+
+func TestParseMarkdown_Pre(t *testing.T) {
+	text, entities := ParseMarkdown("```go\nfmt.Println()\n```")
+	if text != "fmt.Println()" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	ent, ok := entities[0].(*tg.MessageEntityPre)
+	if !ok {
+		t.Fatalf("expected Pre, got %T", entities[0])
+	}
+
+	if ent.Offset != 0 || ent.Length != 13 {
+		t.Fatalf("offset=%d length=%d", ent.Offset, ent.Length)
+	}
+
+	if ent.Language != "go" {
+		t.Fatalf("language=%q", ent.Language)
+	}
+}
+
+func TestParseMarkdown_Strike(t *testing.T) {
+	text, entities := ParseMarkdown("~~deleted~~")
+	if text != "deleted" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	_, ok := entities[0].(*tg.MessageEntityStrike)
+	if !ok {
+		t.Fatalf("expected Strike, got %T", entities[0])
+	}
+}
+
+func TestParseMarkdown_Underline(t *testing.T) {
+	text, entities := ParseMarkdown("__important__")
+	if text != "important" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	_, ok := entities[0].(*tg.MessageEntityUnderline)
+	if !ok {
+		t.Fatalf("expected Underline, got %T", entities[0])
+	}
+}
+
+func TestParseMarkdown_Spoiler(t *testing.T) {
+	text, entities := ParseMarkdown("||secret||")
+	if text != "secret" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	_, ok := entities[0].(*tg.MessageEntitySpoiler)
+	if !ok {
+		t.Fatalf("expected Spoiler, got %T", entities[0])
+	}
+}
+
+func TestParseMarkdown_Link(t *testing.T) {
+	text, entities := ParseMarkdown("[click](https://example.com)")
+	if text != "click" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	ent, ok := entities[0].(*tg.MessageEntityTextURL)
+	if !ok {
+		t.Fatalf("expected TextURL, got %T", entities[0])
+	}
+
+	if ent.URL != "https://example.com" {
+		t.Fatalf("url=%q", ent.URL)
+	}
+
+	if ent.Offset != 0 || ent.Length != 5 {
+		t.Fatalf("offset=%d length=%d", ent.Offset, ent.Length)
+	}
+}
+
+func TestParseMarkdown_Blockquote(t *testing.T) {
+	text, entities := ParseMarkdown("> quoted text")
+	if text != "quoted text" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	_, ok := entities[0].(*tg.MessageEntityBlockquote)
+	if !ok {
+		t.Fatalf("expected Blockquote, got %T", entities[0])
+	}
+}
+
+func TestParseMarkdown_Emoji(t *testing.T) {
+	text, entities := ParseMarkdown("\U0001f389 **bold**")
+	if text != "\U0001f389 bold" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	bold, ok := entities[0].(*tg.MessageEntityBold)
+	if !ok {
+		t.Fatalf("expected Bold, got %T", entities[0])
+	}
+
+	// emoji U+1F389 = 2 UTF-16 units, space = 1
+	if bold.Offset != 3 || bold.Length != 4 {
+		t.Fatalf("offset=%d length=%d", bold.Offset, bold.Length)
+	}
+}
+
+func TestParseMarkdown_PlainText(t *testing.T) {
+	text, entities := ParseMarkdown("no formatting")
+	if text != "no formatting" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 0 {
+		t.Fatalf("expected 0 entities, got %d", len(entities))
+	}
+}
+
+func TestParseMarkdown_Mixed(t *testing.T) {
+	text, entities := ParseMarkdown("**bold** and *italic*")
+	if text != "bold and italic" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 2 {
+		t.Fatalf("expected 2 entities, got %d", len(entities))
+	}
+
+	if _, ok := entities[0].(*tg.MessageEntityBold); !ok {
+		t.Fatalf("expected Bold first, got %T", entities[0])
+	}
+
+	if _, ok := entities[1].(*tg.MessageEntityItalic); !ok {
+		t.Fatalf("expected Italic second, got %T", entities[1])
+	}
+}
+
+func TestParseMarkdown_EscapedMarker(t *testing.T) {
+	text, entities := ParseMarkdown(`not \*italic\*`)
+	if text != "not *italic*" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 0 {
+		t.Fatalf("expected 0 entities, got %d", len(entities))
+	}
+}
+
+func TestParseMarkdown_CodeNoNesting(t *testing.T) {
+	text, entities := ParseMarkdown("`**not bold**`")
+	if text != "**not bold**" {
+		t.Fatalf("unexpected text: %q", text)
+	}
+
+	if len(entities) != 1 {
+		t.Fatalf("expected 1 entity, got %d", len(entities))
+	}
+
+	_, ok := entities[0].(*tg.MessageEntityCode)
+	if !ok {
+		t.Fatalf("expected Code, got %T", entities[0])
+	}
+}

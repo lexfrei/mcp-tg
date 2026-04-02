@@ -82,6 +82,10 @@ func (w *Wrapper) ResolvePeer(
 		return cached, nil
 	}
 
+	if resolved, ok := w.resolveViaDialogs(ctx, peer); ok {
+		return resolved, nil
+	}
+
 	return peer, nil
 }
 
@@ -1031,6 +1035,47 @@ func (w *Wrapper) SetOnlineStatus(ctx context.Context, online bool) error {
 	_, err := w.api.AccountUpdateStatus(ctx, !online)
 
 	return errors.Wrap(err, "setting online status")
+}
+
+// resolveViaDialogs fetches peer details using GetPeerDialogs
+// to obtain a valid access hash for numeric IDs.
+func (w *Wrapper) resolveViaDialogs(
+	ctx context.Context, peer InputPeer,
+) (InputPeer, bool) {
+	result, err := w.api.MessagesGetPeerDialogs(ctx, []tg.InputDialogPeerClass{
+		&tg.InputDialogPeer{Peer: InputPeerToTG(peer)},
+	})
+	if err != nil {
+		return InputPeer{}, false
+	}
+
+	w.cacheFromPeerDialogs(result)
+
+	cached, hit := w.cache.Lookup(peer.ID)
+
+	return cached, hit
+}
+
+func (w *Wrapper) cacheFromPeerDialogs(result *tg.MessagesPeerDialogs) {
+	if result == nil {
+		return
+	}
+
+	for _, usr := range result.Users {
+		if typed, ok := usr.(*tg.User); ok {
+			w.cache.Store(InputPeer{
+				Type: PeerUser, ID: typed.ID, AccessHash: typed.AccessHash,
+			})
+		}
+	}
+
+	for _, chat := range result.Chats {
+		if typed, ok := chat.(*tg.Channel); ok {
+			w.cache.Store(InputPeer{
+				Type: PeerChannel, ID: typed.ID, AccessHash: typed.AccessHash,
+			})
+		}
+	}
 }
 
 // cacheDialogPeers stores all dialog peers with valid access hashes.

@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/telegram/downloader"
@@ -646,6 +647,7 @@ func (w *Wrapper) RemoveGroupMember(ctx context.Context, group, user InputPeer) 
 	if group.Type == PeerChannel {
 		rights := tg.ChatBannedRights{}
 		rights.SetViewMessages(true)
+		rights.UntilDate = int(time.Now().Add(time.Minute).Unix())
 
 		_, err := w.api.ChannelsEditBanned(ctx, &tg.ChannelsEditBannedRequest{
 			Channel:      InputChannelFromPeer(group),

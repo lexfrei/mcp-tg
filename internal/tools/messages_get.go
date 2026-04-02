@@ -39,6 +39,12 @@ func NewMessagesGetHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesGe
 				validationErr(ErrMessageIDRequired)
 		}
 
+		idErr := validateIDCount(params.IDs)
+		if idErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesGetResult{},
+				validationErr(idErr)
+		}
+
 		peer, err := client.ResolvePeer(ctx, params.Peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesGetResult{},

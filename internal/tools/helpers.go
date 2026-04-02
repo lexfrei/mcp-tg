@@ -27,6 +27,17 @@ func validateLimit(limit int) error {
 	return nil
 }
 
+const maxIDsPerRequest = 100
+
+// validateIDCount returns an error if too many IDs are provided.
+func validateIDCount(ids []int) error {
+	if len(ids) > maxIDsPerRequest {
+		return ErrTooManyIDs
+	}
+
+	return nil
+}
+
 // formatPeer returns a human-readable string for an InputPeer.
 func formatPeer(peer telegram.InputPeer) string {
 	switch peer.Type {

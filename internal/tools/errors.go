@@ -60,6 +60,9 @@ var ErrStickerFileIDRequired = errors.New("sticker file ID is required")
 // ErrEmojiRequired is returned when an emoji parameter is missing.
 var ErrEmojiRequired = errors.New("emoji is required")
 
+// ErrTooManyIDs is returned when too many message IDs are provided.
+var ErrTooManyIDs = errors.New("too many IDs (max 100)")
+
 // validationErr marks an error as a validation error.
 func validationErr(err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category, the caller already provides context.

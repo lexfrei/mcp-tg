@@ -39,6 +39,12 @@ func NewMessagesForwardHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 				validationErr(ErrMessageIDRequired)
 		}
 
+		idErr := validateIDCount(params.IDs)
+		if idErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesForwardResult{},
+				validationErr(idErr)
+		}
+
 		from, err := client.ResolvePeer(ctx, params.FromPeer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesForwardResult{},

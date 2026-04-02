@@ -38,6 +38,12 @@ func NewMessagesDeleteHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 				validationErr(ErrMessageIDRequired)
 		}
 
+		idErr := validateIDCount(params.IDs)
+		if idErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesDeleteResult{},
+				validationErr(idErr)
+		}
+
 		peer, err := client.ResolvePeer(ctx, params.Peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesDeleteResult{},

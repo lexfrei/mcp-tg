@@ -6,6 +6,7 @@ linters:
     - depguard
     - exhaustruct
     - ireturn
+    - wsl
   settings:
     dupl:
       threshold: 100

@@ -9,9 +9,10 @@ import (
 
 // MessagesSearchParams defines the parameters for the tg_messages_search tool.
 type MessagesSearchParams struct {
-	Peer  string `json:"peer"            jsonschema:"Chat ID or @username"`
-	Query string `json:"query"           jsonschema:"Search query"`
-	Limit *int   `json:"limit,omitempty" jsonschema:"Max results (default 100)"`
+	Peer     string `json:"peer"               jsonschema:"Chat ID or @username"`
+	Query    string `json:"query"              jsonschema:"Search query"`
+	Limit    *int   `json:"limit,omitempty"    jsonschema:"Max results (default 100)"`
+	OffsetID *int   `json:"offsetId,omitempty" jsonschema:"Message ID to start search from (for pagination)"`
 }
 
 // MessagesSearchResult is the output of the tg_messages_search tool.
@@ -56,7 +57,7 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 
 		notifyProgress(ctx, req.Session, token, 0, 1, "Searching messages")
 
-		result, err := executeSearch(ctx, client, peer, params.Query, limit)
+		result, err := executeSearch(ctx, client, peer, params)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{}, err
 		}
@@ -66,9 +67,14 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 }
 
 func executeSearch(
-	ctx context.Context, client telegram.Client, peer telegram.InputPeer, query string, limit int,
+	ctx context.Context, client telegram.Client, peer telegram.InputPeer, params MessagesSearchParams,
 ) (MessagesSearchResult, error) {
-	msgs, err := client.SearchMessages(ctx, peer, query, telegram.SearchOpts{Limit: limit})
+	opts := telegram.SearchOpts{
+		Limit:    deref(params.Limit),
+		OffsetID: deref(params.OffsetID),
+	}
+
+	msgs, err := client.SearchMessages(ctx, peer, params.Query, opts)
 	if err != nil {
 		return MessagesSearchResult{}, telegramErr("failed to search messages", err)
 	}

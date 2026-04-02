@@ -113,6 +113,7 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 
 	result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
 		Limit:      limit,
+		OffsetDate: opts.OffsetDate,
 		OffsetPeer: &tg.InputPeerEmpty{},
 	})
 	if err != nil {

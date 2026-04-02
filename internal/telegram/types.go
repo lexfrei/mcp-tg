@@ -161,8 +161,8 @@ type SendOpts struct {
 
 // DialogOpts configures dialog listing.
 type DialogOpts struct {
-	Limit  int
-	Offset int
+	Limit      int
+	OffsetDate int
 }
 
 // TopicOpts configures forum topic listing.

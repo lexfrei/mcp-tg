@@ -23,7 +23,11 @@ func validatePathAgainstRoots(ctx context.Context, session *mcp.ServerSession, f
 
 	roots, err := session.ListRoots(ctx, nil)
 	if err != nil {
-		return nil //nolint:nilerr // gracefully allow if client doesn't support roots.
+		if isMethodNotFound(err) {
+			return nil
+		}
+
+		return errors.Wrap(err, "listing client roots")
 	}
 
 	if len(roots.Roots) == 0 {
@@ -60,6 +64,12 @@ func rootToPath(root *mcp.Root) string {
 	}
 
 	return parsed.Path
+}
+
+// isMethodNotFound checks if the error is a JSON-RPC "method not found" (-32601),
+// which means the client doesn't support the roots capability.
+func isMethodNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "method not found")
 }
 
 func isUnderDir(path, dir string) bool {

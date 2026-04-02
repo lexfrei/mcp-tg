@@ -59,6 +59,8 @@ func run() error {
 		return errors.Wrap(mkdirErr, "creating session directory")
 	}
 
+	ensureSessionPerms(cfg.SessionFile)
+
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: &session.FileStorage{Path: cfg.SessionFile},
 		Middlewares:    []telegram.Middleware{newFloodWaitMiddleware()},
@@ -155,6 +157,15 @@ func waitForTransports(
 	}
 
 	return group.Wait() //nolint:wrapcheck // errors are already wrapped inside group goroutines.
+}
+
+const sessionFilePerms = 0o600
+
+// ensureSessionPerms sets restrictive permissions on the session file
+// if it already exists. gotd/td creates it with default umask (often 0644),
+// but it contains MTProto auth keys and should not be world-readable.
+func ensureSessionPerms(path string) {
+	_ = os.Chmod(path, sessionFilePerms)
 }
 
 func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
@@ -272,6 +283,7 @@ func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
+		IdleTimeout:       keepAliveInterval * 2,
 	}
 
 	//nolint:gosec // G118: ctx is already cancelled when goroutine runs, must use fresh context for graceful shutdown.

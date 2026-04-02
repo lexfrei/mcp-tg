@@ -129,3 +129,25 @@ func TestFormatUserName_WithUsername(t *testing.T) {
 		t.Errorf("formatUserName() = %q, want %q", got, want)
 	}
 }
+
+func TestValidateIDCount_OK(t *testing.T) {
+	ids := make([]int, maxIDsPerRequest)
+
+	if validateIDCount(ids) != nil {
+		t.Errorf("expected nil for %d IDs", maxIDsPerRequest)
+	}
+}
+
+func TestValidateIDCount_TooMany(t *testing.T) {
+	ids := make([]int, maxIDsPerRequest+1)
+
+	if validateIDCount(ids) == nil {
+		t.Error("expected error for too many IDs")
+	}
+}
+
+func TestValidateIDCount_Empty(t *testing.T) {
+	if validateIDCount(nil) != nil {
+		t.Error("expected nil for empty IDs")
+	}
+}

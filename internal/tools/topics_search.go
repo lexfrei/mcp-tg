@@ -17,8 +17,9 @@ type TopicsSearchParams struct {
 
 // TopicsSearchResult is the output of the tg_topics_search tool.
 type TopicsSearchResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count  int         `json:"count"`
+	Topics []TopicItem `json:"topics"`
+	Output string      `json:"output"`
 }
 
 // NewTopicsSearchHandler creates a handler for the tg_topics_search tool.
@@ -61,6 +62,7 @@ func NewTopicsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[TopicsSea
 
 		return nil, TopicsSearchResult{
 			Count:  len(topics),
+			Topics: topicsToItems(topics),
 			Output: buf.String(),
 		}, nil
 	}

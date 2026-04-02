@@ -16,8 +16,9 @@ type DialogsSearchParams struct {
 
 // DialogsSearchResult is the output of the tg_dialogs_search tool.
 type DialogsSearchResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count   int          `json:"count"`
+	Dialogs []DialogItem `json:"dialogs"`
+	Output  string       `json:"output"`
 }
 
 // NewDialogsSearchHandler creates a handler for the tg_dialogs_search tool.
@@ -45,8 +46,9 @@ func NewDialogsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsS
 		}
 
 		return nil, DialogsSearchResult{
-			Count:  len(dialogs),
-			Output: buf.String(),
+			Count:   len(dialogs),
+			Dialogs: dialogsToItems(dialogs),
+			Output:  buf.String(),
 		}, nil
 	}
 }

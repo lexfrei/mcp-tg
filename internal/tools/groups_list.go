@@ -16,8 +16,9 @@ type GroupsListParams struct {
 
 // GroupsListResult is the output of the tg_groups_list tool.
 type GroupsListResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count  int          `json:"count"`
+	Groups []DialogItem `json:"groups"`
+	Output string       `json:"output"`
 }
 
 // NewGroupsListHandler creates a handler for the tg_groups_list tool.
@@ -41,22 +42,24 @@ func NewGroupsListHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsListP
 				telegramErr("failed to list dialogs", err)
 		}
 
-		var buf strings.Builder
+		var (
+			buf    strings.Builder
+			groups []DialogItem
+		)
 
-		count := 0
-
-		for _, dlg := range dialogs {
-			if !dlg.IsGroup {
+		for idx := range dialogs {
+			if !dialogs[idx].IsGroup {
 				continue
 			}
 
-			fmt.Fprintf(&buf, "%s (peer: %s)\n", dlg.Title, formatPeer(dlg.Peer))
+			fmt.Fprintf(&buf, "%s (peer: %s)\n", dialogs[idx].Title, formatPeer(dialogs[idx].Peer))
 
-			count++
+			groups = append(groups, dialogToItem(&dialogs[idx]))
 		}
 
 		return nil, GroupsListResult{
-			Count:  count,
+			Count:  len(groups),
+			Groups: groups,
 			Output: buf.String(),
 		}, nil
 	}

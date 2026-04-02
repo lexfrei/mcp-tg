@@ -13,7 +13,7 @@ const (
 	peerUser     = "user"
 	peerChannel  = "channel"
 	peerGroup    = "group"
-	maxTextLen   = 100
+	maxTextLen   = 500
 )
 
 // formatTimestamp converts a Unix timestamp to a human-readable string.

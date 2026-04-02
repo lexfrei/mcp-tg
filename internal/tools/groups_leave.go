@@ -9,7 +9,7 @@ import (
 
 // GroupsLeaveParams defines the parameters for the tg_groups_leave tool.
 type GroupsLeaveParams struct {
-	Peer string `json:"peer" jsonschema:"Group ID or @username to leave"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // GroupsLeaveResult is the output of the tg_groups_leave tool.

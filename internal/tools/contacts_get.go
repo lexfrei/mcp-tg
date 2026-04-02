@@ -10,7 +10,7 @@ import (
 
 // ContactsGetParams defines the parameters for the tg_contacts_get tool.
 type ContactsGetParams struct {
-	Peer string `json:"peer" jsonschema:"Chat ID or @username of the contact"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // ContactsGetResult is the output of the tg_contacts_get tool.

@@ -10,7 +10,7 @@ import (
 
 // MessagesReactParams defines the parameters for the tg_messages_react tool.
 type MessagesReactParams struct {
-	Peer      string `json:"peer"             jsonschema:"Chat ID or @username"`
+	Peer      string `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int    `json:"messageId"        jsonschema:"ID of the message to react to"`
 	Emoji     string `json:"emoji"            jsonschema:"Reaction emoji (e.g. 👍)"`
 	Remove    *bool  `json:"remove,omitempty" jsonschema:"Remove reaction instead of adding"`

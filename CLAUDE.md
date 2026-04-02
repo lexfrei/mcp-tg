@@ -24,7 +24,8 @@ internal/telegram/           Telegram abstraction layer
   wrapper_helpers.go         Helper functions for wrapper (extractors, converters)
   convert.go                 tg types → domain types conversion
   auth.go                    Auth flow with MCP elicitation support
-  resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs)
+  resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs, invite links)
+  peer_cache.go              Thread-safe cache for peer access hashes
 internal/tools/              MCP tool handlers (58 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
@@ -36,7 +37,7 @@ internal/tools/              MCP tool handlers (58 tools)
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
 internal/completions/        Argument autocompletion
-internal/middleware/         Request logging middleware
+internal/middleware/         Auth guard + request logging middleware
 internal/testutil/           NoopClient for registration tests
 ```
 
@@ -67,9 +68,10 @@ All tools accept `peer` as string. Supported formats:
 - `@username`
 - `username` (bare)
 - `https://t.me/username`
+- `https://t.me/+invite_hash` (if already joined)
 - Numeric ID (bot-API style: positive=user, negative=chat, -100xxx=channel)
 
-WARNING: Numeric IDs have AccessHash=0, which limits some operations. Prefer @username.
+Peers resolved by username get cached with valid access hashes. Numeric IDs reuse cached hashes when available. Prefer @username.
 
 ### Channels vs Groups
 
@@ -79,7 +81,15 @@ Both are handled transparently. Wrapper checks `peer.Type == PeerChannel` and us
 
 Cascade: env var → MCP elicitation → error. No stdin fallback (stdin = MCP protocol).
 
+Auth guard middleware blocks tool/resource/prompt calls until auth completes.
+
 Session persistence: volume mount `-v ~/.mcp-tg:/home/nobody/.mcp-tg`.
+
+### Telegram protocol details
+
+- **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
+- **FLOOD_WAIT**: gotd/td middleware auto-retries up to 3 times with server-specified delay
+- **Peer cache**: Access hashes from username resolution and dialog listing are cached in memory
 
 ## Linter
 

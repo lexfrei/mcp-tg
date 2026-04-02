@@ -17,7 +17,15 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Roots | File path validation for uploads/downloads |
 | Transports | stdio + HTTP/SSE |
 | KeepAlive | 30s ping interval |
-| Middleware | Request logging with duration |
+| Middleware | Auth guard, request logging |
+
+## Telegram Protocol Features
+
+- **Peer cache** — resolved peers with access hashes are cached in memory, so numeric ID lookups reuse valid hashes instead of failing
+- **Invite links** — `t.me/+hash` and `t.me/joinchat/hash` are resolved via `messages.checkChatInvite`
+- **FLOOD_WAIT retry** — automatic sleep and retry (up to 3 times) when Telegram rate-limits the client
+- **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
+- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
 
 ## Tools (58)
 
@@ -54,7 +62,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
-- `tg_groups_join` — Join a group or channel
+- `tg_groups_join` — Join a public channel or supergroup
 - `tg_groups_leave` — Leave a group or channel
 - `tg_groups_rename` — Rename a group
 - `tg_groups_members_add` — Add a member
@@ -67,10 +75,10 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - `tg_chats_create` — Create a new group or channel
 - `tg_chats_archive` — Archive or unarchive a chat
 - `tg_chats_mute` — Mute or unmute notifications
-- `tg_chats_delete` — Delete a chat
+- `tg_chats_delete` — Delete a channel or supergroup
 - `tg_chats_set_photo` — Set chat photo
 - `tg_chats_set_description` — Set chat description
-- `tg_chats_get_admins` — List administrators
+- `tg_chats_get_admins` — List administrators (channels/supergroups)
 - `tg_chats_set_permissions` — Set default permissions
 
 ### Media & Files (4)
@@ -127,6 +135,18 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - `reply_to_message` — Fetch context around a message for composing replies
 - `summarize_chat` — Fetch recent messages for conversation summarization
 - `search_and_reply` — Search messages and prepare reply context
+
+## Peer Resolution
+
+All tools accept `peer` as a string. Supported formats:
+
+- `@username`
+- `username` (bare)
+- `https://t.me/username`
+- `https://t.me/+invite_hash` (invite links, if already joined)
+- Numeric ID (bot-API style: positive=user, negative=chat, `-100xxx`=channel)
+
+Peers resolved by username include a valid access hash. Numeric IDs use a cached access hash if available, otherwise AccessHash=0 (some API calls may fail — prefer `@username`).
 
 ## Configuration
 

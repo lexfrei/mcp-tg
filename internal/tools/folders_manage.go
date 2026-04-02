@@ -14,7 +14,7 @@ import (
 // FoldersCreateParams defines the parameters for the tg_folders_create tool.
 type FoldersCreateParams struct {
 	Title string   `json:"title"           jsonschema:"Title for the new folder"`
-	Peers []string `json:"peers,omitempty" jsonschema:"Chat IDs or @usernames to include"`
+	Peers []string `json:"peers,omitempty" jsonschema:"Chats: @usernames or numeric IDs"`
 }
 
 // FoldersCreateResult is the output of the tg_folders_create tool.
@@ -79,7 +79,7 @@ func FoldersCreateTool() *mcp.Tool {
 type FoldersEditParams struct {
 	FolderID int      `json:"folderId"        jsonschema:"ID of the folder to edit"`
 	Title    string   `json:"title"           jsonschema:"New title for the folder"`
-	Peers    []string `json:"peers,omitempty" jsonschema:"Chat IDs or @usernames to include"`
+	Peers    []string `json:"peers,omitempty" jsonschema:"Chats: @usernames or numeric IDs"`
 }
 
 // FoldersEditResult is the output of the tg_folders_edit tool.

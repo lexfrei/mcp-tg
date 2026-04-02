@@ -9,7 +9,7 @@ import (
 
 // GroupsJoinParams defines the parameters for the tg_groups_join tool.
 type GroupsJoinParams struct {
-	Peer string `json:"peer" jsonschema:"Channel/supergroup ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // GroupsJoinResult is the output of the tg_groups_join tool.

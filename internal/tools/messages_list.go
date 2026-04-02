@@ -11,7 +11,7 @@ import (
 
 // MessagesListParams defines the parameters for the tg_messages_list tool.
 type MessagesListParams struct {
-	Peer     string `json:"peer"               jsonschema:"Chat ID or @username"`
+	Peer     string `json:"peer"               jsonschema:"@username, t.me/ link, or numeric ID"`
 	Limit    *int   `json:"limit,omitempty"    jsonschema:"Max messages to return (default 100)"`
 	OffsetID *int   `json:"offsetId,omitempty" jsonschema:"Message ID to start from"`
 }

@@ -11,7 +11,7 @@ import (
 
 // DraftsSetParams defines the parameters for the tg_drafts_set tool.
 type DraftsSetParams struct {
-	Peer    string `json:"peer"              jsonschema:"Chat ID or @username"`
+	Peer    string `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
 	Text    string `json:"text"              jsonschema:"Draft message text"`
 	ReplyTo *int   `json:"replyTo,omitempty" jsonschema:"Message ID to reply to"`
 }
@@ -71,7 +71,7 @@ func DraftsSetTool() *mcp.Tool {
 
 // DraftsClearParams defines the parameters for the tg_drafts_clear tool.
 type DraftsClearParams struct {
-	Peer string `json:"peer" jsonschema:"Chat ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // DraftsClearResult is the output of the tg_drafts_clear tool.

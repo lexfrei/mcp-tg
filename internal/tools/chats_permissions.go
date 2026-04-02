@@ -9,7 +9,7 @@ import (
 
 // ChatsPermissionsParams defines the parameters for the tg_chats_set_permissions tool.
 type ChatsPermissionsParams struct {
-	Peer         string `json:"peer"                   jsonschema:"Chat or group ID or @username"`
+	Peer         string `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
 	SendMessages *bool  `json:"sendMessages,omitempty" jsonschema:"Allow sending text messages"`
 	SendMedia    *bool  `json:"sendMedia,omitempty"    jsonschema:"Allow sending media (photos, videos, etc.)"`
 	SendStickers *bool  `json:"sendStickers,omitempty" jsonschema:"Allow sending stickers"`

@@ -13,7 +13,7 @@ import (
 
 // ChatsArchiveParams defines the parameters for the tg_chats_archive tool.
 type ChatsArchiveParams struct {
-	Peer    string `json:"peer"    jsonschema:"Chat ID or @username"`
+	Peer    string `json:"peer"    jsonschema:"@username, t.me/ link, or numeric ID"`
 	Archive bool   `json:"archive" jsonschema:"True to archive, false to unarchive"`
 }
 
@@ -74,7 +74,7 @@ func ChatsArchiveTool() *mcp.Tool {
 
 // ChatsMuteParams defines the parameters for the tg_chats_mute tool.
 type ChatsMuteParams struct {
-	Peer      string `json:"peer"      jsonschema:"Chat ID or @username"`
+	Peer      string `json:"peer"      jsonschema:"@username, t.me/ link, or numeric ID"`
 	MuteUntil int    `json:"muteUntil" jsonschema:"Unix timestamp until which to mute (0 to unmute)"`
 }
 
@@ -135,7 +135,7 @@ func ChatsMuteTool() *mcp.Tool {
 
 // ChatsDeleteParams defines the parameters for the tg_chats_delete tool.
 type ChatsDeleteParams struct {
-	Peer string `json:"peer" jsonschema:"Chat ID or @username to delete"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // ChatsDeleteResult is the output of the tg_chats_delete tool.

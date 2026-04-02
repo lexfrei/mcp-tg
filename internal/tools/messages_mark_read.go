@@ -10,7 +10,7 @@ import (
 
 // MessagesMarkReadParams defines the parameters for the tg_messages_mark_read tool.
 type MessagesMarkReadParams struct {
-	Peer  string `json:"peer"  jsonschema:"Chat ID or @username"`
+	Peer  string `json:"peer"  jsonschema:"@username, t.me/ link, or numeric ID"`
 	MaxID int    `json:"maxId" jsonschema:"Mark all messages up to this ID as read"`
 }
 

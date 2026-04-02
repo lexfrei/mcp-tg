@@ -10,7 +10,7 @@ import (
 
 // MessagesEditParams defines the parameters for the tg_messages_edit tool.
 type MessagesEditParams struct {
-	Peer      string `json:"peer"      jsonschema:"Chat ID or @username"`
+	Peer      string `json:"peer"      jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int    `json:"messageId" jsonschema:"ID of the message to edit"`
 	Text      string `json:"text"      jsonschema:"New message text"`
 }

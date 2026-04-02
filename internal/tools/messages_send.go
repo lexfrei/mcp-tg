@@ -10,7 +10,7 @@ import (
 
 // MessagesSendParams defines the parameters for the tg_messages_send tool.
 type MessagesSendParams struct {
-	Peer    string `json:"peer"              jsonschema:"Chat ID or @username"`
+	Peer    string `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
 	Text    string `json:"text"              jsonschema:"Message text to send"`
 	ReplyTo *int   `json:"replyTo,omitempty" jsonschema:"Message ID to reply to"`
 }

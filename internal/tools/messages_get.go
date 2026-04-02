@@ -11,7 +11,7 @@ import (
 
 // MessagesGetParams defines the parameters for the tg_messages_get tool.
 type MessagesGetParams struct {
-	Peer string `json:"peer" jsonschema:"Chat ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 	IDs  []int  `json:"ids"  jsonschema:"Message IDs to retrieve"`
 }
 

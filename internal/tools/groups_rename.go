@@ -10,7 +10,7 @@ import (
 
 // GroupsRenameParams defines the parameters for the tg_groups_rename tool.
 type GroupsRenameParams struct {
-	Peer  string `json:"peer"  jsonschema:"Group ID or @username"`
+	Peer  string `json:"peer"  jsonschema:"@username, t.me/ link, or numeric ID"`
 	Title string `json:"title" jsonschema:"New group title"`
 }
 

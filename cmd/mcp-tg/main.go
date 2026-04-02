@@ -178,11 +178,12 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 	}))
 
 	return &mcp.ServerOptions{
-		Instructions: "MCP server for Telegram Client API. " +
-			"Provides tools to manage messages, dialogs, contacts, groups, " +
-			"channels, stickers, folders, and user profile. " +
-			"Uses MTProto protocol via user account (not bot). " +
-			"Requires TELEGRAM_APP_ID and TELEGRAM_APP_HASH from my.telegram.org.",
+		Instructions: "MCP server for Telegram Client API (MTProto, user account, not bot). " +
+			"All tools accepting 'peer' support: @username, bare username, " +
+			"https://t.me/username, t.me/+invite_hash, or numeric bot-API style ID " +
+			"(positive=user, negative=chat, -100xxx=channel). Prefer @username over numeric IDs. " +
+			"Tools with 'limit' accept pagination: use offsetId or offsetDate from previous results. " +
+			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
 		Logger:            logger,
 		KeepAlive:         keepAliveInterval,
 		CompletionHandler: completions.NewHandler(client),

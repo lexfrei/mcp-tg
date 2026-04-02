@@ -10,7 +10,7 @@ import (
 
 // GroupsInfoParams defines the parameters for the tg_groups_info tool.
 type GroupsInfoParams struct {
-	Peer string `json:"peer" jsonschema:"Group ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // GroupsInfoResult is the output of the tg_groups_info tool.

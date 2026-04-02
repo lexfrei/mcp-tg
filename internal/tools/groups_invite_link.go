@@ -9,7 +9,7 @@ import (
 
 // GroupsInviteLinkGetParams defines the parameters for the tg_groups_invite_link_get tool.
 type GroupsInviteLinkGetParams struct {
-	Peer string `json:"peer" jsonschema:"Group ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // GroupsInviteLinkGetResult is the output of the tg_groups_invite_link_get tool.
@@ -60,7 +60,7 @@ func GroupsInviteLinkGetTool() *mcp.Tool {
 
 // GroupsInviteLinkRevokeParams defines the parameters for the tg_groups_invite_link_revoke tool.
 type GroupsInviteLinkRevokeParams struct {
-	Peer string `json:"peer" jsonschema:"Group ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 	Link string `json:"link" jsonschema:"Invite link to revoke"`
 }
 

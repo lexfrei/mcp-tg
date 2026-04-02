@@ -9,7 +9,7 @@ import (
 
 // MediaDownloadParams defines the parameters for the tg_media_download tool.
 type MediaDownloadParams struct {
-	Peer      string  `json:"peer"                jsonschema:"Chat ID or @username"`
+	Peer      string  `json:"peer"                jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int     `json:"messageId"           jsonschema:"Message ID containing the media"`
 	OutputDir *string `json:"outputDir,omitempty" jsonschema:"Directory to save the downloaded file"`
 }

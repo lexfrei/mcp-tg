@@ -11,7 +11,7 @@ import (
 
 // ChatsSetPhotoParams defines the parameters for the tg_chats_set_photo tool.
 type ChatsSetPhotoParams struct {
-	Peer string `json:"peer" jsonschema:"Chat, group, or channel ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 	Path string `json:"path" jsonschema:"Local file path of the new photo"`
 }
 
@@ -78,7 +78,7 @@ func ChatsSetPhotoTool() *mcp.Tool {
 
 // ChatsSetDescriptionParams defines the parameters for the tg_chats_set_description tool.
 type ChatsSetDescriptionParams struct {
-	Peer  string `json:"peer"  jsonschema:"Chat, group, or channel ID or @username"`
+	Peer  string `json:"peer"  jsonschema:"@username, t.me/ link, or numeric ID"`
 	About string `json:"about" jsonschema:"New description text for the chat"`
 }
 

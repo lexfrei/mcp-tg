@@ -10,7 +10,7 @@ import (
 
 // DialogsGetInfoParams defines the parameters for the tg_dialogs_get_info tool.
 type DialogsGetInfoParams struct {
-	Peer string `json:"peer" jsonschema:"Chat ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // DialogsGetInfoResult is the output of the tg_dialogs_get_info tool.

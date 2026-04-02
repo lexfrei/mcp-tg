@@ -9,7 +9,7 @@ import (
 
 // MessagesSearchParams defines the parameters for the tg_messages_search tool.
 type MessagesSearchParams struct {
-	Peer     string `json:"peer"               jsonschema:"Chat ID or @username"`
+	Peer     string `json:"peer"               jsonschema:"@username, t.me/ link, or numeric ID"`
 	Query    string `json:"query"              jsonschema:"Search query"`
 	Limit    *int   `json:"limit,omitempty"    jsonschema:"Max results (default 100)"`
 	OffsetID *int   `json:"offsetId,omitempty" jsonschema:"Message ID to start search from (for pagination)"`

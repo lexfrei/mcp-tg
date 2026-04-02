@@ -10,7 +10,7 @@ import (
 
 // MessagesPinParams defines the parameters for the tg_messages_pin tool.
 type MessagesPinParams struct {
-	Peer      string `json:"peer"            jsonschema:"Chat ID or @username"`
+	Peer      string `json:"peer"            jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int    `json:"messageId"       jsonschema:"ID of the message to pin/unpin"`
 	Unpin     *bool  `json:"unpin,omitempty" jsonschema:"Set to true to unpin instead of pin"`
 }

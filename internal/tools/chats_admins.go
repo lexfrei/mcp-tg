@@ -11,7 +11,7 @@ import (
 
 // ChatsAdminsParams defines the parameters for the tg_chats_get_admins tool.
 type ChatsAdminsParams struct {
-	Peer string `json:"peer" jsonschema:"Chat, group, or channel ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
 }
 
 // ChatsAdminsResult is the output of the tg_chats_get_admins tool.

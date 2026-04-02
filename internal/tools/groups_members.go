@@ -10,7 +10,7 @@ import (
 
 // GroupsMembersAddParams defines the parameters for the tg_groups_members_add tool.
 type GroupsMembersAddParams struct {
-	Group string `json:"group" jsonschema:"Group ID or @username"`
+	Group string `json:"group" jsonschema:"@username, t.me/ link, or numeric ID"`
 	User  string `json:"user"  jsonschema:"User ID or @username to add"`
 }
 
@@ -75,7 +75,7 @@ func GroupsMembersAddTool() *mcp.Tool {
 
 // GroupsMembersRemoveParams defines the parameters for the tg_groups_members_remove tool.
 type GroupsMembersRemoveParams struct {
-	Group string `json:"group" jsonschema:"Group ID or @username"`
+	Group string `json:"group" jsonschema:"@username, t.me/ link, or numeric ID"`
 	User  string `json:"user"  jsonschema:"User ID or @username to remove"`
 }
 

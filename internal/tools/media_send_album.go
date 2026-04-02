@@ -10,7 +10,7 @@ import (
 
 // MediaSendAlbumParams defines the parameters for the tg_media_send_album tool.
 type MediaSendAlbumParams struct {
-	Peer    string   `json:"peer"              jsonschema:"Chat ID or @username"`
+	Peer    string   `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
 	Paths   []string `json:"paths"             jsonschema:"Local file paths to send as album"`
 	Caption *string  `json:"caption,omitempty" jsonschema:"Optional caption for the album"`
 }

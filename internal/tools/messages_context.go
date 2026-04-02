@@ -14,7 +14,7 @@ const defaultContextRadius = 10
 
 // MessagesContextParams defines the parameters for the tg_messages_context tool.
 type MessagesContextParams struct {
-	Peer      string `json:"peer"             jsonschema:"Chat ID or @username"`
+	Peer      string `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int    `json:"messageId"        jsonschema:"Message ID to get context around"`
 	Radius    *int   `json:"radius,omitempty" jsonschema:"Number of messages before and after (default 10)"`
 }

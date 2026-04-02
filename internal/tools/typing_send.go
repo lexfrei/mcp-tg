@@ -11,7 +11,7 @@ const defaultTypingAction = "typing"
 
 // TypingSendParams defines the parameters for the tg_typing_send tool.
 type TypingSendParams struct {
-	Peer   string  `json:"peer"             jsonschema:"Chat ID or @username"`
+	Peer   string  `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
 	Action *string `json:"action,omitempty" jsonschema:"Typing action type (default typing)"`
 }
 

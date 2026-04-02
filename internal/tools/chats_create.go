@@ -12,7 +12,7 @@ import (
 type ChatsCreateParams struct {
 	Title     string   `json:"title"               jsonschema:"Title for the new chat or channel"`
 	IsChannel *bool    `json:"isChannel,omitempty" jsonschema:"Create a channel instead of a group"`
-	UserPeers []string `json:"userPeers,omitempty" jsonschema:"User IDs or @usernames to invite"`
+	UserPeers []string `json:"userPeers,omitempty" jsonschema:"Users: @usernames or numeric IDs"`
 }
 
 // ChatsCreateResult is the output of the tg_chats_create tool.

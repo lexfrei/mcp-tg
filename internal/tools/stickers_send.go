@@ -10,7 +10,7 @@ import (
 
 // StickersSendParams defines the parameters for the tg_stickers_send tool.
 type StickersSendParams struct {
-	Peer          string `json:"peer"          jsonschema:"Chat ID or @username"`
+	Peer          string `json:"peer"          jsonschema:"@username, t.me/ link, or numeric ID"`
 	StickerFileID int64  `json:"stickerFileId" jsonschema:"File ID of the sticker to send"`
 }
 

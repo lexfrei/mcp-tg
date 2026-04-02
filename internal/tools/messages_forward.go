@@ -10,8 +10,8 @@ import (
 
 // MessagesForwardParams defines the parameters for the tg_messages_forward tool.
 type MessagesForwardParams struct {
-	FromPeer string `json:"fromPeer" jsonschema:"Source chat ID or @username"`
-	ToPeer   string `json:"toPeer"   jsonschema:"Destination chat ID or @username"`
+	FromPeer string `json:"fromPeer" jsonschema:"Source: @username, t.me/ link, or numeric ID"`
+	ToPeer   string `json:"toPeer"   jsonschema:"Destination: @username, t.me/ link, or numeric ID"`
 	IDs      []int  `json:"ids"      jsonschema:"Message IDs to forward"`
 }
 

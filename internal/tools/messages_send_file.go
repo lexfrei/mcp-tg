@@ -10,7 +10,7 @@ import (
 
 // MessagesSendFileParams defines the parameters for the tg_messages_send_file tool.
 type MessagesSendFileParams struct {
-	Peer    string  `json:"peer"              jsonschema:"Chat ID or @username"`
+	Peer    string  `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
 	Path    string  `json:"path"              jsonschema:"Local file path to send"`
 	Caption *string `json:"caption,omitempty" jsonschema:"Optional caption for the file"`
 }

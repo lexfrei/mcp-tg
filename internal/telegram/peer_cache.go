@@ -2,19 +2,23 @@ package telegram
 
 import "sync"
 
+// peerKey uniquely identifies a peer by type and ID.
+// Necessary because User ID=123 and Channel ID=123 are different entities.
+type peerKey struct {
+	typ PeerType
+	id  int64
+}
+
 // PeerCache stores resolved peers with their access hashes for reuse.
-// When peers are resolved via username, they come with valid access hashes.
-// This cache allows numeric-ID lookups to reuse those hashes instead of
-// falling back to AccessHash=0, which causes many Telegram API calls to fail.
 type PeerCache struct {
-	mut  sync.RWMutex
-	byID map[int64]InputPeer
+	mut     sync.RWMutex
+	entries map[peerKey]InputPeer
 }
 
 // NewPeerCache creates an empty peer cache.
 func NewPeerCache() *PeerCache {
 	return &PeerCache{
-		byID: make(map[int64]InputPeer),
+		entries: make(map[peerKey]InputPeer),
 	}
 }
 
@@ -25,10 +29,12 @@ func (cache *PeerCache) Store(peer InputPeer) {
 		return
 	}
 
+	key := peerKey{typ: peer.Type, id: peer.ID}
+
 	cache.mut.Lock()
 	defer cache.mut.Unlock()
 
-	cache.byID[peer.ID] = peer
+	cache.entries[key] = peer
 }
 
 // StoreAll saves multiple peers in the cache, skipping those
@@ -39,17 +45,20 @@ func (cache *PeerCache) StoreAll(peers []InputPeer) {
 
 	for _, peer := range peers {
 		if peer.AccessHash != 0 {
-			cache.byID[peer.ID] = peer
+			key := peerKey{typ: peer.Type, id: peer.ID}
+			cache.entries[key] = peer
 		}
 	}
 }
 
-// Lookup returns a cached peer by ID if available.
-func (cache *PeerCache) Lookup(peerID int64) (InputPeer, bool) {
+// Lookup returns a cached peer by type and ID if available.
+func (cache *PeerCache) Lookup(typ PeerType, peerID int64) (InputPeer, bool) {
+	key := peerKey{typ: typ, id: peerID}
+
 	cache.mut.RLock()
 	defer cache.mut.RUnlock()
 
-	peer, found := cache.byID[peerID]
+	peer, found := cache.entries[key]
 
 	return peer, found
 }

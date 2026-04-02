@@ -78,7 +78,7 @@ func (w *Wrapper) ResolvePeer(
 		return peer, nil
 	}
 
-	if cached, hit := w.cache.Lookup(peer.ID); hit {
+	if cached, hit := w.cache.Lookup(peer.Type, peer.ID); hit {
 		return cached, nil
 	}
 
@@ -1051,7 +1051,7 @@ func (w *Wrapper) resolveViaDialogs(
 
 	w.cacheFromPeerDialogs(result)
 
-	cached, hit := w.cache.Lookup(peer.ID)
+	cached, hit := w.cache.Lookup(peer.Type, peer.ID)
 
 	return cached, hit
 }

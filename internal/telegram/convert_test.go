@@ -6,6 +6,8 @@ import (
 	"github.com/gotd/td/tg"
 )
 
+const testMessageText = "hello world"
+
 func TestConvertUser(t *testing.T) {
 	raw := &tg.User{
 		ID:        12345,
@@ -51,7 +53,7 @@ func TestConvertMessage(t *testing.T) {
 	raw := &tg.Message{
 		ID:      42,
 		Date:    1700000000,
-		Message: "hello world",
+		Message: testMessageText,
 	}
 
 	got := ConvertMessage(raw)
@@ -60,8 +62,8 @@ func TestConvertMessage(t *testing.T) {
 		t.Errorf("ID = %d, want 42", got.ID)
 	}
 
-	if got.Text != "hello world" {
-		t.Errorf("Text = %q, want %q", got.Text, "hello world")
+	if got.Text != testMessageText {
+		t.Errorf("Text = %q, want %q", got.Text, testMessageText)
 	}
 
 	if got.Date != 1700000000 {

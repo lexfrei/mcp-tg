@@ -70,7 +70,7 @@ func (m *mockClient) SendMessage(_ context.Context, peer telegram.InputPeer, _ s
 	return m.message, m.err
 }
 
-func (m *mockClient) EditMessage(_ context.Context, peer telegram.InputPeer, _ int, _ string) (*telegram.Message, error) {
+func (m *mockClient) EditMessage(_ context.Context, peer telegram.InputPeer, _ int, _, _ string) (*telegram.Message, error) {
 	m.lastPeer = peer
 
 	return m.message, m.err

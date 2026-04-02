@@ -241,6 +241,15 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		RandomID: randID,
 	}
 
+	if opts.ParseMode == ParseModeMarkdown {
+		plainText, entities := ParseMarkdown(text)
+		req.Message = plainText
+
+		if len(entities) > 0 {
+			req.SetEntities(entities)
+		}
+	}
+
 	if opts.ReplyTo > 0 {
 		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: opts.ReplyTo}
 	}
@@ -254,12 +263,25 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 }
 
 // EditMessage edits an existing message.
-func (w *Wrapper) EditMessage(ctx context.Context, peer InputPeer, msgID int, text string) (*Message, error) {
-	result, err := w.api.MessagesEditMessage(ctx, &tg.MessagesEditMessageRequest{
+func (w *Wrapper) EditMessage(
+	ctx context.Context, peer InputPeer, msgID int, text string, parseMode string,
+) (*Message, error) {
+	req := &tg.MessagesEditMessageRequest{
 		Peer:    InputPeerToTG(peer),
 		ID:      msgID,
 		Message: text,
-	})
+	}
+
+	if parseMode == ParseModeMarkdown {
+		plainText, entities := ParseMarkdown(text)
+		req.Message = plainText
+
+		if len(entities) > 0 {
+			req.SetEntities(entities)
+		}
+	}
+
+	result, err := w.api.MessagesEditMessage(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "editing message")
 	}

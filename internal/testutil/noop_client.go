@@ -31,7 +31,7 @@ func (NoopClient) SendMessage(_ context.Context, _ telegram.InputPeer, _ string,
 	return nil, nil
 }
 
-func (NoopClient) EditMessage(_ context.Context, _ telegram.InputPeer, _ int, _ string) (*telegram.Message, error) {
+func (NoopClient) EditMessage(_ context.Context, _ telegram.InputPeer, _ int, _, _ string) (*telegram.Message, error) {
 	return nil, nil
 }
 

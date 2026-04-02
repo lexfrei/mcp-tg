@@ -153,10 +153,14 @@ type SearchOpts struct {
 	OffsetID int
 }
 
+// ParseModeMarkdown is the parse mode value for Markdown formatting.
+const ParseModeMarkdown = "markdown"
+
 // SendOpts configures message sending.
 type SendOpts struct {
-	ReplyTo int
-	TopicID int
+	ReplyTo   int
+	TopicID   int
+	ParseMode string
 }
 
 // DialogOpts configures dialog listing.

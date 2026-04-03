@@ -254,6 +254,11 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		}
 	}
 
+	validErr := validateMessageText(req.Message)
+	if validErr != nil {
+		return nil, validErr
+	}
+
 	if opts.ReplyTo > 0 {
 		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: opts.ReplyTo}
 	}
@@ -283,6 +288,11 @@ func (w *Wrapper) EditMessage(
 		if len(entities) > 0 {
 			req.SetEntities(entities)
 		}
+	}
+
+	validErr := validateMessageText(req.Message)
+	if validErr != nil {
+		return nil, validErr
 	}
 
 	result, err := w.api.MessagesEditMessage(ctx, req)
@@ -580,6 +590,10 @@ func (w *Wrapper) SetProfileBio(ctx context.Context, bio string) error {
 
 // SetProfilePhoto sets the authenticated user's profile photo.
 func (w *Wrapper) SetProfilePhoto(ctx context.Context, path string) error {
+	if !isImagePath(path) {
+		return errors.New("file is not an image (expected jpg, png, or webp)")
+	}
+
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
 		return errors.Wrap(err, "uploading profile photo")
@@ -797,6 +811,10 @@ func (w *Wrapper) DeleteChat(ctx context.Context, peer InputPeer) error {
 
 // SetChatPhoto sets the photo for a group or channel.
 func (w *Wrapper) SetChatPhoto(ctx context.Context, peer InputPeer, path string) error {
+	if !isImagePath(path) {
+		return errors.New("file is not an image (expected jpg, png, or webp)")
+	}
+
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
 		return errors.Wrap(err, "uploading chat photo")

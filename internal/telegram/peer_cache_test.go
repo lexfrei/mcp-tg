@@ -184,3 +184,22 @@ func TestPeerCacheNoCollision(t *testing.T) {
 		t.Errorf("Channel 123: got %+v, want AccessHash 222", chn)
 	}
 }
+
+func TestPeerCacheEviction(t *testing.T) {
+	cache := NewPeerCache()
+
+	for idx := range maxCacheEntries + 1 {
+		cache.Store(InputPeer{
+			Type:       PeerUser,
+			ID:         int64(idx),
+			AccessHash: int64(idx + 1),
+		})
+	}
+
+	// Cache should have been cleared after exceeding limit,
+	// then the last entry re-inserted.
+	_, found := cache.Lookup(PeerUser, 0)
+	if found {
+		t.Error("expected first entry to be evicted")
+	}
+}

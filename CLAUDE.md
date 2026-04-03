@@ -33,7 +33,13 @@ internal/tools/              MCP tool handlers (58 tools)
   format.go                  Output formatting (timestamps, messages, dialogs)
   roots.go                   File path validation against client roots
   progress.go                Progress notification helper
+  result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
   mock_test.go               Mock telegram.Client for tests
+cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
+internal/telegram/
+  markdown.go                Markdown → Telegram entities parser (entry point)
+  markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
+  markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
 internal/completions/        Argument autocompletion

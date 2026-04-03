@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"log"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -91,8 +92,10 @@ func (aut *Authenticator) Code(ctx context.Context, _ *tg.AuthSentCode) (string,
 	return "", ErrNoAuthCode
 }
 
-// AcceptTermsOfService always accepts the ToS.
-func (aut *Authenticator) AcceptTermsOfService(_ context.Context, _ tg.HelpTermsOfService) error {
+// AcceptTermsOfService always accepts the ToS and logs the action.
+func (aut *Authenticator) AcceptTermsOfService(_ context.Context, tos tg.HelpTermsOfService) error {
+	log.Printf("auto-accepted Telegram ToS (ID: %s)", tos.ID.Data)
+
 	return nil
 }
 

@@ -10,7 +10,7 @@ import (
 
 // UsersGetParams defines the parameters for the tg_users_get tool.
 type UsersGetParams struct {
-	Peer string `json:"peer" jsonschema:"User ID or @username"`
+	Peer string `json:"peer" jsonschema:"@username (preferred) or numeric user ID"`
 }
 
 // UsersGetResult is the output of the tg_users_get tool.
@@ -19,7 +19,6 @@ type UsersGetResult struct {
 	FirstName string `json:"firstName"`
 	LastName  string `json:"lastName"`
 	Username  string `json:"username"`
-	Phone     string `json:"phone"`
 	Bot       bool   `json:"bot"`
 	Bio       string `json:"bio"`
 	Online    bool   `json:"online"`
@@ -55,7 +54,6 @@ func NewUsersGetHandler(client telegram.Client) mcp.ToolHandlerFor[UsersGetParam
 			FirstName: user.FirstName,
 			LastName:  user.LastName,
 			Username:  user.Username,
-			Phone:     user.Phone,
 			Bot:       user.Bot,
 			Bio:       user.Bio,
 			Online:    user.Online,

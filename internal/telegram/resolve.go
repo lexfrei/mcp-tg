@@ -25,7 +25,7 @@ func Resolve(ctx context.Context, api *tg.Client, identifier string) (InputPeer,
 		return InputPeer{}, errors.New("empty peer identifier")
 	}
 
-	identifier = normalizePeerIdentifier(identifier)
+	identifier = strings.TrimSpace(normalizePeerIdentifier(identifier))
 
 	if hash := extractInviteHash(identifier); hash != "" {
 		return resolveByInvite(ctx, api, hash)

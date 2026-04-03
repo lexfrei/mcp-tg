@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -299,12 +300,17 @@ func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
 		}
 	}()
 
+	listener, listenErr := (&net.ListenConfig{}).Listen(ctx, "tcp", addr)
+	if listenErr != nil {
+		return errors.Wrapf(listenErr, "HTTP port %s unavailable", addr)
+	}
+
 	log.Printf("HTTP server listening on %s", addr)
 
-	listenErr := httpServer.ListenAndServe()
-	if errors.Is(listenErr, http.ErrServerClosed) {
+	serveErr := httpServer.Serve(listener)
+	if errors.Is(serveErr, http.ErrServerClosed) {
 		return nil
 	}
 
-	return errors.Wrap(listenErr, "HTTP listen failed")
+	return errors.Wrap(serveErr, "HTTP serve failed")
 }

@@ -2,6 +2,8 @@ package telegram
 
 import "sync"
 
+const maxCacheEntries = 10000
+
 // peerKey uniquely identifies a peer by type and ID.
 // Necessary because User ID=123 and Channel ID=123 are different entities.
 type peerKey struct {
@@ -10,6 +12,7 @@ type peerKey struct {
 }
 
 // PeerCache stores resolved peers with their access hashes for reuse.
+// Evicts all entries when maxCacheEntries is exceeded to bound memory.
 type PeerCache struct {
 	mut     sync.RWMutex
 	entries map[peerKey]InputPeer
@@ -35,6 +38,7 @@ func (cache *PeerCache) Store(peer InputPeer) {
 	defer cache.mut.Unlock()
 
 	cache.entries[key] = peer
+	cache.evictIfNeeded()
 }
 
 // StoreAll saves multiple peers in the cache, skipping those
@@ -49,6 +53,8 @@ func (cache *PeerCache) StoreAll(peers []InputPeer) {
 			cache.entries[key] = peer
 		}
 	}
+
+	cache.evictIfNeeded()
 }
 
 // Lookup returns a cached peer by type and ID if available.
@@ -61,4 +67,14 @@ func (cache *PeerCache) Lookup(typ PeerType, peerID int64) (InputPeer, bool) {
 	peer, found := cache.entries[key]
 
 	return peer, found
+}
+
+// evictIfNeeded clears the cache when it exceeds the size limit.
+// Must be called with mut held.
+func (cache *PeerCache) evictIfNeeded() {
+	if len(cache.entries) <= maxCacheEntries {
+		return
+	}
+
+	clear(cache.entries)
 }

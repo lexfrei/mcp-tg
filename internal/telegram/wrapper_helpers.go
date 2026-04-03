@@ -5,15 +5,17 @@ import (
 	"fmt"
 	"mime"
 	"path/filepath"
+	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
 )
 
 const (
-	defaultLimit   = 100
-	outputDirPerms = 0o750
-	fallbackMIME   = "application/octet-stream"
+	defaultLimit     = 100
+	outputDirPerms   = 0o750
+	fallbackMIME     = "application/octet-stream"
+	maxMessageLength = 4096
 )
 
 func uploadedFileID(file tg.InputFileClass) int64 {
@@ -25,6 +27,26 @@ func uploadedFileID(file tg.InputFileClass) int64 {
 	default:
 		return 0
 	}
+}
+
+func isImagePath(path string) bool {
+	mimeType := mimeByPath(path)
+
+	return strings.HasPrefix(mimeType, "image/")
+}
+
+func validateMessageText(text string) error {
+	if text == "" {
+		return errors.New("message text cannot be empty")
+	}
+
+	if utf16Len(text) > maxMessageLength {
+		return errors.Errorf(
+			"message exceeds %d character limit", maxMessageLength,
+		)
+	}
+
+	return nil
 }
 
 // mimeByPath guesses MIME type from file extension, falling back to octet-stream.

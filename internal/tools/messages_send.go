@@ -10,9 +10,12 @@ import (
 
 // MessagesSendParams defines the parameters for the tg_messages_send tool.
 type MessagesSendParams struct {
-	Peer    string `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
-	Text    string `json:"text"              jsonschema:"Message text to send"`
-	ReplyTo *int   `json:"replyTo,omitempty" jsonschema:"Message ID to reply to"`
+	Peer         string  `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
+	Text         string  `json:"text"                   jsonschema:"Message text to send"`
+	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
+	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Text format: 'markdown' for rich text, empty for plain"`
+	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
+	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
 }
 
 // MessagesSendResult is the output of the tg_messages_send tool.
@@ -44,7 +47,12 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 				telegramErr("failed to resolve peer", err)
 		}
 
-		opts := telegram.SendOpts{ReplyTo: deref(params.ReplyTo)}
+		opts := telegram.SendOpts{
+			ReplyTo:      deref(params.ReplyTo),
+			ParseMode:    deref(params.ParseMode),
+			Silent:       deref(params.Silent),
+			ScheduleDate: deref(params.ScheduleDate),
+		}
 
 		msg, err := client.SendMessage(ctx, peer, params.Text, opts)
 		if err != nil {

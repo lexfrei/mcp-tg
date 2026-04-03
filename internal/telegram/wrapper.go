@@ -265,6 +265,12 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: opts.ReplyTo}
 	}
 
+	req.Silent = opts.Silent
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
 	result, err := w.api.MessagesSendMessage(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending message")

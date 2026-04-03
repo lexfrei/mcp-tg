@@ -166,9 +166,11 @@ const ParseModeMarkdown = "markdown"
 
 // SendOpts configures message sending.
 type SendOpts struct {
-	ReplyTo   int
-	TopicID   int
-	ParseMode string
+	ReplyTo      int
+	TopicID      int
+	ParseMode    string
+	Silent       bool
+	ScheduleDate int
 }
 
 // DialogOpts configures dialog listing.

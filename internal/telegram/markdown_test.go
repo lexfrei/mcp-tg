@@ -255,3 +255,31 @@ func TestParseMarkdown_CodeNoNesting(t *testing.T) {
 		t.Fatalf("expected Code, got %T", entities[0])
 	}
 }
+
+func TestParseMarkdown_EdgeCases(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"unclosed bold", "**bold no close"},
+		{"unclosed italic", "*italic no close"},
+		{"empty bold", "****"},
+		{"empty strike", "~~~~"},
+		{"empty spoiler", "||||"},
+		{"across newlines", "**bold\nstill bold**"},
+		{"unclosed code block", "```go\nfmt.Println()"},
+		{"url with query", "[t](https://e.com/?a=1&b=2)"},
+		{"empty input", ""},
+		{"only spaces", "   "},
+		{"single asterisk", "*"},
+		{"single backtick", "`"},
+	}
+
+	for _, tCase := range cases {
+		t.Run(tCase.name, func(t *testing.T) {
+			text, entities := ParseMarkdown(tCase.input)
+			_ = text
+			_ = entities
+		})
+	}
+}

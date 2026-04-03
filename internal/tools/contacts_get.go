@@ -19,7 +19,6 @@ type ContactsGetResult struct {
 	FirstName string `json:"firstName"`
 	LastName  string `json:"lastName"`
 	Username  string `json:"username"`
-	Phone     string `json:"phone"`
 	Bio       string `json:"bio"`
 	Output    string `json:"output"`
 }
@@ -53,7 +52,6 @@ func NewContactsGetHandler(client telegram.Client) mcp.ToolHandlerFor[ContactsGe
 			FirstName: user.FirstName,
 			LastName:  user.LastName,
 			Username:  user.Username,
-			Phone:     user.Phone,
 			Bio:       user.Bio,
 			Output:    fmt.Sprintf("Contact: %s (ID: %d)", formatUserName(user), user.ID),
 		}, nil

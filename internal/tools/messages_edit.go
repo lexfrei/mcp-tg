@@ -72,7 +72,7 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 func MessagesEditTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_edit",
-		Description: "Edit an existing message in a Telegram chat",
+		Description: "Edit an existing message in a Telegram chat (supports markdown formatting)",
 		Annotations: idempotentAnnotations(),
 	}
 }

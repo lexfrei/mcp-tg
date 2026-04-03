@@ -76,7 +76,7 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 func MessagesSendTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_send",
-		Description: "Send a text message to a Telegram chat",
+		Description: "Send a text message to a Telegram chat (supports markdown, silent mode, and scheduling)",
 		Annotations: writeAnnotations(),
 	}
 }

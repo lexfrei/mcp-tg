@@ -183,6 +183,8 @@ Authentication uses a cascade: environment variable, then MCP elicitation (the c
 -v ~/.mcp-tg:/home/nobody/.mcp-tg
 ```
 
+**Multiple sessions:** each Claude Code session starts its own container. This is safe for normal use — Telegram allows multiple MTProto connections with the same auth key. However, avoid running many instances simultaneously (5+), as Telegram may rate-limit or drop connections. Session file writes are rare (only on re-auth or DC migration) so volume sharing is safe in practice.
+
 ## Usage
 
 ### With Claude Code (stdio via Docker)

@@ -41,8 +41,36 @@ type MessageItem struct {
 	ID        int    `json:"id"`
 	Date      int    `json:"date"`
 	Text      string `json:"text"`
-	FromID    int64  `json:"fromId,omitempty"`
+	FromID    int64  `json:"fromId"`
+	FromName  string `json:"fromName,omitempty"`
 	MediaType string `json:"mediaType,omitempty"`
+}
+
+// ParticipantItem maps a user ID to display name for message attribution.
+type ParticipantItem struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+func participantsFromMessages(msgs []telegram.Message) []ParticipantItem {
+	seen := make(map[int64]bool)
+
+	var parts []ParticipantItem
+
+	for idx := range msgs {
+		fid := msgs[idx].FromID
+		if fid == 0 || seen[fid] {
+			continue
+		}
+
+		seen[fid] = true
+		parts = append(parts, ParticipantItem{
+			ID:   fid,
+			Name: msgs[idx].FromName,
+		})
+	}
+
+	return parts
 }
 
 // UserItem is a structured user entry for JSON results.
@@ -86,6 +114,7 @@ func messageToItem(msg *telegram.Message) MessageItem {
 		Date:      msg.Date,
 		Text:      msg.Text,
 		FromID:    msg.FromID,
+		FromName:  msg.FromName,
 		MediaType: msg.MediaType,
 	}
 }

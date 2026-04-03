@@ -176,7 +176,9 @@ func (w *Wrapper) GetHistory(ctx context.Context, peer InputPeer, opts HistoryOp
 		return nil, 0, errors.Wrap(err, "getting history")
 	}
 
-	return extractMessages(result)
+	msgs, total := extractMessages(result, peer.ID)
+
+	return msgs, total, nil
 }
 
 // GetMessages retrieves specific messages by ID.
@@ -204,9 +206,9 @@ func (w *Wrapper) GetMessages(ctx context.Context, peer InputPeer, ids []int) ([
 		return nil, errors.Wrap(err, "getting messages")
 	}
 
-	msgs, _, extractErr := extractMessages(result)
+	msgs, _ := extractMessages(result, peer.ID)
 
-	return msgs, extractErr
+	return msgs, nil
 }
 
 // SearchMessages searches for messages in a chat.
@@ -227,9 +229,9 @@ func (w *Wrapper) SearchMessages(ctx context.Context, peer InputPeer, query stri
 		return nil, errors.Wrap(err, "searching messages")
 	}
 
-	msgs, _, extractErr := extractMessages(result)
+	msgs, _ := extractMessages(result, peer.ID)
 
-	return msgs, extractErr
+	return msgs, nil
 }
 
 // SendMessage sends a text message.

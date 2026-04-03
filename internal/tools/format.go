@@ -32,12 +32,25 @@ func formatMessage(msg *telegram.Message) string {
 
 	text := msg.Text
 	timestamp := formatTimestamp(msg.Date)
+	sender := formatSender(msg)
 
 	if msg.MediaType != "" {
-		return fmt.Sprintf("[%d] %s [%s] %s", msg.ID, timestamp, msg.MediaType, text)
+		return fmt.Sprintf("[%d] %s %s[%s] %s", msg.ID, timestamp, sender, msg.MediaType, text)
 	}
 
-	return fmt.Sprintf("[%d] %s %s", msg.ID, timestamp, text)
+	return fmt.Sprintf("[%d] %s %s%s", msg.ID, timestamp, sender, text)
+}
+
+func formatSender(msg *telegram.Message) string {
+	if msg.FromName != "" {
+		return msg.FromName + ": "
+	}
+
+	if msg.FromID != 0 {
+		return fmt.Sprintf("user:%d: ", msg.FromID)
+	}
+
+	return ""
 }
 
 // formatMessages formats a slice of messages as newline-separated lines.

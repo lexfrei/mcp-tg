@@ -17,9 +17,10 @@ type MessagesGetParams struct {
 
 // MessagesGetResult is the output of the tg_messages_get tool.
 type MessagesGetResult struct {
-	Count    int           `json:"count"`
-	Messages []MessageItem `json:"messages"`
-	Output   string        `json:"output"`
+	Count        int               `json:"count"`
+	Participants []ParticipantItem `json:"participants,omitempty"`
+	Messages     []MessageItem     `json:"messages"`
+	Output       string            `json:"output"`
 }
 
 // NewMessagesGetHandler creates a handler for the tg_messages_get tool.
@@ -64,9 +65,10 @@ func NewMessagesGetHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesGe
 		}
 
 		return nil, MessagesGetResult{
-			Count:    len(msgs),
-			Messages: messagesToItems(msgs),
-			Output:   buf.String(),
+			Count:        len(msgs),
+			Participants: participantsFromMessages(msgs),
+			Messages:     messagesToItems(msgs),
+			Output:       buf.String(),
 		}, nil
 	}
 }

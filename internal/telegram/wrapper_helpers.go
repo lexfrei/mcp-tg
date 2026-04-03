@@ -415,29 +415,78 @@ func dialogsFromSearch(result *tg.ContactsFound) []Dialog {
 	return dialogs
 }
 
-func extractMessages(result tg.MessagesMessagesClass) ([]Message, int, error) {
+//nolint:gocritic // unnamedResult: names add no clarity for extraction.
+func extractMessages(
+	result tg.MessagesMessagesClass, peerID int64,
+) ([]Message, int) {
 	switch res := result.(type) {
 	case *tg.MessagesMessages:
-		return convertMessages(res.Messages), len(res.Messages), nil
+		names := buildUserNames(res.Users)
+
+		return convertMessages(res.Messages, names, peerID), len(res.Messages)
 	case *tg.MessagesMessagesSlice:
-		return convertMessages(res.Messages), res.Count, nil
+		names := buildUserNames(res.Users)
+
+		return convertMessages(res.Messages, names, peerID), res.Count
 	case *tg.MessagesChannelMessages:
-		return convertMessages(res.Messages), res.Count, nil
+		names := buildUserNames(res.Users)
+
+		return convertMessages(res.Messages, names, peerID), res.Count
 	default:
-		return nil, 0, nil
+		return nil, 0
 	}
 }
 
-func convertMessages(raw []tg.MessageClass) []Message {
+func buildUserNames(users []tg.UserClass) map[int64]string {
+	names := make(map[int64]string, len(users))
+
+	for _, usr := range users {
+		if typed, ok := usr.(*tg.User); ok {
+			names[typed.ID] = userDisplayName(typed)
+		}
+	}
+
+	return names
+}
+
+func userDisplayName(usr *tg.User) string {
+	name := strings.TrimSpace(usr.FirstName + " " + usr.LastName)
+	if name == "" {
+		return usr.Username
+	}
+
+	return name
+}
+
+func convertMessages(
+	raw []tg.MessageClass, names map[int64]string, peerID int64,
+) []Message {
 	msgs := make([]Message, 0, len(raw))
 
 	for _, m := range raw {
 		if msg, ok := m.(*tg.Message); ok {
-			msgs = append(msgs, ConvertMessage(msg))
+			converted := ConvertMessage(msg)
+			fillFromName(&converted, names, peerID)
+			msgs = append(msgs, converted)
 		}
 	}
 
 	return msgs
+}
+
+// fillFromName resolves sender name from user map.
+// In DMs, FromID==0 means the peer (not owner).
+func fillFromName(msg *Message, names map[int64]string, peerID int64) {
+	if msg.FromID != 0 {
+		msg.FromName = names[msg.FromID]
+
+		return
+	}
+
+	if name, ok := names[peerID]; ok {
+		msg.FromID = peerID
+		msg.FromName = name
+	}
 }
 
 func messagesFromUpdates(result tg.UpdatesClass) []Message {
@@ -450,18 +499,24 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 		return nil
 	}
 
+	names := buildUserNames(upd.Users)
+
 	var msgs []Message
 
 	for _, update := range upd.Updates {
 		if newMsg, ok := update.(*tg.UpdateNewMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				msgs = append(msgs, ConvertMessage(msg))
+				converted := ConvertMessage(msg)
+				converted.FromName = names[converted.FromID]
+				msgs = append(msgs, converted)
 			}
 		}
 
 		if newMsg, ok := update.(*tg.UpdateNewChannelMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				msgs = append(msgs, ConvertMessage(msg))
+				converted := ConvertMessage(msg)
+				converted.FromName = names[converted.FromID]
+				msgs = append(msgs, converted)
 			}
 		}
 	}

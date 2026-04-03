@@ -17,9 +17,10 @@ type MessagesSearchParams struct {
 
 // MessagesSearchResult is the output of the tg_messages_search tool.
 type MessagesSearchResult struct {
-	Count    int           `json:"count"`
-	Messages []MessageItem `json:"messages"`
-	Output   string        `json:"output"`
+	Count        int               `json:"count"`
+	Participants []ParticipantItem `json:"participants,omitempty"`
+	Messages     []MessageItem     `json:"messages"`
+	Output       string            `json:"output"`
 }
 
 // NewMessagesSearchHandler creates a handler for the tg_messages_search tool.
@@ -81,9 +82,10 @@ func executeSearch(
 	}
 
 	return MessagesSearchResult{
-		Count:    len(msgs),
-		Messages: messagesToItems(msgs),
-		Output:   formatMessages(msgs),
+		Count:        len(msgs),
+		Participants: participantsFromMessages(msgs),
+		Messages:     messagesToItems(msgs),
+		Output:       formatMessages(msgs),
 	}, nil
 }
 

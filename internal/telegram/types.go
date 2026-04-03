@@ -25,6 +25,7 @@ type Message struct {
 	ID        int       `json:"id"`
 	PeerID    InputPeer `json:"peerId"`
 	FromID    int64     `json:"fromId"`
+	FromName  string    `json:"fromName,omitempty"`
 	Date      int       `json:"date"`
 	Text      string    `json:"text"`
 	MediaType string    `json:"mediaType,omitempty"`
@@ -139,6 +140,13 @@ type UploadedFile struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
 	Size int64  `json:"size"`
+}
+
+// Participant represents a user seen in a message result set.
+type Participant struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username,omitempty"`
 }
 
 // HistoryOpts configures message history retrieval.

@@ -21,9 +21,10 @@ type MessagesContextParams struct {
 
 // MessagesContextResult is the output of the tg_messages_context tool.
 type MessagesContextResult struct {
-	Count    int           `json:"count"`
-	Messages []MessageItem `json:"messages"`
-	Output   string        `json:"output"`
+	Count        int               `json:"count"`
+	Participants []ParticipantItem `json:"participants,omitempty"`
+	Messages     []MessageItem     `json:"messages"`
+	Output       string            `json:"output"`
 }
 
 // NewMessagesContextHandler creates a handler for the tg_messages_context tool.
@@ -56,9 +57,10 @@ func NewMessagesContextHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 		}
 
 		return nil, MessagesContextResult{
-			Count:    len(msgs),
-			Messages: messagesToItems(msgs),
-			Output:   formatContextMessages(msgs, params.MessageID),
+			Count:        len(msgs),
+			Participants: participantsFromMessages(msgs),
+			Messages:     messagesToItems(msgs),
+			Output:       formatContextMessages(msgs, params.MessageID),
 		}, nil
 	}
 }

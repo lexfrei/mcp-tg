@@ -566,6 +566,12 @@ func extractMessageFromUpdate(update tg.UpdateClass) *Message {
 
 			return &converted
 		}
+	case *tg.UpdateNewScheduledMessage:
+		if msg, ok := upd.Message.(*tg.Message); ok {
+			converted := ConvertMessage(msg)
+
+			return &converted
+		}
 	}
 
 	return nil

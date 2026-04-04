@@ -51,7 +51,7 @@ func TestDeref_NilBool(t *testing.T) {
 func TestFormatPeer_User(t *testing.T) {
 	peer := telegram.InputPeer{Type: telegram.PeerUser, ID: 123}
 	got := formatPeer(peer)
-	want := "user:123"
+	want := "123"
 
 	if got != want {
 		t.Errorf("formatPeer(user) = %q, want %q", got, want)
@@ -61,7 +61,7 @@ func TestFormatPeer_User(t *testing.T) {
 func TestFormatPeer_Chat(t *testing.T) {
 	peer := telegram.InputPeer{Type: telegram.PeerChat, ID: 456}
 	got := formatPeer(peer)
-	want := "chat:456"
+	want := "-456"
 
 	if got != want {
 		t.Errorf("formatPeer(chat) = %q, want %q", got, want)
@@ -71,7 +71,7 @@ func TestFormatPeer_Chat(t *testing.T) {
 func TestFormatPeer_Channel(t *testing.T) {
 	peer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 789}
 	got := formatPeer(peer)
-	want := "channel:789"
+	want := "-1000000000789"
 
 	if got != want {
 		t.Errorf("formatPeer(channel) = %q, want %q", got, want)
@@ -81,7 +81,7 @@ func TestFormatPeer_Channel(t *testing.T) {
 func TestFormatPeer_Unknown(t *testing.T) {
 	peer := telegram.InputPeer{Type: 99, ID: 111}
 	got := formatPeer(peer)
-	want := "unknown:111"
+	want := "111"
 
 	if got != want {
 		t.Errorf("formatPeer(unknown) = %q, want %q", got, want)

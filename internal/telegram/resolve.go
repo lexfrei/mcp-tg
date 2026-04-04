@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	// channelIDOffset is the offset used to convert channel IDs from bot-API style negative IDs.
-	channelIDOffset int64 = 1000000000000
+	// ChannelIDOffset is the offset used to convert channel IDs from bot-API style negative IDs.
+	ChannelIDOffset int64 = 1000000000000
 )
 
 // ErrPeerNotFound is returned when a peer cannot be resolved.
@@ -63,10 +63,10 @@ func resolveByID(numID int64) InputPeer {
 	switch {
 	case numID > 0:
 		return InputPeer{Type: PeerUser, ID: numID}
-	case numID > -channelIDOffset:
+	case numID > -ChannelIDOffset:
 		return InputPeer{Type: PeerChat, ID: -numID}
 	default:
-		return InputPeer{Type: PeerChannel, ID: -numID - channelIDOffset}
+		return InputPeer{Type: PeerChannel, ID: -numID - ChannelIDOffset}
 	}
 }
 

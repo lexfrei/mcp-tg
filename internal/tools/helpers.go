@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
@@ -38,17 +39,19 @@ func validateIDCount(ids []int) error {
 	return nil
 }
 
-// formatPeer returns a human-readable string for an InputPeer.
+// formatPeer returns a bot-API style numeric ID that can be passed back
+// as a peer parameter to other tools. Positive = user, negative = chat,
+// -100xxx = channel.
 func formatPeer(peer telegram.InputPeer) string {
 	switch peer.Type {
 	case telegram.PeerUser:
-		return fmt.Sprintf("user:%d", peer.ID)
+		return strconv.FormatInt(peer.ID, 10)
 	case telegram.PeerChat:
-		return fmt.Sprintf("chat:%d", peer.ID)
+		return strconv.FormatInt(-peer.ID, 10)
 	case telegram.PeerChannel:
-		return fmt.Sprintf("channel:%d", peer.ID)
+		return strconv.FormatInt(-telegram.ChannelIDOffset-peer.ID, 10)
 	default:
-		return fmt.Sprintf("unknown:%d", peer.ID)
+		return strconv.FormatInt(peer.ID, 10)
 	}
 }
 

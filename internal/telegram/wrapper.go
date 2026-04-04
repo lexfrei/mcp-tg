@@ -1172,6 +1172,12 @@ func (w *Wrapper) GetGroupMembers(
 	filter string,
 	limit int,
 ) ([]User, error) {
+	if peer.Type != PeerChannel {
+		return nil, errors.New(
+			"listing members is only supported for channels and supergroups",
+		)
+	}
+
 	if limit <= 0 {
 		limit = defaultLimit
 	}
@@ -1237,6 +1243,12 @@ func (w *Wrapper) MarkDialogUnread(
 func (w *Wrapper) SetSlowMode(
 	ctx context.Context, peer InputPeer, seconds int,
 ) error {
+	if peer.Type != PeerChannel {
+		return errors.New(
+			"slowmode is only supported for channels and supergroups",
+		)
+	}
+
 	_, err := w.api.ChannelsToggleSlowMode(
 		ctx,
 		&tg.ChannelsToggleSlowModeRequest{
@@ -1328,6 +1340,12 @@ func (w *Wrapper) SetAdmin(
 	rights AdminRights,
 	rank string,
 ) error {
+	if group.Type != PeerChannel {
+		return errors.New(
+			"setting admins is only supported for channels and supergroups",
+		)
+	}
+
 	_, err := w.api.ChannelsEditAdmin(
 		ctx,
 		&tg.ChannelsEditAdminRequest{

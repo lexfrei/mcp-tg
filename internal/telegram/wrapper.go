@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -398,6 +399,8 @@ func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 }
 
 // SendFile sends a file with an optional caption.
+// Uses Silent, ScheduleDate from opts.
+// ParseMode and NoWebpage are not applicable to media sends.
 func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error) {
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
@@ -436,6 +439,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 }
 
 // SendAlbum sends a group of media files.
+// Uses Silent, ScheduleDate from opts.
+// ParseMode and NoWebpage are not applicable to media sends.
 func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error) {
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
@@ -1360,18 +1365,36 @@ func (w *Wrapper) SetAdmin(
 }
 
 // DeleteHistory deletes all messages in a chat.
+// Only users and basic groups are supported; channels
+// must use different API methods.
 func (w *Wrapper) DeleteHistory(
 	ctx context.Context, peer InputPeer, revoke bool,
 ) error {
-	_, err := w.api.MessagesDeleteHistory(
-		ctx,
-		&tg.MessagesDeleteHistoryRequest{
-			Peer:   InputPeerToTG(peer),
-			Revoke: revoke,
-		},
-	)
+	if peer.Type == PeerChannel {
+		return errors.New(
+			"delete history is only supported for users and basic groups",
+		)
+	}
 
-	return errors.Wrap(err, "deleting history")
+	for {
+		result, err := w.api.MessagesDeleteHistory(
+			ctx,
+			&tg.MessagesDeleteHistoryRequest{
+				Peer:   InputPeerToTG(peer),
+				MaxID:  math.MaxInt32,
+				Revoke: revoke,
+			},
+		)
+		if err != nil {
+			return errors.Wrap(err, "deleting history")
+		}
+
+		if result.Offset == 0 {
+			break
+		}
+	}
+
+	return nil
 }
 
 // ClearAllDrafts clears all message drafts.

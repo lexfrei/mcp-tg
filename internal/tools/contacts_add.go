@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -53,9 +52,7 @@ func NewContactsAddHandler(
 		if peer.Type != telegram.PeerUser {
 			return &mcp.CallToolResult{IsError: true},
 				ContactsAddResult{},
-				validationErr(errors.New(
-					"contacts operations require a user peer, not a group or channel",
-				))
+				validationErr(ErrUserPeerRequired)
 		}
 
 		err = client.AddContact(

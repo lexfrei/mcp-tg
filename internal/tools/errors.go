@@ -66,6 +66,14 @@ var ErrTopicIDRequired = errors.New("topic ID is required")
 // ErrTooManyIDs is returned when too many message IDs are provided.
 var ErrTooManyIDs = errors.New("too many IDs (max 100)")
 
+// ErrUserPeerRequired is returned when a user peer is needed but another type was provided.
+var ErrUserPeerRequired = errors.New("this operation requires a user peer, not a group or channel")
+
+// ErrInvalidSlowmode is returned when seconds is not an allowed Telegram slowmode value.
+var ErrInvalidSlowmode = errors.New(
+	"invalid slowmode seconds; allowed: 0,10,30,60,300,900,3600,21600,43200",
+)
+
 // validationErr marks an error as a validation error.
 func validationErr(err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category, the caller already provides context.

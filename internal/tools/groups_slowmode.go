@@ -34,6 +34,12 @@ func NewGroupsSlowmodeHandler(
 				validationErr(ErrPeerRequired)
 		}
 
+		if !validSlowmode(params.Seconds) {
+			return &mcp.CallToolResult{IsError: true},
+				GroupsSlowmodeResult{},
+				validationErr(ErrInvalidSlowmode)
+		}
+
 		peer, err := client.ResolvePeer(ctx, params.Peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},

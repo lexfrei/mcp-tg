@@ -76,6 +76,6 @@ func TopicsEditTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_topics_edit",
 		Description: "Edit a forum topic title in a Telegram supergroup",
-		Annotations: writeAnnotations(),
+		Annotations: idempotentAnnotations(),
 	}
 }

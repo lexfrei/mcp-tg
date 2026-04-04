@@ -1091,3 +1091,22 @@ func TestContactsDeleteHandler_ChannelRejected(t *testing.T) {
 		t.Error("result.IsError should be true")
 	}
 }
+
+func TestTopicsEditHandler_ZeroTopicID(t *testing.T) {
+	mock := &mockClient{peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1}}
+	handler := NewTopicsEditHandler(mock)
+
+	result, _, err := handler(context.Background(), nil, TopicsEditParams{
+		Peer:    "@group",
+		TopicID: 0,
+		Title:   "test",
+	})
+
+	if err == nil {
+		t.Fatal("expected error for zero topic ID")
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}

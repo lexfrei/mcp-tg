@@ -64,8 +64,8 @@ internal/testutil/           NoopClient for registration tests
 ### Tool annotations
 
 - `readOnlyAnnotations()` — tools that only read data (29 tools)
-- `idempotentAnnotations()` — tools that modify state but are safe to retry (26 tools)
-- `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
+- `idempotentAnnotations()` — tools that modify state but are safe to retry (27 tools)
+- `writeAnnotations()` — tools that create new entities, not idempotent (9 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
 ### Peer resolution

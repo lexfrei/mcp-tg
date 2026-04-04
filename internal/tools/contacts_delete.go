@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -54,9 +53,7 @@ func executeDeleteContact(
 	if peer.Type != telegram.PeerUser {
 		return &mcp.CallToolResult{IsError: true},
 			ContactsDeleteResult{},
-			validationErr(errors.New(
-				"contacts operations require a user peer, not a group or channel",
-			))
+			validationErr(ErrUserPeerRequired)
 	}
 
 	err = client.DeleteContact(ctx, peer)

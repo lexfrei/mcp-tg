@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -56,18 +57,19 @@ func NewTopicsCreateHandler(
 				telegramErr("failed to create forum topic", err)
 		}
 
-		topicID := 0
-		title := params.Title
-
-		if topic != nil {
-			topicID = topic.ID
-			title = topic.Title
+		if topic == nil {
+			return &mcp.CallToolResult{IsError: true},
+				TopicsCreateResult{},
+				telegramErr("topic created but could not extract info from response",
+					errors.New("nil topic in response"))
 		}
 
 		return nil, TopicsCreateResult{
-			TopicID: topicID,
-			Title:   title,
-			Output:  fmt.Sprintf("Created topic %q (ID: %d)", title, topicID),
+			TopicID: topic.ID,
+			Title:   topic.Title,
+			Output: fmt.Sprintf(
+				"Created topic %q (ID: %d)", topic.Title, topic.ID,
+			),
 		}, nil
 	}
 }

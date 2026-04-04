@@ -256,6 +256,71 @@ func TestParseMarkdown_CodeNoNesting(t *testing.T) {
 	}
 }
 
+func TestParseMarkdown_UnderscoreWordBoundary(t *testing.T) {
+	t.Run("mid-word underscore is literal", func(t *testing.T) {
+		text, entities := ParseMarkdown("pull_request_target")
+		if text != "pull_request_target" {
+			t.Fatalf("expected literal text, got %q", text)
+		}
+		if len(entities) != 0 {
+			t.Fatalf("expected 0 entities, got %d", len(entities))
+		}
+	})
+
+	t.Run("underscore italic at word boundary", func(t *testing.T) {
+		text, entities := ParseMarkdown("hello _world_")
+		if text != "hello world" {
+			t.Fatalf("unexpected text: %q", text)
+		}
+		if len(entities) != 1 {
+			t.Fatalf("expected 1 entity, got %d", len(entities))
+		}
+		if _, ok := entities[0].(*tg.MessageEntityItalic); !ok {
+			t.Fatalf("expected Italic, got %T", entities[0])
+		}
+	})
+
+	t.Run("underscore after punctuation", func(t *testing.T) {
+		text, entities := ParseMarkdown("see: _important_")
+		if text != "see: important" {
+			t.Fatalf("unexpected text: %q", text)
+		}
+		if len(entities) != 1 {
+			t.Fatalf("expected 1 entity, got %d", len(entities))
+		}
+	})
+
+	t.Run("multiple underscores in identifier", func(t *testing.T) {
+		text, entities := ParseMarkdown("my_var_name is good")
+		if text != "my_var_name is good" {
+			t.Fatalf("expected literal, got %q", text)
+		}
+		if len(entities) != 0 {
+			t.Fatalf("expected 0 entities, got %d", len(entities))
+		}
+	})
+
+	t.Run("underscore in filename", func(t *testing.T) {
+		text, entities := ParseMarkdown("file prt_exfil_test.go here")
+		if text != "file prt_exfil_test.go here" {
+			t.Fatalf("expected literal, got %q", text)
+		}
+		if len(entities) != 0 {
+			t.Fatalf("expected 0 entities, got %d", len(entities))
+		}
+	})
+
+	t.Run("underscore italic does not trigger before alpha", func(t *testing.T) {
+		text, entities := ParseMarkdown("a_b_c")
+		if text != "a_b_c" {
+			t.Fatalf("expected literal, got %q", text)
+		}
+		if len(entities) != 0 {
+			t.Fatalf("expected 0 entities, got %d", len(entities))
+		}
+	})
+}
+
 func TestParseMarkdown_EdgeCases(t *testing.T) {
 	cases := []struct {
 		name  string

@@ -115,6 +115,6 @@ func GroupsAdminSetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_groups_admin_set",
 		Description: "Set administrator rights for a user in a Telegram group",
-		Annotations: destructiveAnnotations(),
+		Annotations: idempotentAnnotations(),
 	}
 }

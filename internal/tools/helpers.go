@@ -55,6 +55,31 @@ func formatPeer(peer telegram.InputPeer) string {
 	}
 }
 
+// Telegram-accepted slowmode delay values in seconds.
+const (
+	slowmodeOff = 0
+	slowmode10s = 10
+	slowmode30s = 30
+	slowmode1m  = 60
+	slowmode5m  = 300
+	slowmode15m = 900
+	slowmode1h  = 3600
+	slowmode6h  = 21600
+	slowmode12h = 43200
+)
+
+// validSlowmode reports whether sec is a Telegram-accepted slowmode value.
+func validSlowmode(sec int) bool {
+	switch sec {
+	case slowmodeOff, slowmode10s, slowmode30s, slowmode1m,
+		slowmode5m, slowmode15m, slowmode1h, slowmode6h,
+		slowmode12h:
+		return true
+	default:
+		return false
+	}
+}
+
 // formatUserName builds a display name from first/last name and username.
 func formatUserName(user *telegram.User) string {
 	if user == nil {

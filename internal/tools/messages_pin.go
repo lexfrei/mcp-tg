@@ -51,9 +51,9 @@ func NewMessagesPinHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesPi
 				telegramErr("failed to pin/unpin message", err)
 		}
 
-		action := "Pinned"
+		action := actionPinned
 		if unpin {
-			action = "Unpinned"
+			action = actionUnpinned
 		}
 
 		return nil, MessagesPinResult{

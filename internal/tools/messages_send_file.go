@@ -10,9 +10,11 @@ import (
 
 // MessagesSendFileParams defines the parameters for the tg_messages_send_file tool.
 type MessagesSendFileParams struct {
-	Peer    string  `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
-	Path    string  `json:"path"              jsonschema:"Local file path to send"`
-	Caption *string `json:"caption,omitempty" jsonschema:"Optional caption for the file"`
+	Peer         string  `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
+	Path         string  `json:"path"                   jsonschema:"Local file path to send"`
+	Caption      *string `json:"caption,omitempty"      jsonschema:"Optional caption for the file"`
+	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
+	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
 
 // MessagesSendFileResult is the output of the tg_messages_send_file tool.
@@ -75,7 +77,12 @@ func uploadAndSendFile(
 
 	notifyProgress(ctx, req.Session, token, 0, 1, "Uploading file")
 
-	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption))
+	opts := telegram.SendOpts{
+		Silent:       deref(params.Silent),
+		ScheduleDate: deref(params.ScheduleDate),
+	}
+
+	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption), opts)
 	if err != nil {
 		return nil, telegramErr("failed to send file", err)
 	}

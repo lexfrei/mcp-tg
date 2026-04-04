@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 58 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 74 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -26,7 +26,7 @@ internal/telegram/           Telegram abstraction layer
   auth.go                    Auth flow with MCP elicitation support
   resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs, invite links)
   peer_cache.go              Thread-safe cache for peer access hashes
-internal/tools/              MCP tool handlers (58 tools)
+internal/tools/              MCP tool handlers (74 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatUserName)
@@ -63,10 +63,10 @@ internal/testutil/           NoopClient for registration tests
 
 ### Tool annotations
 
-- `readOnlyAnnotations()` — tools that only read data (23 tools)
-- `idempotentAnnotations()` — tools that modify state but are safe to retry (22 tools)
-- `writeAnnotations()` — tools that create new entities, not idempotent (7 tools)
-- `destructiveAnnotations()` — tools that delete/remove things (6 tools)
+- `readOnlyAnnotations()` — tools that only read data (29 tools)
+- `idempotentAnnotations()` — tools that modify state but are safe to retry (27 tools)
+- `writeAnnotations()` — tools that create new entities, not idempotent (9 tools)
+- `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
 ### Peer resolution
 

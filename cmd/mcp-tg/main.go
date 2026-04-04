@@ -270,6 +270,24 @@ func registerTools(server *mcp.Server, client tgclient.Client, downloadDir strin
 	mcp.AddTool(server, tools.FoldersDeleteTool(), tools.NewFoldersDeleteHandler(client))
 	mcp.AddTool(server, tools.TypingSendTool(), tools.NewTypingSendHandler(client))
 	mcp.AddTool(server, tools.OnlineStatusSetTool(), tools.NewOnlineStatusSetHandler(client))
+
+	// Phase 5: Extended coverage tools.
+	mcp.AddTool(server, tools.MessagesGetScheduledTool(), tools.NewMessagesGetScheduledHandler(client))
+	mcp.AddTool(server, tools.MessagesSearchGlobalTool(), tools.NewMessagesSearchGlobalHandler(client))
+	mcp.AddTool(server, tools.ContactsListBlockedTool(), tools.NewContactsListBlockedHandler(client))
+	mcp.AddTool(server, tools.MessagesGetReactionsTool(), tools.NewMessagesGetReactionsHandler(client))
+	mcp.AddTool(server, tools.GroupsMembersListTool(), tools.NewGroupsMembersListHandler(client))
+	mcp.AddTool(server, tools.ContactsGetStatusesTool(), tools.NewContactsGetStatusesHandler(client))
+	mcp.AddTool(server, tools.DialogsPinTool(), tools.NewDialogsPinHandler(client))
+	mcp.AddTool(server, tools.DialogsMarkUnreadTool(), tools.NewDialogsMarkUnreadHandler(client))
+	mcp.AddTool(server, tools.GroupsSlowmodeTool(), tools.NewGroupsSlowmodeHandler(client))
+	mcp.AddTool(server, tools.TopicsCreateTool(), tools.NewTopicsCreateHandler(client))
+	mcp.AddTool(server, tools.TopicsEditTool(), tools.NewTopicsEditHandler(client))
+	mcp.AddTool(server, tools.ContactsAddTool(), tools.NewContactsAddHandler(client))
+	mcp.AddTool(server, tools.GroupsAdminSetTool(), tools.NewGroupsAdminSetHandler(client))
+	mcp.AddTool(server, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
+	mcp.AddTool(server, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
+	mcp.AddTool(server, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
 }
 
 func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {

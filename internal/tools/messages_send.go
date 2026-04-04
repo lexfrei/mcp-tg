@@ -15,6 +15,7 @@ type MessagesSendParams struct {
 	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
 	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Text format: 'markdown' for rich text, empty for plain"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
+	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
 }
 
@@ -51,6 +52,7 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 			ReplyTo:      deref(params.ReplyTo),
 			ParseMode:    deref(params.ParseMode),
 			Silent:       deref(params.Silent),
+			NoWebpage:    deref(params.NoWebpage),
 			ScheduleDate: deref(params.ScheduleDate),
 		}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -266,6 +267,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 	}
 
 	req.Silent = opts.Silent
+	req.NoWebpage = opts.NoWebpage
 
 	if opts.ScheduleDate > 0 {
 		req.SetScheduleDate(opts.ScheduleDate)
@@ -397,7 +399,9 @@ func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 }
 
 // SendFile sends a file with an optional caption.
-func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string) (*Message, error) {
+// Uses Silent, ScheduleDate from opts.
+// ParseMode and NoWebpage are not applicable to media sends.
+func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error) {
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
@@ -408,7 +412,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, err
 	}
 
-	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+	req := &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaUploadedDocument{
 			File:     file,
@@ -419,7 +423,14 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		},
 		Message:  caption,
 		RandomID: randID,
-	})
+		Silent:   opts.Silent,
+	}
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
+	result, err := w.api.MessagesSendMedia(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending file")
 	}
@@ -428,7 +439,9 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 }
 
 // SendAlbum sends a group of media files.
-func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string) ([]Message, error) {
+// Uses Silent, ScheduleDate from opts.
+// ParseMode and NoWebpage are not applicable to media sends.
+func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error) {
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
 	for idx, path := range paths {
@@ -460,10 +473,17 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		multiMedia = append(multiMedia, media)
 	}
 
-	result, err := w.api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
+	req := &tg.MessagesSendMultiMediaRequest{
 		Peer:       InputPeerToTG(peer),
 		MultiMedia: multiMedia,
-	})
+		Silent:     opts.Silent,
+	}
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
+	result, err := w.api.MessagesSendMultiMedia(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending album")
 	}
@@ -1061,6 +1081,327 @@ func (w *Wrapper) SetOnlineStatus(ctx context.Context, online bool) error {
 	_, err := w.api.AccountUpdateStatus(ctx, !online)
 
 	return errors.Wrap(err, "setting online status")
+}
+
+// GetScheduledMessages returns scheduled messages for a chat.
+func (w *Wrapper) GetScheduledMessages(
+	ctx context.Context, peer InputPeer,
+) ([]Message, error) {
+	result, err := w.api.MessagesGetScheduledHistory(
+		ctx,
+		&tg.MessagesGetScheduledHistoryRequest{
+			Peer: InputPeerToTG(peer),
+		},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting scheduled messages")
+	}
+
+	msgs, _ := extractMessages(result, peer.ID)
+
+	return msgs, nil
+}
+
+// SearchGlobal searches messages across all chats.
+func (w *Wrapper) SearchGlobal(
+	ctx context.Context, query string, limit int,
+) ([]Message, error) {
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesSearchGlobal(
+		ctx,
+		&tg.MessagesSearchGlobalRequest{
+			Q:          query,
+			Limit:      limit,
+			OffsetPeer: &tg.InputPeerEmpty{},
+			Filter:     &tg.InputMessagesFilterEmpty{},
+		},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "searching global messages")
+	}
+
+	msgs, _ := extractMessages(result, 0)
+
+	return msgs, nil
+}
+
+// GetBlockedContacts returns a list of blocked users.
+func (w *Wrapper) GetBlockedContacts(
+	ctx context.Context, limit int,
+) ([]User, error) {
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.ContactsGetBlocked(
+		ctx,
+		&tg.ContactsGetBlockedRequest{Limit: limit},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting blocked contacts")
+	}
+
+	return extractBlockedUsers(result), nil
+}
+
+// GetReactions returns users who reacted to a message.
+func (w *Wrapper) GetReactions(
+	ctx context.Context, peer InputPeer, msgID int, limit int,
+) ([]ReactionUser, error) {
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesGetMessageReactionsList(
+		ctx,
+		&tg.MessagesGetMessageReactionsListRequest{
+			Peer:  InputPeerToTG(peer),
+			ID:    msgID,
+			Limit: limit,
+		},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting reactions")
+	}
+
+	return extractReactionUsers(result), nil
+}
+
+// GetGroupMembers returns members of a channel/supergroup.
+func (w *Wrapper) GetGroupMembers(
+	ctx context.Context,
+	peer InputPeer,
+	filter string,
+	limit int,
+) ([]User, error) {
+	if peer.Type != PeerChannel {
+		return nil, errors.New(
+			"listing members is only supported for channels and supergroups",
+		)
+	}
+
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.ChannelsGetParticipants(
+		ctx,
+		&tg.ChannelsGetParticipantsRequest{
+			Channel: InputChannelFromPeer(peer),
+			Filter:  participantFilter(filter),
+			Limit:   limit,
+		},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting group members")
+	}
+
+	return usersFromParticipants(result), nil
+}
+
+// GetContactStatuses returns online statuses of contacts.
+func (w *Wrapper) GetContactStatuses(
+	ctx context.Context,
+) ([]ContactStatus, error) {
+	result, err := w.api.ContactsGetStatuses(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting contact statuses")
+	}
+
+	return convertContactStatuses(result), nil
+}
+
+// PinDialog pins or unpins a dialog.
+func (w *Wrapper) PinDialog(
+	ctx context.Context, peer InputPeer, pinned bool,
+) error {
+	_, err := w.api.MessagesToggleDialogPin(
+		ctx,
+		&tg.MessagesToggleDialogPinRequest{
+			Peer:   &tg.InputDialogPeer{Peer: InputPeerToTG(peer)},
+			Pinned: pinned,
+		},
+	)
+
+	return errors.Wrap(err, "toggling dialog pin")
+}
+
+// MarkDialogUnread marks a dialog as read or unread.
+func (w *Wrapper) MarkDialogUnread(
+	ctx context.Context, peer InputPeer, unread bool,
+) error {
+	_, err := w.api.MessagesMarkDialogUnread(
+		ctx,
+		&tg.MessagesMarkDialogUnreadRequest{
+			Peer:   &tg.InputDialogPeer{Peer: InputPeerToTG(peer)},
+			Unread: unread,
+		},
+	)
+
+	return errors.Wrap(err, "marking dialog unread")
+}
+
+// SetSlowMode sets slowmode delay for a channel/supergroup.
+func (w *Wrapper) SetSlowMode(
+	ctx context.Context, peer InputPeer, seconds int,
+) error {
+	if peer.Type != PeerChannel {
+		return errors.New(
+			"slowmode is only supported for channels and supergroups",
+		)
+	}
+
+	_, err := w.api.ChannelsToggleSlowMode(
+		ctx,
+		&tg.ChannelsToggleSlowModeRequest{
+			Channel: InputChannelFromPeer(peer),
+			Seconds: seconds,
+		},
+	)
+
+	return errors.Wrap(err, "setting slow mode")
+}
+
+// CreateForumTopic creates a new forum topic.
+func (w *Wrapper) CreateForumTopic(
+	ctx context.Context, peer InputPeer, title string,
+) (*ForumTopic, error) {
+	randID, err := cryptoRandID()
+	if err != nil {
+		return nil, err
+	}
+
+	result, err := w.api.MessagesCreateForumTopic(
+		ctx,
+		&tg.MessagesCreateForumTopicRequest{
+			Peer:     InputPeerToTG(peer),
+			Title:    title,
+			RandomID: randID,
+		},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating forum topic")
+	}
+
+	return topicFromUpdates(result), nil
+}
+
+// EditForumTopic edits a forum topic's title.
+func (w *Wrapper) EditForumTopic(
+	ctx context.Context,
+	peer InputPeer,
+	topicID int,
+	title string,
+) error {
+	req := &tg.MessagesEditForumTopicRequest{
+		Peer:    InputPeerToTG(peer),
+		TopicID: topicID,
+	}
+	req.SetTitle(title)
+
+	_, err := w.api.MessagesEditForumTopic(ctx, req)
+
+	return errors.Wrap(err, "editing forum topic")
+}
+
+// AddContact adds a user to contacts.
+func (w *Wrapper) AddContact(
+	ctx context.Context,
+	peer InputPeer,
+	firstName, lastName, phone string,
+) error {
+	_, err := w.api.ContactsAddContact(
+		ctx,
+		&tg.ContactsAddContactRequest{
+			ID:        InputUserFromPeer(peer),
+			FirstName: firstName,
+			LastName:  lastName,
+			Phone:     phone,
+		},
+	)
+
+	return errors.Wrap(err, "adding contact")
+}
+
+// DeleteContact removes a user from contacts.
+func (w *Wrapper) DeleteContact(
+	ctx context.Context, peer InputPeer,
+) error {
+	_, err := w.api.ContactsDeleteContacts(
+		ctx,
+		[]tg.InputUserClass{InputUserFromPeer(peer)},
+	)
+
+	return errors.Wrap(err, "deleting contact")
+}
+
+// SetAdmin sets admin rights for a user in a channel.
+func (w *Wrapper) SetAdmin(
+	ctx context.Context,
+	group, user InputPeer,
+	rights AdminRights,
+	rank string,
+) error {
+	if group.Type != PeerChannel {
+		return errors.New(
+			"setting admins is only supported for channels and supergroups",
+		)
+	}
+
+	_, err := w.api.ChannelsEditAdmin(
+		ctx,
+		&tg.ChannelsEditAdminRequest{
+			Channel:     InputChannelFromPeer(group),
+			UserID:      InputUserFromPeer(user),
+			AdminRights: convertAdminRights(rights),
+			Rank:        rank,
+		},
+	)
+
+	return errors.Wrap(err, "setting admin rights")
+}
+
+// DeleteHistory deletes all messages in a chat.
+// Only users and basic groups are supported; channels
+// must use different API methods.
+func (w *Wrapper) DeleteHistory(
+	ctx context.Context, peer InputPeer, revoke bool,
+) error {
+	if peer.Type == PeerChannel {
+		return errors.New(
+			"delete history is only supported for users and basic groups",
+		)
+	}
+
+	for {
+		result, err := w.api.MessagesDeleteHistory(
+			ctx,
+			&tg.MessagesDeleteHistoryRequest{
+				Peer:   InputPeerToTG(peer),
+				MaxID:  math.MaxInt32,
+				Revoke: revoke,
+			},
+		)
+		if err != nil {
+			return errors.Wrap(err, "deleting history")
+		}
+
+		if result.Offset == 0 {
+			break
+		}
+	}
+
+	return nil
+}
+
+// ClearAllDrafts clears all message drafts.
+func (w *Wrapper) ClearAllDrafts(ctx context.Context) error {
+	_, err := w.api.MessagesClearAllDrafts(ctx)
+
+	return errors.Wrap(err, "clearing all drafts")
 }
 
 // resolveViaDialogs fetches peer details using GetPeerDialogs

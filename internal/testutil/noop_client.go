@@ -55,11 +55,13 @@ func (NoopClient) MarkRead(_ context.Context, _ telegram.InputPeer, _ int) error
 	return nil
 }
 
-func (NoopClient) SendFile(_ context.Context, _ telegram.InputPeer, _, _ string) (*telegram.Message, error) {
+func (NoopClient) SendFile(_ context.Context, _ telegram.InputPeer, _, _ string, _ telegram.SendOpts) (*telegram.Message, error) {
 	return nil, nil
 }
 
-func (NoopClient) SendAlbum(_ context.Context, _ telegram.InputPeer, _ []string, _ string) ([]telegram.Message, error) {
+func (NoopClient) SendAlbum(
+	_ context.Context, _ telegram.InputPeer, _ []string, _ string, _ telegram.SendOpts,
+) ([]telegram.Message, error) {
 	return nil, nil
 }
 
@@ -184,3 +186,60 @@ func (NoopClient) EditFolder(_ context.Context, _ int, _ string, _ []telegram.In
 func (NoopClient) DeleteFolder(_ context.Context, _ int) error                        { return nil }
 func (NoopClient) SendTyping(_ context.Context, _ telegram.InputPeer, _ string) error { return nil }
 func (NoopClient) SetOnlineStatus(_ context.Context, _ bool) error                    { return nil }
+
+func (NoopClient) GetScheduledMessages(_ context.Context, _ telegram.InputPeer) ([]telegram.Message, error) {
+	return nil, nil
+}
+
+func (NoopClient) SearchGlobal(_ context.Context, _ string, _ int) ([]telegram.Message, error) {
+	return nil, nil
+}
+
+func (NoopClient) GetBlockedContacts(_ context.Context, _ int) ([]telegram.User, error) {
+	return nil, nil
+}
+
+func (NoopClient) GetReactions(
+	_ context.Context, _ telegram.InputPeer, _ int, _ int,
+) ([]telegram.ReactionUser, error) {
+	return nil, nil
+}
+
+func (NoopClient) GetGroupMembers(
+	_ context.Context, _ telegram.InputPeer, _ string, _ int,
+) ([]telegram.User, error) {
+	return nil, nil
+}
+
+func (NoopClient) GetContactStatuses(_ context.Context) ([]telegram.ContactStatus, error) {
+	return nil, nil
+}
+
+func (NoopClient) PinDialog(_ context.Context, _ telegram.InputPeer, _ bool) error        { return nil }
+func (NoopClient) MarkDialogUnread(_ context.Context, _ telegram.InputPeer, _ bool) error { return nil }
+func (NoopClient) SetSlowMode(_ context.Context, _ telegram.InputPeer, _ int) error       { return nil }
+
+func (NoopClient) CreateForumTopic(
+	_ context.Context, _ telegram.InputPeer, _ string,
+) (*telegram.ForumTopic, error) {
+	return nil, nil
+}
+
+func (NoopClient) EditForumTopic(_ context.Context, _ telegram.InputPeer, _ int, _ string) error {
+	return nil
+}
+
+func (NoopClient) AddContact(_ context.Context, _ telegram.InputPeer, _, _, _ string) error {
+	return nil
+}
+
+func (NoopClient) DeleteContact(_ context.Context, _ telegram.InputPeer) error { return nil }
+
+func (NoopClient) SetAdmin(
+	_ context.Context, _, _ telegram.InputPeer, _ telegram.AdminRights, _ string,
+) error {
+	return nil
+}
+
+func (NoopClient) DeleteHistory(_ context.Context, _ telegram.InputPeer, _ bool) error { return nil }
+func (NoopClient) ClearAllDrafts(_ context.Context) error                              { return nil }

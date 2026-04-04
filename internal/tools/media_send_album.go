@@ -10,9 +10,11 @@ import (
 
 // MediaSendAlbumParams defines the parameters for the tg_media_send_album tool.
 type MediaSendAlbumParams struct {
-	Peer    string   `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
-	Paths   []string `json:"paths"             jsonschema:"Local file paths to send as album"`
-	Caption *string  `json:"caption,omitempty" jsonschema:"Optional caption for the album"`
+	Peer         string   `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
+	Paths        []string `json:"paths"                  jsonschema:"Local file paths to send as album"`
+	Caption      *string  `json:"caption,omitempty"      jsonschema:"Optional caption for the album"`
+	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
+	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
 
 // MediaSendAlbumResult is the output of the tg_media_send_album tool.
@@ -76,7 +78,12 @@ func sendAlbum(
 
 	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
 
-	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption))
+	opts := telegram.SendOpts{
+		Silent:       deref(params.Silent),
+		ScheduleDate: deref(params.ScheduleDate),
+	}
+
+	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption), opts)
 	if err != nil {
 		return nil, telegramErr("failed to send album", err)
 	}

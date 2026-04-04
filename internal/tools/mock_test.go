@@ -106,13 +106,15 @@ func (m *mockClient) MarkRead(_ context.Context, peer telegram.InputPeer, _ int)
 	return m.err
 }
 
-func (m *mockClient) SendFile(_ context.Context, peer telegram.InputPeer, _, _ string) (*telegram.Message, error) {
+func (m *mockClient) SendFile(_ context.Context, peer telegram.InputPeer, _, _ string, _ telegram.SendOpts) (*telegram.Message, error) {
 	m.lastPeer = peer
 
 	return m.message, m.err
 }
 
-func (m *mockClient) SendAlbum(_ context.Context, peer telegram.InputPeer, _ []string, _ string) ([]telegram.Message, error) {
+func (m *mockClient) SendAlbum(
+	_ context.Context, peer telegram.InputPeer, _ []string, _ string, _ telegram.SendOpts,
+) ([]telegram.Message, error) {
 	m.lastPeer = peer
 
 	return m.messages, m.err

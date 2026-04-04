@@ -170,6 +170,7 @@ type SendOpts struct {
 	TopicID      int
 	ParseMode    string
 	Silent       bool
+	NoWebpage    bool
 	ScheduleDate int
 }
 

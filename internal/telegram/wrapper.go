@@ -266,6 +266,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 	}
 
 	req.Silent = opts.Silent
+	req.NoWebpage = opts.NoWebpage
 
 	if opts.ScheduleDate > 0 {
 		req.SetScheduleDate(opts.ScheduleDate)
@@ -397,7 +398,7 @@ func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 }
 
 // SendFile sends a file with an optional caption.
-func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string) (*Message, error) {
+func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error) {
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
@@ -408,7 +409,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, err
 	}
 
-	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+	req := &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaUploadedDocument{
 			File:     file,
@@ -419,7 +420,14 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		},
 		Message:  caption,
 		RandomID: randID,
-	})
+		Silent:   opts.Silent,
+	}
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
+	result, err := w.api.MessagesSendMedia(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending file")
 	}
@@ -428,7 +436,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 }
 
 // SendAlbum sends a group of media files.
-func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string) ([]Message, error) {
+func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error) {
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
 	for idx, path := range paths {
@@ -460,10 +468,17 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		multiMedia = append(multiMedia, media)
 	}
 
-	result, err := w.api.MessagesSendMultiMedia(ctx, &tg.MessagesSendMultiMediaRequest{
+	req := &tg.MessagesSendMultiMediaRequest{
 		Peer:       InputPeerToTG(peer),
 		MultiMedia: multiMedia,
-	})
+		Silent:     opts.Silent,
+	}
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
+	result, err := w.api.MessagesSendMultiMedia(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending album")
 	}

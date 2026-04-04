@@ -76,7 +76,7 @@ func sendAlbum(
 
 	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
 
-	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption))
+	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption), telegram.SendOpts{})
 	if err != nil {
 		return nil, telegramErr("failed to send album", err)
 	}

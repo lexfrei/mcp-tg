@@ -75,7 +75,7 @@ func uploadAndSendFile(
 
 	notifyProgress(ctx, req.Session, token, 0, 1, "Uploading file")
 
-	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption))
+	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption), telegram.SendOpts{})
 	if err != nil {
 		return nil, telegramErr("failed to send file", err)
 	}

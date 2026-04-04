@@ -55,11 +55,13 @@ func (NoopClient) MarkRead(_ context.Context, _ telegram.InputPeer, _ int) error
 	return nil
 }
 
-func (NoopClient) SendFile(_ context.Context, _ telegram.InputPeer, _, _ string) (*telegram.Message, error) {
+func (NoopClient) SendFile(_ context.Context, _ telegram.InputPeer, _, _ string, _ telegram.SendOpts) (*telegram.Message, error) {
 	return nil, nil
 }
 
-func (NoopClient) SendAlbum(_ context.Context, _ telegram.InputPeer, _ []string, _ string) ([]telegram.Message, error) {
+func (NoopClient) SendAlbum(
+	_ context.Context, _ telegram.InputPeer, _ []string, _ string, _ telegram.SendOpts,
+) ([]telegram.Message, error) {
 	return nil, nil
 }
 

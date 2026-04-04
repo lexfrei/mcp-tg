@@ -37,8 +37,8 @@ type MessageClient interface {
 
 // MediaClient handles file and media operations.
 type MediaClient interface {
-	SendFile(ctx context.Context, peer InputPeer, path string, caption string) (*Message, error)
-	SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string) ([]Message, error)
+	SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error)
+	SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error)
 	DownloadMedia(ctx context.Context, peer InputPeer, msgID int, outputDir string) (string, error)
 	UploadFile(ctx context.Context, path string) (*UploadedFile, error)
 }

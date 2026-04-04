@@ -41,6 +41,12 @@ func NewTopicsEditHandler(
 				validationErr(ErrTopicIDRequired)
 		}
 
+		if params.Title == "" {
+			return &mcp.CallToolResult{IsError: true},
+				TopicsEditResult{},
+				validationErr(ErrTitleRequired)
+		}
+
 		peer, err := client.ResolvePeer(ctx, params.Peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},

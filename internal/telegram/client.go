@@ -22,13 +22,19 @@ type Client interface {
 }
 
 // MessageClient handles message operations.
+//
+//nolint:interfacebloat // covers all message-related Telegram RPCs as a cohesive group.
 type MessageClient interface {
 	GetMessages(ctx context.Context, peer InputPeer, ids []int) ([]Message, error)
 	GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, error)
 	SearchMessages(ctx context.Context, peer InputPeer, query string, opts SearchOpts) ([]Message, error)
+	SearchGlobal(ctx context.Context, query string, limit int) ([]Message, error)
+	GetScheduledMessages(ctx context.Context, peer InputPeer) ([]Message, error)
+	GetReactions(ctx context.Context, peer InputPeer, msgID int, limit int) ([]ReactionUser, error)
 	SendMessage(ctx context.Context, peer InputPeer, text string, opts SendOpts) (*Message, error)
 	EditMessage(ctx context.Context, peer InputPeer, msgID int, text string, parseMode string) (*Message, error)
 	DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error
+	DeleteHistory(ctx context.Context, peer InputPeer, revoke bool) error
 	ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int) ([]Message, error)
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error
 	SendReaction(ctx context.Context, peer InputPeer, msgID int, emoji string, remove bool) error
@@ -48,22 +54,33 @@ type DialogClient interface {
 	GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error)
 	SearchDialogs(ctx context.Context, query string) ([]Dialog, error)
 	GetPeerInfo(ctx context.Context, peer InputPeer) (*PeerInfo, error)
+	PinDialog(ctx context.Context, peer InputPeer, pinned bool) error
+	MarkDialogUnread(ctx context.Context, peer InputPeer, unread bool) error
 }
 
 // ContactClient handles contact operations.
 type ContactClient interface {
 	GetContact(ctx context.Context, peer InputPeer) (*User, error)
 	SearchContacts(ctx context.Context, query string, limit int) ([]User, error)
+	GetBlockedContacts(ctx context.Context, limit int) ([]User, error)
+	GetContactStatuses(ctx context.Context) ([]ContactStatus, error)
+	AddContact(ctx context.Context, peer InputPeer, firstName, lastName, phone string) error
+	DeleteContact(ctx context.Context, peer InputPeer) error
 }
 
 // GroupClient handles group-specific operations.
+//
+//nolint:interfacebloat // covers all group-related Telegram RPCs as a cohesive group.
 type GroupClient interface {
 	GetGroupInfo(ctx context.Context, peer InputPeer) (*GroupInfo, error)
+	GetGroupMembers(ctx context.Context, peer InputPeer, filter string, limit int) ([]User, error)
 	JoinGroup(ctx context.Context, peer InputPeer) error
 	LeaveGroup(ctx context.Context, peer InputPeer) error
 	RenameGroup(ctx context.Context, peer InputPeer, title string) error
 	AddGroupMember(ctx context.Context, group, user InputPeer) error
 	RemoveGroupMember(ctx context.Context, group, user InputPeer) error
+	SetAdmin(ctx context.Context, group, user InputPeer, rights AdminRights, rank string) error
+	SetSlowMode(ctx context.Context, peer InputPeer, seconds int) error
 	GetInviteLink(ctx context.Context, peer InputPeer) (string, error)
 	RevokeInviteLink(ctx context.Context, peer InputPeer, link string) error
 }
@@ -95,6 +112,8 @@ type UserClient interface {
 // TopicClient handles forum topic operations.
 type TopicClient interface {
 	GetForumTopics(ctx context.Context, peer InputPeer, opts TopicOpts) ([]ForumTopic, error)
+	CreateForumTopic(ctx context.Context, peer InputPeer, title string) (*ForumTopic, error)
+	EditForumTopic(ctx context.Context, peer InputPeer, topicID int, title string) error
 }
 
 // StickerClient handles sticker operations.
@@ -108,6 +127,7 @@ type StickerClient interface {
 type DraftClient interface {
 	SetDraft(ctx context.Context, peer InputPeer, text string, replyTo int) error
 	ClearDraft(ctx context.Context, peer InputPeer) error
+	ClearAllDrafts(ctx context.Context) error
 }
 
 // FolderClient handles chat folder operations.

@@ -9,10 +9,12 @@ import (
 )
 
 const (
-	unknownValue = "unknown"
-	peerUser     = "user"
-	peerChannel  = "channel"
-	peerGroup    = "group"
+	unknownValue   = "unknown"
+	peerUser       = "user"
+	peerChannel    = "channel"
+	peerGroup      = "group"
+	actionPinned   = "Pinned"
+	actionUnpinned = "Unpinned"
 )
 
 // formatTimestamp converts a Unix timestamp to a human-readable string.

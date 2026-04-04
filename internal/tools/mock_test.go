@@ -9,25 +9,28 @@ import (
 // mockClient implements telegram.Client for testing.
 type mockClient struct {
 	// Return values
-	messages []telegram.Message
-	message  *telegram.Message
-	total    int
-	dialogs  []telegram.Dialog
-	user     *telegram.User
-	users    []telegram.User
-	group    *telegram.GroupInfo
-	info     *telegram.PeerInfo
-	infos    []telegram.PeerInfo
-	photos   []telegram.Photo
-	topics   []telegram.ForumTopic
-	sets     []telegram.StickerSet
-	setFull  *telegram.StickerSetFull
-	folders  []telegram.Folder
-	folder   *telegram.Folder
-	uploaded *telegram.UploadedFile
-	link     string
-	filePath string
-	peer     telegram.InputPeer
+	messages  []telegram.Message
+	message   *telegram.Message
+	total     int
+	dialogs   []telegram.Dialog
+	user      *telegram.User
+	users     []telegram.User
+	group     *telegram.GroupInfo
+	info      *telegram.PeerInfo
+	infos     []telegram.PeerInfo
+	photos    []telegram.Photo
+	topics    []telegram.ForumTopic
+	topic     *telegram.ForumTopic
+	sets      []telegram.StickerSet
+	setFull   *telegram.StickerSetFull
+	folders   []telegram.Folder
+	folder    *telegram.Folder
+	uploaded  *telegram.UploadedFile
+	reactions []telegram.ReactionUser
+	statuses  []telegram.ContactStatus
+	link      string
+	filePath  string
+	peer      telegram.InputPeer
 
 	// Error to return
 	err error
@@ -347,5 +350,105 @@ func (m *mockClient) SendTyping(_ context.Context, peer telegram.InputPeer, _ st
 }
 
 func (m *mockClient) SetOnlineStatus(_ context.Context, _ bool) error {
+	return m.err
+}
+
+func (m *mockClient) GetScheduledMessages(_ context.Context, peer telegram.InputPeer) ([]telegram.Message, error) {
+	m.lastPeer = peer
+
+	return m.messages, m.err
+}
+
+func (m *mockClient) SearchGlobal(_ context.Context, query string, _ int) ([]telegram.Message, error) {
+	m.lastQuery = query
+
+	return m.messages, m.err
+}
+
+func (m *mockClient) GetBlockedContacts(_ context.Context, _ int) ([]telegram.User, error) {
+	return m.users, m.err
+}
+
+func (m *mockClient) GetReactions(
+	_ context.Context, peer telegram.InputPeer, _ int, _ int,
+) ([]telegram.ReactionUser, error) {
+	m.lastPeer = peer
+
+	return m.reactions, m.err
+}
+
+func (m *mockClient) GetGroupMembers(
+	_ context.Context, peer telegram.InputPeer, _ string, _ int,
+) ([]telegram.User, error) {
+	m.lastPeer = peer
+
+	return m.users, m.err
+}
+
+func (m *mockClient) GetContactStatuses(_ context.Context) ([]telegram.ContactStatus, error) {
+	return m.statuses, m.err
+}
+
+func (m *mockClient) PinDialog(_ context.Context, peer telegram.InputPeer, _ bool) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) MarkDialogUnread(_ context.Context, peer telegram.InputPeer, _ bool) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) SetSlowMode(_ context.Context, peer telegram.InputPeer, _ int) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) CreateForumTopic(
+	_ context.Context, peer telegram.InputPeer, _ string,
+) (*telegram.ForumTopic, error) {
+	m.lastPeer = peer
+
+	return m.topic, m.err
+}
+
+func (m *mockClient) EditForumTopic(_ context.Context, peer telegram.InputPeer, _ int, _ string) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) AddContact(
+	_ context.Context, peer telegram.InputPeer, _, _, _ string,
+) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) DeleteContact(_ context.Context, peer telegram.InputPeer) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) SetAdmin(
+	_ context.Context, group, _ telegram.InputPeer, _ telegram.AdminRights, _ string,
+) error {
+	m.lastPeer = group
+
+	return m.err
+}
+
+func (m *mockClient) DeleteHistory(_ context.Context, peer telegram.InputPeer, _ bool) error {
+	m.lastPeer = peer
+
+	return m.err
+}
+
+func (m *mockClient) ClearAllDrafts(_ context.Context) error {
 	return m.err
 }

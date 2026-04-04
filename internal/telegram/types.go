@@ -123,6 +123,34 @@ type Folder struct {
 	Peers []InputPeer `json:"peers,omitempty"`
 }
 
+// ReactionUser represents a user who reacted to a message.
+type ReactionUser struct {
+	UserID   int64  `json:"userId"`
+	UserName string `json:"userName,omitempty"`
+	Emoji    string `json:"emoji"`
+}
+
+// ContactStatus represents the online status of a contact.
+type ContactStatus struct {
+	UserID   int64  `json:"userId"`
+	Status   string `json:"status"`
+	LastSeen int    `json:"lastSeen,omitempty"`
+}
+
+// AdminRights represents administrator rights.
+type AdminRights struct {
+	ChangeInfo   bool `json:"changeInfo,omitempty"`
+	PostMessages bool `json:"postMessages,omitempty"`
+	EditMessages bool `json:"editMessages,omitempty"`
+	DeleteMsgs   bool `json:"deleteMessages,omitempty"`
+	BanUsers     bool `json:"banUsers,omitempty"`
+	InviteUsers  bool `json:"inviteUsers,omitempty"`
+	PinMessages  bool `json:"pinMessages,omitempty"`
+	ManageCall   bool `json:"manageCall,omitempty"`
+	AddAdmins    bool `json:"addAdmins,omitempty"`
+	ManageTopics bool `json:"manageTopics,omitempty"`
+}
+
 // ChatPermissions represents default chat permissions.
 type ChatPermissions struct {
 	SendMessages bool `json:"sendMessages"`

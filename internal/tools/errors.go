@@ -60,6 +60,9 @@ var ErrStickerFileIDRequired = errors.New("sticker file ID is required")
 // ErrEmojiRequired is returned when an emoji parameter is missing.
 var ErrEmojiRequired = errors.New("emoji is required")
 
+// ErrTopicIDRequired is returned when a topic ID parameter is missing.
+var ErrTopicIDRequired = errors.New("topic ID is required")
+
 // ErrTooManyIDs is returned when too many message IDs are provided.
 var ErrTooManyIDs = errors.New("too many IDs (max 100)")
 

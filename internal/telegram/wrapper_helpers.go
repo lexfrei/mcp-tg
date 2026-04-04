@@ -882,3 +882,170 @@ func largestPhotoSize(sizes []tg.PhotoSizeClass) string {
 
 	return best
 }
+
+func extractBlockedUsers(
+	result tg.ContactsBlockedClass,
+) []User {
+	var rawUsers []tg.UserClass
+
+	switch res := result.(type) {
+	case *tg.ContactsBlocked:
+		rawUsers = res.Users
+	case *tg.ContactsBlockedSlice:
+		rawUsers = res.Users
+	}
+
+	users := make([]User, 0, len(rawUsers))
+
+	for _, usr := range rawUsers {
+		if typed, ok := usr.(*tg.User); ok {
+			users = append(users, ConvertUser(typed))
+		}
+	}
+
+	return users
+}
+
+func extractReactionUsers(
+	result *tg.MessagesMessageReactionsList,
+) []ReactionUser {
+	if result == nil {
+		return nil
+	}
+
+	names := buildUserMap(result.Users)
+	items := make([]ReactionUser, 0, len(result.Reactions))
+
+	for idx := range result.Reactions {
+		reaction := &result.Reactions[idx]
+		item := ReactionUser{
+			UserID: extractFromID(reaction.PeerID),
+			Emoji:  reactionEmoji(reaction.Reaction),
+		}
+
+		if usr, ok := names[item.UserID]; ok {
+			item.UserName = userDisplayName(usr)
+		}
+
+		items = append(items, item)
+	}
+
+	return items
+}
+
+func reactionEmoji(reaction tg.ReactionClass) string {
+	switch typed := reaction.(type) {
+	case *tg.ReactionEmoji:
+		return typed.Emoticon
+	case *tg.ReactionCustomEmoji:
+		return fmt.Sprintf("custom:%d", typed.DocumentID)
+	default:
+		return ""
+	}
+}
+
+func participantFilter(
+	filter string,
+) tg.ChannelParticipantsFilterClass {
+	switch filter {
+	case "admins":
+		return &tg.ChannelParticipantsAdmins{}
+	case "banned":
+		return &tg.ChannelParticipantsBanned{}
+	case "bots":
+		return &tg.ChannelParticipantsBots{}
+	case "kicked":
+		return &tg.ChannelParticipantsKicked{}
+	case "", "recent":
+		return &tg.ChannelParticipantsRecent{}
+	default:
+		return &tg.ChannelParticipantsSearch{Q: filter}
+	}
+}
+
+func convertContactStatuses(
+	statuses []tg.ContactStatus,
+) []ContactStatus {
+	result := make([]ContactStatus, len(statuses))
+
+	for idx := range statuses {
+		result[idx] = ContactStatus{
+			UserID:   statuses[idx].UserID,
+			Status:   userStatusString(statuses[idx].Status),
+			LastSeen: userStatusLastSeen(statuses[idx].Status),
+		}
+	}
+
+	return result
+}
+
+func userStatusString(status tg.UserStatusClass) string {
+	switch status.(type) {
+	case *tg.UserStatusOnline:
+		return "online"
+	case *tg.UserStatusOffline:
+		return "offline"
+	case *tg.UserStatusRecently:
+		return "recently"
+	case *tg.UserStatusLastWeek:
+		return "last_week"
+	case *tg.UserStatusLastMonth:
+		return "last_month"
+	default:
+		return "unknown"
+	}
+}
+
+func userStatusLastSeen(status tg.UserStatusClass) int {
+	if offline, ok := status.(*tg.UserStatusOffline); ok {
+		return offline.WasOnline
+	}
+
+	return 0
+}
+
+func convertAdminRights(rights AdminRights) tg.ChatAdminRights {
+	return tg.ChatAdminRights{
+		ChangeInfo:     rights.ChangeInfo,
+		PostMessages:   rights.PostMessages,
+		EditMessages:   rights.EditMessages,
+		DeleteMessages: rights.DeleteMsgs,
+		BanUsers:       rights.BanUsers,
+		InviteUsers:    rights.InviteUsers,
+		PinMessages:    rights.PinMessages,
+		ManageCall:     rights.ManageCall,
+		AddAdmins:      rights.AddAdmins,
+		ManageTopics:   rights.ManageTopics,
+	}
+}
+
+func topicFromUpdates(result tg.UpdatesClass) *ForumTopic {
+	upd, ok := result.(*tg.Updates)
+	if !ok {
+		return nil
+	}
+
+	for _, update := range upd.Updates {
+		if ft, ok := update.(*tg.UpdateNewChannelMessage); ok {
+			if msg, ok := ft.Message.(*tg.MessageService); ok {
+				return &ForumTopic{
+					ID:    msg.ID,
+					Title: topicTitleFromAction(msg.Action),
+					Date:  msg.Date,
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func topicTitleFromAction(
+	action tg.MessageActionClass,
+) string {
+	if act, ok := action.(*tg.MessageActionTopicCreate); ok {
+		return act.Title
+	}
+
+	return ""
+}

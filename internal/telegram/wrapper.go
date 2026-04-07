@@ -286,12 +286,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		return nil, validErr
 	}
 
-	if opts.TopicID > 0 || opts.ReplyTo > 0 {
-		reply := &tg.InputReplyToMessage{ReplyToMsgID: opts.ReplyTo}
-		if opts.TopicID > 0 {
-			reply.SetTopMsgID(opts.TopicID)
-		}
-
+	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
 		req.ReplyTo = reply
 	}
 
@@ -455,10 +450,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		Silent:   opts.Silent,
 	}
 
-	if opts.TopicID > 0 {
-		reply := &tg.InputReplyToMessage{}
-		reply.SetTopMsgID(opts.TopicID)
-
+	if reply := buildReplyTo(opts.TopicID, 0); reply != nil {
 		req.ReplyTo = reply
 	}
 

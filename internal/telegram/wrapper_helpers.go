@@ -58,6 +58,25 @@ func buildMultiMediaRequest(
 	return req
 }
 
+// buildReplyTo constructs an InputReplyToMessage from topic and reply IDs.
+// Returns nil when neither topicID nor replyTo is set.
+func buildReplyTo(topicID, replyTo int) *tg.InputReplyToMessage {
+	if topicID <= 0 && replyTo <= 0 {
+		return nil
+	}
+
+	reply := &tg.InputReplyToMessage{}
+	if replyTo > 0 {
+		reply.ReplyToMsgID = replyTo
+	}
+
+	if topicID > 0 {
+		reply.SetTopMsgID(topicID)
+	}
+
+	return reply
+}
+
 func validateMessageText(text string) error {
 	if text == "" {
 		return errors.New("message text cannot be empty")

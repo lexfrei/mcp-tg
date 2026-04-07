@@ -278,3 +278,17 @@ func TestExtractReplyTo_Nil(t *testing.T) {
 		t.Errorf("extractReplyTo(nil) = %d, want 0", got)
 	}
 }
+
+func TestConvertMessage_TopicFallbackToMsgID(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 100}
+	raw.ReplyTo = &tg.MessageReplyHeader{
+		ForumTopic:   true,
+		ReplyToMsgID: 99,
+	}
+
+	got := ConvertMessage(raw)
+
+	if got.TopicID != 99 {
+		t.Errorf("TopicID = %d, want 99 (fallback to ReplyToMsgID)", got.TopicID)
+	}
+}

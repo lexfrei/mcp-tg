@@ -222,6 +222,61 @@ func TestTypingAction_Unknown(t *testing.T) {
 	}
 }
 
+func TestBuildReplyTo_BothZero(t *testing.T) {
+	got := buildReplyTo(0, 0)
+	if got != nil {
+		t.Errorf("buildReplyTo(0, 0) = %+v, want nil", got)
+	}
+}
+
+func TestBuildReplyTo_OnlyTopicID(t *testing.T) {
+	got := buildReplyTo(42, 0)
+	if got == nil {
+		t.Fatal("buildReplyTo(42, 0) = nil, want non-nil")
+	}
+
+	topMsgID, hasTop := got.GetTopMsgID()
+	if !hasTop || topMsgID != 42 {
+		t.Errorf("TopMsgID = %d (set=%v), want 42", topMsgID, hasTop)
+	}
+
+	if got.ReplyToMsgID != 0 {
+		t.Errorf("ReplyToMsgID = %d, want 0", got.ReplyToMsgID)
+	}
+}
+
+func TestBuildReplyTo_OnlyReplyTo(t *testing.T) {
+	got := buildReplyTo(0, 77)
+	if got == nil {
+		t.Fatal("buildReplyTo(0, 77) = nil, want non-nil")
+	}
+
+	if got.ReplyToMsgID != 77 {
+		t.Errorf("ReplyToMsgID = %d, want 77", got.ReplyToMsgID)
+	}
+
+	topMsgID, hasTop := got.GetTopMsgID()
+	if hasTop {
+		t.Errorf("TopMsgID unexpectedly set to %d", topMsgID)
+	}
+}
+
+func TestBuildReplyTo_BothSet(t *testing.T) {
+	got := buildReplyTo(42, 77)
+	if got == nil {
+		t.Fatal("buildReplyTo(42, 77) = nil, want non-nil")
+	}
+
+	if got.ReplyToMsgID != 77 {
+		t.Errorf("ReplyToMsgID = %d, want 77", got.ReplyToMsgID)
+	}
+
+	topMsgID, hasTop := got.GetTopMsgID()
+	if !hasTop || topMsgID != 42 {
+		t.Errorf("TopMsgID = %d (set=%v), want 42", topMsgID, hasTop)
+	}
+}
+
 func TestChannelType_Channel(t *testing.T) {
 	channel := &tg.Channel{Megagroup: false}
 	got := channelType(channel)

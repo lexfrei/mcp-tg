@@ -37,6 +37,7 @@ func ConvertMessage(raw *tg.Message) Message {
 	msg.PeerID = extractPeerID(raw.PeerID)
 	msg.FromID = extractFromID(raw.FromID)
 	msg.ReplyTo = extractReplyTo(raw.ReplyTo)
+	msg.TopicID = extractTopicID(raw.ReplyTo)
 
 	return msg
 }
@@ -85,6 +86,24 @@ func extractReplyTo(reply tg.MessageReplyHeaderClass) int {
 	}
 
 	return 0
+}
+
+func extractTopicID(reply tg.MessageReplyHeaderClass) int {
+	if reply == nil {
+		return 0
+	}
+
+	hdr, ok := reply.(*tg.MessageReplyHeader)
+	if !ok || !hdr.ForumTopic {
+		return 0
+	}
+
+	topicID, hasTopicID := hdr.GetReplyToTopID()
+	if hasTopicID {
+		return topicID
+	}
+
+	return hdr.ReplyToMsgID
 }
 
 // MessageMediaType returns a string label for a message media type.

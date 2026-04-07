@@ -97,6 +97,35 @@ func TestConvertMessage_Nil(t *testing.T) {
 	}
 }
 
+func TestConvertMessage_WithTopicID(t *testing.T) {
+	raw := &tg.Message{
+		ID:   1,
+		Date: 1700000000,
+	}
+	raw.ReplyTo = &tg.MessageReplyHeader{}
+	raw.ReplyTo.(*tg.MessageReplyHeader).SetReplyToTopID(42)
+	raw.ReplyTo.(*tg.MessageReplyHeader).ForumTopic = true
+
+	got := ConvertMessage(raw)
+
+	if got.TopicID != 42 {
+		t.Errorf("TopicID = %d, want 42", got.TopicID)
+	}
+}
+
+func TestConvertMessage_WithoutTopic(t *testing.T) {
+	raw := &tg.Message{
+		ID:   2,
+		Date: 1700000000,
+	}
+
+	got := ConvertMessage(raw)
+
+	if got.TopicID != 0 {
+		t.Errorf("TopicID = %d, want 0 for non-topic message", got.TopicID)
+	}
+}
+
 func TestMessageMediaType(t *testing.T) {
 	tests := []struct {
 		name  string

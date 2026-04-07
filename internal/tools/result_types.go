@@ -43,6 +43,7 @@ type MessageItem struct {
 	Text      string `json:"text"`
 	FromID    int64  `json:"fromId"`
 	FromName  string `json:"fromName,omitempty"`
+	TopicID   int    `json:"topicId,omitempty"`
 	MediaType string `json:"mediaType,omitempty"`
 }
 
@@ -115,6 +116,7 @@ func messageToItem(msg *telegram.Message) MessageItem {
 		Text:      msg.Text,
 		FromID:    msg.FromID,
 		FromName:  msg.FromName,
+		TopicID:   msg.TopicID,
 		MediaType: msg.MediaType,
 	}
 }

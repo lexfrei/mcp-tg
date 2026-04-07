@@ -23,6 +23,12 @@ func (NoopClient) GetHistory(_ context.Context, _ telegram.InputPeer, _ telegram
 	return nil, 0, nil
 }
 
+func (NoopClient) GetTopicMessages(
+	_ context.Context, _ telegram.InputPeer, _ int, _ telegram.HistoryOpts,
+) ([]telegram.Message, int, error) {
+	return nil, 0, nil
+}
+
 func (NoopClient) SearchMessages(_ context.Context, _ telegram.InputPeer, _ string, _ telegram.SearchOpts) ([]telegram.Message, error) {
 	return nil, nil
 }

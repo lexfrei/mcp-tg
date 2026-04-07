@@ -35,6 +35,29 @@ func isImagePath(path string) bool {
 	return strings.HasPrefix(mimeType, "image/")
 }
 
+func buildMultiMediaRequest(
+	peer InputPeer, media []tg.InputSingleMedia, opts SendOpts,
+) *tg.MessagesSendMultiMediaRequest {
+	req := &tg.MessagesSendMultiMediaRequest{
+		Peer:       InputPeerToTG(peer),
+		MultiMedia: media,
+		Silent:     opts.Silent,
+	}
+
+	if opts.TopicID > 0 {
+		reply := &tg.InputReplyToMessage{}
+		reply.SetTopMsgID(opts.TopicID)
+
+		req.ReplyTo = reply
+	}
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
+	return req
+}
+
 func validateMessageText(text string) error {
 	if text == "" {
 		return errors.New("message text cannot be empty")

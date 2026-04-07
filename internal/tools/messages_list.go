@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -12,6 +10,7 @@ import (
 // MessagesListParams defines the parameters for the tg_messages_list tool.
 type MessagesListParams struct {
 	Peer     string `json:"peer"               jsonschema:"@username, t.me/ link, or numeric ID"`
+	TopicID  *int   `json:"topicId,omitempty"  jsonschema:"Forum topic ID to filter messages"`
 	Limit    *int   `json:"limit,omitempty"    jsonschema:"Max messages to return (default 100)"`
 	OffsetID *int   `json:"offsetId,omitempty" jsonschema:"Message ID to start from"`
 }
@@ -51,31 +50,48 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 				validationErr(limitErr)
 		}
 
-		opts := telegram.HistoryOpts{
-			Limit:    limit,
-			OffsetID: deref(params.OffsetID),
-		}
-
-		msgs, total, err := client.GetHistory(ctx, peer, opts)
+		result, err := fetchMessages(ctx, client, peer, &params)
 		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
-				telegramErr("failed to get messages", err)
+			return &mcp.CallToolResult{IsError: true}, MessagesListResult{}, err
 		}
 
-		var buf strings.Builder
-
-		for idx := range msgs {
-			fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
-		}
-
-		return nil, MessagesListResult{
-			Count:        len(msgs),
-			Total:        total,
-			Participants: participantsFromMessages(msgs),
-			Messages:     messagesToItems(msgs),
-			Output:       buf.String(),
-		}, nil
+		return nil, result, nil
 	}
+}
+
+func fetchMessages(
+	ctx context.Context, client telegram.Client,
+	peer telegram.InputPeer, params *MessagesListParams,
+) (MessagesListResult, error) {
+	topicID := deref(params.TopicID)
+	opts := telegram.HistoryOpts{
+		Limit:    deref(params.Limit),
+		OffsetID: deref(params.OffsetID),
+	}
+
+	var (
+		msgs  []telegram.Message
+		total int
+		err   error
+	)
+
+	if topicID > 0 {
+		msgs, total, err = client.GetTopicMessages(ctx, peer, topicID, opts)
+	} else {
+		msgs, total, err = client.GetHistory(ctx, peer, opts)
+	}
+
+	if err != nil {
+		return MessagesListResult{}, telegramErr("failed to get messages", err)
+	}
+
+	return MessagesListResult{
+		Count:        len(msgs),
+		Total:        total,
+		Participants: participantsFromMessages(msgs),
+		Messages:     messagesToItems(msgs),
+		Output:       formatMessages(msgs),
+	}, nil
 }
 
 // MessagesListTool returns the MCP tool definition for tg_messages_list.

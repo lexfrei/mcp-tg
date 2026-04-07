@@ -12,6 +12,7 @@ import (
 type MessagesSendParams struct {
 	Peer         string  `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
 	Text         string  `json:"text"                   jsonschema:"Message text to send"`
+	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
 	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Text format: 'markdown' for rich text, empty for plain"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
@@ -50,6 +51,7 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 
 		opts := telegram.SendOpts{
 			ReplyTo:      deref(params.ReplyTo),
+			TopicID:      deref(params.TopicID),
 			ParseMode:    deref(params.ParseMode),
 			Silent:       deref(params.Silent),
 			NoWebpage:    deref(params.NoWebpage),

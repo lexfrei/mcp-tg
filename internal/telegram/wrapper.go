@@ -450,7 +450,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		Silent:   opts.Silent,
 	}
 
-	if reply := buildReplyTo(opts.TopicID, 0); reply != nil {
+	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
 		req.ReplyTo = reply
 	}
 

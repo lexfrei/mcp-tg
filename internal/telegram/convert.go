@@ -103,16 +103,24 @@ func extractTopicID(reply tg.MessageReplyHeaderClass) int {
 	}
 
 	hdr, ok := reply.(*tg.MessageReplyHeader)
-	if !ok || !hdr.ForumTopic {
+	if !ok {
 		return 0
 	}
 
+	// Check ReplyToTopID first — present for both forum topics
+	// and General topic (where ForumTopic flag is false but
+	// ReplyToTopID=1).
 	topicID, hasTopicID := hdr.GetReplyToTopID()
 	if hasTopicID {
 		return topicID
 	}
 
-	return hdr.ReplyToMsgID
+	// Fallback: ForumTopic flag set, ReplyToMsgID is the topic root.
+	if hdr.ForumTopic {
+		return hdr.ReplyToMsgID
+	}
+
+	return 0
 }
 
 // MessageMediaType returns a string label for a message media type.

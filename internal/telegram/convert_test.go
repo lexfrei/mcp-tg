@@ -310,3 +310,19 @@ func TestConvertMessage_TopicFallbackToMsgID(t *testing.T) {
 		t.Errorf("TopicID = %d, want 99 (fallback to ReplyToMsgID)", got.TopicID)
 	}
 }
+
+func TestConvertMessage_GeneralTopic(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 100}
+	hdr := &tg.MessageReplyHeader{
+		ForumTopic:   false,
+		ReplyToMsgID: 50,
+	}
+	hdr.SetReplyToTopID(1)
+	raw.ReplyTo = hdr
+
+	got := ConvertMessage(raw)
+
+	if got.TopicID != 1 {
+		t.Errorf("TopicID = %d, want 1 (General topic)", got.TopicID)
+	}
+}

@@ -57,14 +57,19 @@ func buildMultiMediaRequest(
 
 // buildReplyTo constructs an InputReplyToMessage from topic and reply IDs.
 // Returns nil when neither topicID nor replyTo is set.
+// When topicID is set without replyTo, sets ReplyToMsgID=topicID
+// (Telegram requires reply_to_msg_id when top_msg_id is used).
 func buildReplyTo(topicID, replyTo int) *tg.InputReplyToMessage {
 	if topicID <= 0 && replyTo <= 0 {
 		return nil
 	}
 
 	reply := &tg.InputReplyToMessage{}
+
 	if replyTo > 0 {
 		reply.ReplyToMsgID = replyTo
+	} else if topicID > 0 {
+		reply.ReplyToMsgID = topicID
 	}
 
 	if topicID > 0 {

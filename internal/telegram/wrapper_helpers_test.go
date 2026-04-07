@@ -240,8 +240,8 @@ func TestBuildReplyTo_OnlyTopicID(t *testing.T) {
 		t.Errorf("TopMsgID = %d (set=%v), want 42", topMsgID, hasTop)
 	}
 
-	if got.ReplyToMsgID != 0 {
-		t.Errorf("ReplyToMsgID = %d, want 0", got.ReplyToMsgID)
+	if got.ReplyToMsgID != 42 {
+		t.Errorf("ReplyToMsgID = %d, want 42 (topic root)", got.ReplyToMsgID)
 	}
 }
 

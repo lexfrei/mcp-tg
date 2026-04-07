@@ -37,6 +37,7 @@ func ConvertMessage(raw *tg.Message) Message {
 	msg.PeerID = extractPeerID(raw.PeerID)
 	msg.FromID = extractFromID(raw.FromID)
 	msg.ReplyTo = extractReplyTo(raw.ReplyTo)
+	msg.TopicID = extractTopicID(raw.ReplyTo)
 
 	return msg
 }
@@ -80,7 +81,42 @@ func extractReplyTo(reply tg.MessageReplyHeaderClass) int {
 		return 0
 	}
 
-	if hdr, ok := reply.(*tg.MessageReplyHeader); ok {
+	hdr, ok := reply.(*tg.MessageReplyHeader)
+	if !ok {
+		return 0
+	}
+
+	// In forum topics without explicit ReplyToTopID,
+	// ReplyToMsgID is the topic root, not a reply target.
+	if hdr.ForumTopic {
+		if _, hasTop := hdr.GetReplyToTopID(); !hasTop {
+			return 0
+		}
+	}
+
+	return hdr.ReplyToMsgID
+}
+
+func extractTopicID(reply tg.MessageReplyHeaderClass) int {
+	if reply == nil {
+		return 0
+	}
+
+	hdr, ok := reply.(*tg.MessageReplyHeader)
+	if !ok {
+		return 0
+	}
+
+	// Check ReplyToTopID first — present for both forum topics
+	// and General topic (where ForumTopic flag is false but
+	// ReplyToTopID=1).
+	topicID, hasTopicID := hdr.GetReplyToTopID()
+	if hasTopicID {
+		return topicID
+	}
+
+	// Fallback: ForumTopic flag set, ReplyToMsgID is the topic root.
+	if hdr.ForumTopic {
 		return hdr.ReplyToMsgID
 	}
 

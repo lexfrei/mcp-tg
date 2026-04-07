@@ -13,6 +13,7 @@ type MessagesSendFileParams struct {
 	Peer         string  `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
 	Path         string  `json:"path"                   jsonschema:"Local file path to send"`
 	Caption      *string `json:"caption,omitempty"      jsonschema:"Optional caption for the file"`
+	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
@@ -78,6 +79,7 @@ func uploadAndSendFile(
 	notifyProgress(ctx, req.Session, token, 0, 1, "Uploading file")
 
 	opts := telegram.SendOpts{
+		TopicID:      deref(params.TopicID),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 	}

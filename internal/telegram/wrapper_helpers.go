@@ -35,6 +35,50 @@ func isImagePath(path string) bool {
 	return strings.HasPrefix(mimeType, "image/")
 }
 
+func buildMultiMediaRequest(
+	peer InputPeer, media []tg.InputSingleMedia, opts SendOpts,
+) *tg.MessagesSendMultiMediaRequest {
+	req := &tg.MessagesSendMultiMediaRequest{
+		Peer:       InputPeerToTG(peer),
+		MultiMedia: media,
+		Silent:     opts.Silent,
+	}
+
+	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
+		req.ReplyTo = reply
+	}
+
+	if opts.ScheduleDate > 0 {
+		req.SetScheduleDate(opts.ScheduleDate)
+	}
+
+	return req
+}
+
+// buildReplyTo constructs an InputReplyToMessage from topic and reply IDs.
+// Returns nil when neither topicID nor replyTo is set.
+// When topicID is set without replyTo, sets ReplyToMsgID=topicID
+// (Telegram requires reply_to_msg_id when top_msg_id is used).
+func buildReplyTo(topicID, replyTo int) *tg.InputReplyToMessage {
+	if topicID <= 0 && replyTo <= 0 {
+		return nil
+	}
+
+	reply := &tg.InputReplyToMessage{}
+
+	if replyTo > 0 {
+		reply.ReplyToMsgID = replyTo
+	} else if topicID > 0 {
+		reply.ReplyToMsgID = topicID
+	}
+
+	if topicID > 0 {
+		reply.SetTopMsgID(topicID)
+	}
+
+	return reply
+}
+
 func validateMessageText(text string) error {
 	if text == "" {
 		return errors.New("message text cannot be empty")

@@ -27,6 +27,7 @@ type Client interface {
 type MessageClient interface {
 	GetMessages(ctx context.Context, peer InputPeer, ids []int) ([]Message, error)
 	GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, error)
+	GetTopicMessages(ctx context.Context, peer InputPeer, topicID int, opts HistoryOpts) ([]Message, int, error)
 	SearchMessages(ctx context.Context, peer InputPeer, query string, opts SearchOpts) ([]Message, error)
 	SearchGlobal(ctx context.Context, query string, limit int) ([]Message, error)
 	GetScheduledMessages(ctx context.Context, peer InputPeer) ([]Message, error)

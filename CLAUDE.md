@@ -91,6 +91,10 @@ Auth guard middleware blocks tool/resource/prompt calls until auth completes.
 
 Session persistence: volume mount `-v ~/.mcp-tg:/home/nobody/.mcp-tg`.
 
+### Forum topics
+
+Tools that send messages (`messages_send`, `messages_send_file`, `media_send_album`) accept `topicId` to target a specific forum topic. `messages_list` accepts `topicId` to filter messages by topic (uses `MessagesGetReplies` API instead of `MessagesGetHistory`). Message output includes `topicId` extracted from `MessageReplyHeader.ReplyToTopID`.
+
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication

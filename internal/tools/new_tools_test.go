@@ -1110,3 +1110,82 @@ func TestTopicsEditHandler_ZeroTopicID(t *testing.T) {
 		t.Error("result.IsError should be true")
 	}
 }
+
+func TestMessagesListHandler_Happy(t *testing.T) {
+	mock := &mockClient{
+		messages: []telegram.Message{{ID: 1, Date: 100, Text: "hello"}},
+		total:    1,
+	}
+	handler := NewMessagesListHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesListParams{Peer: "@chat"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Count != 1 {
+		t.Errorf("Count = %d, want 1", res.Count)
+	}
+}
+
+func TestMessagesListHandler_WithTopicID(t *testing.T) {
+	topicID := 42
+	mock := &mockClient{
+		messages: []telegram.Message{{ID: 1}},
+		total:    1,
+	}
+	handler := NewMessagesListHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesListParams{
+		Peer:    "@chat",
+		TopicID: &topicID,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Count != 1 {
+		t.Errorf("Count = %d, want 1", res.Count)
+	}
+
+	if mock.lastTopicID != 42 {
+		t.Errorf("lastTopicID = %d, want 42", mock.lastTopicID)
+	}
+}
+
+func TestMessagesListHandler_EmptyPeer(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewMessagesListHandler(mock)
+
+	result, _, err := handler(context.Background(), nil, MessagesListParams{})
+	if err == nil {
+		t.Fatal("expected error for empty peer")
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}
+
+func TestMessagesSendHandler_WithTopicID(t *testing.T) {
+	topicID := 42
+	mock := &mockClient{message: &telegram.Message{ID: 1}}
+	handler := NewMessagesSendHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSendParams{
+		Peer:    "@chat",
+		Text:    "hello",
+		TopicID: &topicID,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.MessageID != 1 {
+		t.Errorf("MessageID = %d, want 1", res.MessageID)
+	}
+
+	if mock.lastSendOpts.TopicID != topicID {
+		t.Errorf("TopicID = %d, want %d", mock.lastSendOpts.TopicID, topicID)
+	}
+}

@@ -110,6 +110,19 @@ func tryLink(
 	return true, closeParen + 1
 }
 
+// isAlphanumeric reports whether the byte is an ASCII letter or digit.
+func isAlphanumeric(b byte) bool {
+	return (b >= 'a' && b <= 'z') ||
+		(b >= 'A' && b <= 'Z') ||
+		(b >= '0' && b <= '9')
+}
+
+// needsWordBoundary reports whether the marker requires word boundaries
+// (CommonMark rule: _ only triggers at word boundaries, * works anywhere).
+func needsWordBoundary(marker inlineMarker) bool {
+	return marker.open == "_"
+}
+
 // tryMarker attempts to match an inline marker at position.
 //
 //nolint:gocritic // unnamedResult conflicts with nonamedreturns linter.
@@ -119,6 +132,11 @@ func tryMarker(
 ) (bool, int) {
 	for _, marker := range getInlineMarkers() {
 		if !strings.HasPrefix(text[pos:], marker.open) {
+			continue
+		}
+
+		if needsWordBoundary(marker) &&
+			pos > 0 && isAlphanumeric(text[pos-1]) {
 			continue
 		}
 
@@ -141,6 +159,15 @@ func matchMarker(
 
 	if closeIdx == -1 {
 		return pos
+	}
+
+	// Word-boundary check for closing marker: _ must not be
+	// followed by an alphanumeric character.
+	if needsWordBoundary(marker) {
+		endPos := pos + len(marker.open) + closeIdx + len(marker.close)
+		if endPos < len(text) && isAlphanumeric(text[endPos]) {
+			return pos
+		}
 	}
 
 	inner := after[:closeIdx]

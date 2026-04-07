@@ -182,6 +182,30 @@ func (w *Wrapper) GetHistory(ctx context.Context, peer InputPeer, opts HistoryOp
 	return msgs, total, nil
 }
 
+// GetTopicMessages retrieves messages from a specific forum topic.
+func (w *Wrapper) GetTopicMessages(
+	ctx context.Context, peer InputPeer, topicID int, opts HistoryOpts,
+) ([]Message, int, error) {
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	result, err := w.api.MessagesGetReplies(ctx, &tg.MessagesGetRepliesRequest{
+		Peer:     InputPeerToTG(peer),
+		MsgID:    topicID,
+		Limit:    limit,
+		OffsetID: opts.OffsetID,
+	})
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "getting topic messages")
+	}
+
+	msgs, total := extractMessages(result, peer.ID)
+
+	return msgs, total, nil
+}
+
 // GetMessages retrieves specific messages by ID.
 func (w *Wrapper) GetMessages(ctx context.Context, peer InputPeer, ids []int) ([]Message, error) {
 	inputIDs := make([]tg.InputMessageClass, len(ids))
@@ -262,8 +286,8 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		return nil, validErr
 	}
 
-	if opts.ReplyTo > 0 {
-		req.ReplyTo = &tg.InputReplyToMessage{ReplyToMsgID: opts.ReplyTo}
+	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
+		req.ReplyTo = reply
 	}
 
 	req.Silent = opts.Silent
@@ -426,6 +450,10 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		Silent:   opts.Silent,
 	}
 
+	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
+		req.ReplyTo = reply
+	}
+
 	if opts.ScheduleDate > 0 {
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
@@ -473,15 +501,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		multiMedia = append(multiMedia, media)
 	}
 
-	req := &tg.MessagesSendMultiMediaRequest{
-		Peer:       InputPeerToTG(peer),
-		MultiMedia: multiMedia,
-		Silent:     opts.Silent,
-	}
-
-	if opts.ScheduleDate > 0 {
-		req.SetScheduleDate(opts.ScheduleDate)
-	}
+	req := buildMultiMediaRequest(peer, multiMedia, opts)
 
 	result, err := w.api.MessagesSendMultiMedia(ctx, req)
 	if err != nil {

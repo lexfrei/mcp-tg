@@ -26,6 +26,7 @@ type Message struct {
 	PeerID    InputPeer `json:"peerId"`
 	FromID    int64     `json:"fromId"`
 	FromName  string    `json:"fromName,omitempty"`
+	TopicID   int       `json:"topicId,omitempty"`
 	Date      int       `json:"date"`
 	Text      string    `json:"text"`
 	MediaType string    `json:"mediaType,omitempty"`

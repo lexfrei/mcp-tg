@@ -13,6 +13,7 @@ type MediaSendAlbumParams struct {
 	Peer         string   `json:"peer"                   jsonschema:"@username, t.me/ link, or numeric ID"`
 	Paths        []string `json:"paths"                  jsonschema:"Local file paths to send as album"`
 	Caption      *string  `json:"caption,omitempty"      jsonschema:"Optional caption for the album"`
+	TopicID      *int     `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
@@ -79,6 +80,7 @@ func sendAlbum(
 	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
 
 	opts := telegram.SendOpts{
+		TopicID:      deref(params.TopicID),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 	}

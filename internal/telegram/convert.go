@@ -81,11 +81,20 @@ func extractReplyTo(reply tg.MessageReplyHeaderClass) int {
 		return 0
 	}
 
-	if hdr, ok := reply.(*tg.MessageReplyHeader); ok {
-		return hdr.ReplyToMsgID
+	hdr, ok := reply.(*tg.MessageReplyHeader)
+	if !ok {
+		return 0
 	}
 
-	return 0
+	// In forum topics without explicit ReplyToTopID,
+	// ReplyToMsgID is the topic root, not a reply target.
+	if hdr.ForumTopic {
+		if _, hasTop := hdr.GetReplyToTopID(); !hasTop {
+			return 0
+		}
+	}
+
+	return hdr.ReplyToMsgID
 }
 
 func extractTopicID(reply tg.MessageReplyHeaderClass) int {

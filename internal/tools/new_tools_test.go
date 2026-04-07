@@ -1147,6 +1147,10 @@ func TestMessagesListHandler_WithTopicID(t *testing.T) {
 	if res.Count != 1 {
 		t.Errorf("Count = %d, want 1", res.Count)
 	}
+
+	if mock.lastTopicID != 42 {
+		t.Errorf("lastTopicID = %d, want 42", mock.lastTopicID)
+	}
 }
 
 func TestMessagesListHandler_EmptyPeer(t *testing.T) {

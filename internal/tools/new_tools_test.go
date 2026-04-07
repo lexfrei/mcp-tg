@@ -1184,4 +1184,8 @@ func TestMessagesSendHandler_WithTopicID(t *testing.T) {
 	if res.MessageID != 1 {
 		t.Errorf("MessageID = %d, want 1", res.MessageID)
 	}
+
+	if mock.lastSendOpts.TopicID != topicID {
+		t.Errorf("TopicID = %d, want %d", mock.lastSendOpts.TopicID, topicID)
+	}
 }

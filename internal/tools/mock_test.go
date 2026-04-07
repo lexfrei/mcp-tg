@@ -36,9 +36,10 @@ type mockClient struct {
 	err error
 
 	// Last call tracking
-	lastPeer    telegram.InputPeer
-	lastQuery   string
-	lastTopicID int
+	lastPeer     telegram.InputPeer
+	lastQuery    string
+	lastTopicID  int
+	lastSendOpts telegram.SendOpts
 }
 
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
@@ -77,8 +78,11 @@ func (m *mockClient) SearchMessages(
 	return m.messages, m.err
 }
 
-func (m *mockClient) SendMessage(_ context.Context, peer telegram.InputPeer, _ string, _ telegram.SendOpts) (*telegram.Message, error) {
+func (m *mockClient) SendMessage(
+	_ context.Context, peer telegram.InputPeer, _ string, opts telegram.SendOpts,
+) (*telegram.Message, error) {
 	m.lastPeer = peer
+	m.lastSendOpts = opts
 
 	return m.message, m.err
 }

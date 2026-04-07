@@ -44,10 +44,7 @@ func buildMultiMediaRequest(
 		Silent:     opts.Silent,
 	}
 
-	if opts.TopicID > 0 {
-		reply := &tg.InputReplyToMessage{}
-		reply.SetTopMsgID(opts.TopicID)
-
+	if reply := buildReplyTo(opts.TopicID, 0); reply != nil {
 		req.ReplyTo = reply
 	}
 

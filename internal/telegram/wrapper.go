@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -15,12 +16,19 @@ import (
 	"github.com/gotd/td/tg"
 )
 
+const (
+	warmDialogsPageLimit = 100
+	warmDialogsMaxPages  = 5
+	warmDialogsThrottle  = 60 * time.Second
+)
+
 // Wrapper implements Client using gotd/td.
 type Wrapper struct {
-	api   *tg.Client
-	up    *uploader.Uploader
-	down  *downloader.Downloader
-	cache *PeerCache
+	api      *tg.Client
+	up       *uploader.Uploader
+	down     *downloader.Downloader
+	cache    *PeerCache
+	warmedAt atomic.Int64
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -85,6 +93,16 @@ func (w *Wrapper) ResolvePeer(
 
 	if resolved, ok := w.resolveViaDialogs(ctx, peer); ok {
 		return resolved, nil
+	}
+
+	if peer.Type == PeerChat {
+		return peer, nil
+	}
+
+	w.warmDialogsCache(ctx)
+
+	if cached, hit := w.cache.Lookup(peer.Type, peer.ID); hit {
+		return cached, nil
 	}
 
 	return peer, nil
@@ -1422,6 +1440,130 @@ func (w *Wrapper) ClearAllDrafts(ctx context.Context) error {
 	_, err := w.api.MessagesClearAllDrafts(ctx)
 
 	return errors.Wrap(err, "clearing all drafts")
+}
+
+// warmDialogsCache paginates the full dialog list once per throttle window
+// to populate the peer cache with access hashes for all joined chats.
+// Called on cold cache miss for numeric peer IDs that require access_hash.
+// Best-effort: errors after the first page are silently ignored so that
+// partial warming still benefits subsequent lookups.
+func (w *Wrapper) warmDialogsCache(ctx context.Context) {
+	now := time.Now().UnixNano()
+	prev := w.warmedAt.Load()
+
+	if prev != 0 && now-prev < int64(warmDialogsThrottle) {
+		return
+	}
+
+	if !w.warmedAt.CompareAndSwap(prev, now) {
+		return
+	}
+
+	err := w.paginateWarmDialogs(ctx)
+	if err != nil {
+		w.warmedAt.Store(prev)
+	}
+}
+
+func (w *Wrapper) paginateWarmDialogs(ctx context.Context) error {
+	var (
+		offsetDate int
+		offsetID   int
+		offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
+	)
+
+	for page := range warmDialogsMaxPages {
+		result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+			OffsetDate: offsetDate,
+			OffsetID:   offsetID,
+			OffsetPeer: offsetPeer,
+			Limit:      warmDialogsPageLimit,
+		})
+		if err != nil {
+			if page == 0 {
+				return errors.Wrap(err, "warming dialog cache")
+			}
+
+			return nil
+		}
+
+		w.cacheDialogPeers(extractDialogs(result))
+
+		slice, ok := result.(*tg.MessagesDialogsSlice)
+		if !ok {
+			return nil
+		}
+
+		next, ok := w.nextDialogOffset(slice)
+		if !ok {
+			return nil
+		}
+
+		offsetDate = next.date
+		offsetID = next.id
+		offsetPeer = next.peer
+	}
+
+	return nil
+}
+
+type dialogOffset struct {
+	date int
+	id   int
+	peer tg.InputPeerClass
+}
+
+func (w *Wrapper) nextDialogOffset(slice *tg.MessagesDialogsSlice) (dialogOffset, bool) {
+	if len(slice.Dialogs) == 0 {
+		return dialogOffset{}, false
+	}
+
+	last, ok := slice.Dialogs[len(slice.Dialogs)-1].(*tg.Dialog)
+	if !ok || last.Peer == nil {
+		return dialogOffset{}, false
+	}
+
+	peerType, peerID, typOK := peerClassTypeID(last.Peer)
+	if !typOK {
+		return dialogOffset{}, false
+	}
+
+	var inputPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
+
+	if cached, hit := w.cache.Lookup(peerType, peerID); hit {
+		inputPeer = InputPeerToTG(cached)
+	} else if peerType == PeerChat {
+		inputPeer = &tg.InputPeerChat{ChatID: peerID}
+	}
+
+	return dialogOffset{
+		id:   last.TopMessage,
+		date: findMessageDate(slice.Messages, last.TopMessage),
+		peer: inputPeer,
+	}, true
+}
+
+func peerClassTypeID(p tg.PeerClass) (PeerType, int64, bool) {
+	switch typed := p.(type) {
+	case *tg.PeerUser:
+		return PeerUser, typed.UserID, true
+	case *tg.PeerChat:
+		return PeerChat, typed.ChatID, true
+	case *tg.PeerChannel:
+		return PeerChannel, typed.ChannelID, true
+	default:
+		return 0, 0, false
+	}
+}
+
+func findMessageDate(messages []tg.MessageClass, messageID int) int {
+	for _, raw := range messages {
+		if msg, ok := raw.(*tg.Message); ok && msg.ID == messageID {
+			return msg.Date
+		}
+	}
+
+	return 0
 }
 
 // resolveViaDialogs fetches peer details using GetPeerDialogs

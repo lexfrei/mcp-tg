@@ -106,8 +106,6 @@ func simpleEntityTypeExtras(ent tg.MessageEntityClass) (string, bool) {
 		return EntityTypeEmail, true
 	case *tg.MessageEntityPhone:
 		return EntityTypePhone, true
-	case *tg.MessageEntityCustomEmoji:
-		return EntityTypeCustomEmoji, true
 	}
 
 	return "", false
@@ -146,6 +144,11 @@ func extraEntityFromTG(ent tg.MessageEntityClass) (Entity, bool) {
 		return Entity{
 			Type: EntityTypeMentionName, Offset: typed.Offset, Length: typed.Length,
 			UserID: typed.UserID,
+		}, true
+	case *tg.MessageEntityCustomEmoji:
+		return Entity{
+			Type: EntityTypeCustomEmoji, Offset: typed.Offset, Length: typed.Length,
+			CustomEmojiID: typed.DocumentID,
 		}, true
 	default:
 		return Entity{}, false

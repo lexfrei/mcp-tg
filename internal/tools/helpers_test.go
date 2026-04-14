@@ -205,7 +205,7 @@ func TestTruncateText_ZeroMax(t *testing.T) {
 }
 
 func TestValidateParseMode_Allowed(t *testing.T) {
-	cases := []string{"", "markdown", "commonmark"}
+	cases := []string{"", "markdown", "commonmark", "Markdown", "COMMONMARK"}
 
 	for _, mode := range cases {
 		err := validateParseMode(mode)
@@ -216,7 +216,7 @@ func TestValidateParseMode_Allowed(t *testing.T) {
 }
 
 func TestValidateParseMode_NotImplemented(t *testing.T) {
-	cases := []string{"html", "markdownv2"}
+	cases := []string{"html", "markdownv2", "HTML", "MarkdownV2"}
 
 	for _, mode := range cases {
 		err := validateParseMode(mode)
@@ -227,7 +227,7 @@ func TestValidateParseMode_NotImplemented(t *testing.T) {
 }
 
 func TestValidateParseMode_Unknown(t *testing.T) {
-	cases := []string{"MARKDOWN", "md", "whatever"}
+	cases := []string{"md", "whatever", "rich"}
 
 	for _, mode := range cases {
 		err := validateParseMode(mode)

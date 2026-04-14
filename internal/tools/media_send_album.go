@@ -88,7 +88,7 @@ func sendAlbum(
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
-		ParseMode:    deref(params.ParseMode),
+		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 	}

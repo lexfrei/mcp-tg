@@ -78,7 +78,7 @@ func sendOptsFrom(params *MessagesSendParams) telegram.SendOpts {
 	return telegram.SendOpts{
 		ReplyTo:      deref(params.ReplyTo),
 		TopicID:      deref(params.TopicID),
-		ParseMode:    deref(params.ParseMode),
+		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
 		Silent:       deref(params.Silent),
 		NoWebpage:    deref(params.NoWebpage),
 		ScheduleDate: deref(params.ScheduleDate),

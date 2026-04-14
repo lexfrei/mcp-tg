@@ -441,8 +441,8 @@ func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 }
 
 // SendFile sends a file with an optional caption.
-// Uses Silent, ScheduleDate from opts.
-// ParseMode and NoWebpage are not applicable to media sends.
+// Uses ParseMode, Silent, ScheduleDate from opts.
+// NoWebpage is not applicable to media sends.
 func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error) {
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
@@ -494,8 +494,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 }
 
 // SendAlbum sends a group of media files.
-// Uses Silent, ScheduleDate from opts.
-// ParseMode and NoWebpage are not applicable to media sends.
+// Uses ParseMode (for the first item's caption), Silent, ScheduleDate.
+// NoWebpage is not applicable to media sends.
 func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error) {
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 

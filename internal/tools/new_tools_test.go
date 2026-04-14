@@ -1189,3 +1189,54 @@ func TestMessagesSendHandler_WithTopicID(t *testing.T) {
 		t.Errorf("TopicID = %d, want %d", mock.lastSendOpts.TopicID, topicID)
 	}
 }
+
+const testBadParseMode = "bogus"
+
+func TestMessagesEditHandler_InvalidParseMode(t *testing.T) {
+	badMode := testBadParseMode
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+	}
+	handler := NewMessagesEditHandler(mock)
+
+	result, _, err := handler(context.Background(), nil, MessagesEditParams{
+		Peer:      "@chat",
+		MessageID: 1,
+		Text:      "hi",
+		ParseMode: &badMode,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid parseMode")
+	}
+
+	if !errors.Is(err, ErrUnknownParseMode) {
+		t.Errorf("err = %v, want ErrUnknownParseMode", err)
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}
+
+func TestMessagesSendHandler_InvalidParseMode(t *testing.T) {
+	badMode := testBadParseMode
+	mock := &mockClient{}
+	handler := NewMessagesSendHandler(mock)
+
+	result, _, err := handler(context.Background(), nil, MessagesSendParams{
+		Peer:      "@chat",
+		Text:      "hi",
+		ParseMode: &badMode,
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid parseMode")
+	}
+
+	if !errors.Is(err, ErrUnknownParseMode) {
+		t.Errorf("err = %v, want ErrUnknownParseMode", err)
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}

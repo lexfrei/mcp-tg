@@ -97,6 +97,26 @@ func TestConvertEntities_MentionName(t *testing.T) {
 	}
 }
 
+func TestConvertEntities_CustomEmoji(t *testing.T) {
+	raw := []tg.MessageEntityClass{
+		&tg.MessageEntityCustomEmoji{Offset: 0, Length: 2, DocumentID: 12345},
+	}
+
+	got := ConvertEntities(raw)
+
+	if len(got) != 1 {
+		t.Fatalf("len = %d, want 1", len(got))
+	}
+
+	if got[0].Type != EntityTypeCustomEmoji {
+		t.Errorf("Type = %q, want %q", got[0].Type, EntityTypeCustomEmoji)
+	}
+
+	if got[0].CustomEmojiID != 12345 {
+		t.Errorf("CustomEmojiID = %d, want 12345", got[0].CustomEmojiID)
+	}
+}
+
 func TestConvertEntities_Mixed(t *testing.T) {
 	raw := []tg.MessageEntityClass{
 		&tg.MessageEntityBold{Offset: 0, Length: 5},

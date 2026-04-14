@@ -9,6 +9,12 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
+// normalizeParseMode lowercases the input so callers can pass
+// "Markdown", "COMMONMARK" etc. without getting a validation error.
+func normalizeParseMode(mode string) string {
+	return strings.ToLower(mode)
+}
+
 // deref returns the value of a pointer or a zero value if nil.
 func deref[T any](ptr *T) T {
 	if ptr == nil {
@@ -83,9 +89,10 @@ func validSlowmode(sec int) bool {
 
 // validateParseMode rejects unknown parseMode values and flags modes
 // that are recognised but not yet implemented. Empty string means
-// "plain text" and is always accepted.
+// "plain text" and is always accepted. Comparison is case-insensitive
+// so callers can pass "Markdown" or "COMMONMARK" without error.
 func validateParseMode(mode string) error {
-	switch mode {
+	switch normalizeParseMode(mode) {
 	case "", telegram.ParseModeMarkdown, telegram.ParseModeCommonMark:
 		return nil
 	case telegram.ParseModeHTML, telegram.ParseModeMarkdownV2:

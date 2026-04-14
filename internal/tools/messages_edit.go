@@ -56,7 +56,7 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 				telegramErr("failed to resolve peer", err)
 		}
 
-		msg, err := client.EditMessage(ctx, peer, params.MessageID, params.Text, deref(params.ParseMode))
+		msg, err := client.EditMessage(ctx, peer, params.MessageID, params.Text, normalizeParseMode(deref(params.ParseMode)))
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
 				telegramErr("failed to edit message", err)

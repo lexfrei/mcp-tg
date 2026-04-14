@@ -12,11 +12,12 @@ import (
 const (
 	testAliceName      = "Alice"
 	testSetupFromEarly = "setup from earlier"
+	testSetupWord      = "setup"
 )
 
 func messagesWithReply() []telegram.Message {
 	return []telegram.Message{
-		{ID: 26150, Date: 1700000000, Text: "setup", FromName: testAliceName},
+		{ID: 26150, Date: 1700000000, Text: testSetupWord, FromName: testAliceName},
 		{
 			ID:       26154,
 			Date:     1700000001,
@@ -135,9 +136,9 @@ func TestMessagesListHandler_ResolveReplies_ParentInBatchNoFetch(t *testing.T) {
 		t.Fatal("ReplyToMessage = nil, want populated from batch when resolveReplies is on")
 	}
 
-	if res.Messages[1].ReplyToMessage.Text != "setup" {
+	if res.Messages[1].ReplyToMessage.Text != testSetupWord {
 		t.Errorf("ReplyToMessage.Text = %q, want %q",
-			res.Messages[1].ReplyToMessage.Text, "setup")
+			res.Messages[1].ReplyToMessage.Text, testSetupWord)
 	}
 }
 
@@ -340,6 +341,80 @@ func TestMessagesSearchHandler_ResolveReplies_FetchesMissingParent(t *testing.T)
 	if res.Messages[0].ReplyToMessage.Text != testSetupFromEarly {
 		t.Errorf("ReplyToMessage.Text = %q, want %q",
 			res.Messages[0].ReplyToMessage.Text, testSetupFromEarly)
+	}
+}
+
+func TestMessagesSearchHandler_ResolveReplies_ParentInBatchNoFetch(t *testing.T) {
+	resolveOn := true
+	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: messagesWithReply(),
+	}
+	handler := NewMessagesSearchHandler(mock)
+
+	_, res, err := handler(
+		context.Background(),
+		&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}},
+		MessagesSearchParams{
+			Peer:           "@chat",
+			Query:          "punchline",
+			ResolveReplies: &resolveOn,
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 when parent already in batch",
+			mock.getMessagesCalls)
+	}
+
+	if res.Messages[1].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated from batch when resolveReplies is on")
+	}
+
+	if res.Messages[1].ReplyToMessage.Text != testSetupWord {
+		t.Errorf("ReplyToMessage.Text = %q, want %q",
+			res.Messages[1].ReplyToMessage.Text, testSetupWord)
+	}
+}
+
+func TestMessagesListHandler_ResolveReplies_OutputUnchanged(t *testing.T) {
+	resolveOn := true
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: []telegram.Message{
+			{
+				ID:      26154,
+				Text:    "punchline",
+				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
+			},
+		},
+		parentMessages: []telegram.Message{
+			{ID: 26150, Text: testSetupFromEarly, FromName: testAliceName},
+		},
+		total: 1,
+	}
+	handler := NewMessagesListHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesListParams{
+		Peer:           "@chat",
+		ResolveReplies: &resolveOn,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Output only carries the ↩<parentId> marker; resolved parent text
+	// lives in the JSON replyToMessage field. Keep both behaviours
+	// pinned so future changes touch them deliberately.
+	if strings.Contains(res.Output, testSetupFromEarly) {
+		t.Errorf("Output must not embed resolved parent text, got %q", res.Output)
+	}
+
+	if !strings.Contains(res.Output, "↩26150") {
+		t.Errorf("Output missing reply marker ↩26150: %q", res.Output)
 	}
 }
 

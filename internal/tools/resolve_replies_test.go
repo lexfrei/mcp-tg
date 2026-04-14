@@ -75,6 +75,44 @@ func TestResolveReplyParents_ParentOutsideBatch(t *testing.T) {
 	}
 }
 
+func TestResolveReplyParents_SamePeerIgnoresAccessHash(t *testing.T) {
+	// FromPeerID produced by extractPeerID lacks AccessHash (not
+	// carried on tg.PeerClass). The current peer carries AccessHash
+	// from the resolver cache. Comparison must ignore AccessHash,
+	// else a same-peer reply is mis-classified as cross-chat.
+	peerWithHash := telegram.InputPeer{Type: telegram.PeerChannel, ID: 555, AccessHash: 12345}
+	samePeerNoHash := telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}
+
+	msgs := []telegram.Message{
+		{
+			ID:   11,
+			Text: "reply",
+			ReplyTo: &telegram.ReplyToInfo{
+				MessageID:  10,
+				FromPeerID: &samePeerNoHash,
+			},
+		},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{
+		parentMessages: []telegram.Message{
+			{ID: 10, Text: testSetupLine, FromName: testAliceName},
+		},
+	}
+
+	resolveReplyParents(context.Background(), mock, peerWithHash, items, msgs)
+
+	if mock.getMessagesCalls != 1 {
+		t.Errorf("GetMessages called %d times, want 1 (same peer, AccessHash must be ignored)",
+			mock.getMessagesCalls)
+	}
+
+	if items[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated for same-peer reply")
+	}
+}
+
 func TestResolveReplyParents_CrossChatSkipped(t *testing.T) {
 	otherPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
 	msgs := []telegram.Message{
@@ -102,6 +140,37 @@ func TestResolveReplyParents_CrossChatSkipped(t *testing.T) {
 
 	if items[0].ReplyToMessage != nil {
 		t.Errorf("ReplyToMessage = %+v, want nil for cross-chat reply", items[0].ReplyToMessage)
+	}
+}
+
+func TestResolveReplyParents_CrossChatNotAttachedEvenIfIDCollides(t *testing.T) {
+	// A cross-chat reply whose parent-id happens to match a message ID
+	// present in the current batch must NOT be resolved from the batch
+	// — the batch belongs to a different peer.
+	otherPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
+	currentPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}
+
+	msgs := []telegram.Message{
+		// Coincidentally shares ID=10 with the cross-chat reply's parent.
+		{ID: 10, Text: "unrelated message from current chat", FromName: testAliceName},
+		{
+			ID:   11,
+			Text: "cross-chat",
+			ReplyTo: &telegram.ReplyToInfo{
+				MessageID:  10,
+				FromPeerID: &otherPeer,
+			},
+		},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{}
+
+	resolveReplyParents(context.Background(), mock, currentPeer, items, msgs)
+
+	if items[1].ReplyToMessage != nil {
+		t.Errorf("ReplyToMessage = %+v, want nil (parent ID collision must not bypass cross-chat filter)",
+			items[1].ReplyToMessage)
 	}
 }
 

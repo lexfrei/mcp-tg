@@ -31,7 +31,7 @@ func resolveReplyParents(
 	missingIDs := collectMissingParentIDs(items, inBatch, peer)
 	fetched := fetchMissingParents(ctx, client, peer, missingIDs)
 
-	attachReplyParents(items, msgs, inBatch, fetched)
+	attachReplyParents(items, msgs, peer, inBatch, fetched)
 }
 
 func indexMessagesByID(msgs []telegram.Message) map[int]*telegram.Message {
@@ -58,7 +58,7 @@ func collectMissingParentIDs(
 			continue
 		}
 
-		if reply.FromPeerID != nil && *reply.FromPeerID != peer {
+		if isCrossChatReply(reply, peer) {
 			continue
 		}
 
@@ -75,6 +75,20 @@ func collectMissingParentIDs(
 	}
 
 	return ids
+}
+
+// isCrossChatReply reports whether reply points to another peer than
+// the one whose history we are currently paging through. AccessHash is
+// ignored because it is not carried on the MTProto PeerClass inside
+// MessageReplyHeader — identity is Type+ID only.
+func isCrossChatReply(reply *telegram.ReplyToInfo, peer telegram.InputPeer) bool {
+	if reply.FromPeerID == nil {
+		return false
+	}
+
+	other := *reply.FromPeerID
+
+	return other.Type != peer.Type || other.ID != peer.ID
 }
 
 func fetchMissingParents(
@@ -103,6 +117,7 @@ func fetchMissingParents(
 func attachReplyParents(
 	items []MessageItem,
 	msgs []telegram.Message,
+	peer telegram.InputPeer,
 	inBatch map[int]*telegram.Message,
 	fetched map[int]*telegram.Message,
 ) {
@@ -111,6 +126,10 @@ func attachReplyParents(
 	for idx := range items {
 		reply := items[idx].ReplyTo
 		if reply == nil || reply.MessageID == 0 {
+			continue
+		}
+
+		if isCrossChatReply(reply, peer) {
 			continue
 		}
 

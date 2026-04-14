@@ -45,8 +45,10 @@ func formatMessage(msg *telegram.Message) string {
 }
 
 // formatMessageHeader returns the "[ID]" or "[ID ↩parentID]" prefix.
+// ReplyTo is non-nil only when extractReplyTo produced a valid parent
+// ID, so we don't re-check MessageID here.
 func formatMessageHeader(msg *telegram.Message) string {
-	if msg.ReplyTo != nil && msg.ReplyTo.MessageID != 0 {
+	if msg.ReplyTo != nil {
 		return fmt.Sprintf("[%d ↩%d]", msg.ID, msg.ReplyTo.MessageID)
 	}
 

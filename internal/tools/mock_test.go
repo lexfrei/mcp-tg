@@ -10,7 +10,8 @@ import (
 type mockClient struct {
 	// Return values
 	messages       []telegram.Message
-	parentMessages []telegram.Message // returned by GetMessages if set, else messages
+	parentMessages []telegram.Message // see getMessages for selection rules
+	getMessagesFn  func(ids []int) []telegram.Message
 	message        *telegram.Message
 	total          int
 	dialogs        []telegram.Dialog
@@ -55,6 +56,10 @@ func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, ids
 	m.lastPeer = peer
 	m.getMessagesCalls++
 	m.getMessagesIDs = append(m.getMessagesIDs, ids...)
+
+	if m.getMessagesFn != nil {
+		return m.getMessagesFn(ids), m.err
+	}
 
 	if m.parentMessages != nil && requestedMatchesParents(ids, m.parentMessages) {
 		return m.parentMessages, m.err

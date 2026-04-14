@@ -143,7 +143,7 @@ func attachReplyParents(
 		}
 
 		name := parent.FromName
-		if name == "" {
+		if name == "" && parent.FromID != 0 {
 			name = nameByID[parent.FromID]
 		}
 
@@ -158,17 +158,21 @@ func attachReplyParents(
 // from any parents fetched by the resolver. Without fetched entries,
 // a parent whose own FromName is empty but whose FromID appears in
 // the fetched payload would miss its display name.
+//
+// FromID==0 entries are excluded: zero means "no identifiable sender"
+// (channel posts without signature, anonymous admins), and bucketing
+// them together would cross-attribute names between unrelated senders.
 func buildNameLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]string {
 	lookup := make(map[int64]string, len(msgs)+len(fetched))
 
 	for idx := range msgs {
-		if msgs[idx].FromName != "" {
+		if msgs[idx].FromID != 0 && msgs[idx].FromName != "" {
 			lookup[msgs[idx].FromID] = msgs[idx].FromName
 		}
 	}
 
 	for _, parent := range fetched {
-		if parent != nil && parent.FromName != "" {
+		if parent != nil && parent.FromID != 0 && parent.FromName != "" {
 			lookup[parent.FromID] = parent.FromName
 		}
 	}

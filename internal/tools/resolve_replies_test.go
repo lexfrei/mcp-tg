@@ -234,6 +234,36 @@ func TestResolveReplyParents_NameFromFetchedLookup(t *testing.T) {
 	}
 }
 
+func TestResolveReplyParents_AnonymousSenderNotCrossAttributed(t *testing.T) {
+	// Two unrelated anonymous posts share FromID==0. Looking up the
+	// parent's name by FromID must NOT pick another sender's name
+	// from the same zero bucket; it must stay empty.
+	msgs := []telegram.Message{
+		{ID: 11, Text: "reply", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{
+		parentMessages: []telegram.Message{
+			// Parent is anonymous: FromID 0, no own name.
+			{ID: 10, Text: "parent text", FromID: 0, FromName: ""},
+			// Another anonymous entry with a name — must NOT leak.
+			{ID: 99, Text: "sibling", FromID: 0, FromName: testAliceName},
+		},
+	}
+
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if items[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated")
+	}
+
+	if items[0].ReplyToMessage.FromName != "" {
+		t.Errorf("ReplyToMessage.FromName = %q, want empty (FromID==0 must not share lookup)",
+			items[0].ReplyToMessage.FromName)
+	}
+}
+
 func TestResolveReplyParents_EmptyFetchResponse(t *testing.T) {
 	// Telegram can legitimately return zero messages (deleted parent,
 	// revoked, etc.). Resolver must not panic and must leave the item's

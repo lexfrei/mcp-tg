@@ -208,10 +208,14 @@ func TestMessagesGetHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// GetMessages was called twice: once for the primary fetch of IDs=[26154],
-	// once by the resolver for the missing parent 26150.
-	if mock.getMessagesCalls != 2 {
-		t.Errorf("GetMessages called %d times, want 2", mock.getMessagesCalls)
+	// messages_get fetches the requested IDs (26154) via GetMessages,
+	// then the resolver makes a second GetMessages call for the
+	// missing parent (26150). Any change that folds the two into a
+	// single call must update this assertion deliberately.
+	const wantGetMessagesCalls = 2
+	if mock.getMessagesCalls != wantGetMessagesCalls {
+		t.Errorf("GetMessages calls = %d, want %d (primary fetch + resolver lookup)",
+			mock.getMessagesCalls, wantGetMessagesCalls)
 	}
 
 	if res.Messages[0].ReplyToMessage == nil {

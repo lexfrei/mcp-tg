@@ -6,6 +6,29 @@ import (
 	"github.com/gotd/td/tg"
 )
 
+func TestParseMarkdown_TripleAsteriskKeepsStrayLiteral(t *testing.T) {
+	// Regression: pattern "**word***" previously closed bold, then
+	// the leftover '*' opened italic that ran across the rest of the
+	// message and ate another '*' at the far end. Expected behaviour:
+	// bold "word" + literal '*'.
+	text, entities := ParseMarkdown("«**зассал***». дальше **PR:**")
+
+	const wantPlain = "«зассал*». дальше PR:"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	if len(entities) != 2 {
+		t.Fatalf("want 2 bold entities, got %d (%+v)", len(entities), entities)
+	}
+
+	for idx, ent := range entities {
+		if _, ok := ent.(*tg.MessageEntityBold); !ok {
+			t.Errorf("entity[%d] = %T, want Bold", idx, ent)
+		}
+	}
+}
+
 func TestParseMarkdown_Bold(t *testing.T) {
 	text, entities := ParseMarkdown("hello **world**")
 	if text != testMessageText {

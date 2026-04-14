@@ -13,7 +13,7 @@ type MessagesEditParams struct {
 	Peer      string  `json:"peer"                jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int     `json:"messageId"           jsonschema:"ID of the message to edit"`
 	Text      string  `json:"text"                jsonschema:"New message text"`
-	ParseMode *string `json:"parseMode,omitempty" jsonschema:"Text format: 'markdown' for rich text, empty for plain"`
+	ParseMode *string `json:"parseMode,omitempty" jsonschema:"'' plain; 'commonmark' (**bold**, [x](url)); 'markdown' alias"`
 }
 
 // MessagesEditResult is the output of the tg_messages_edit tool.
@@ -42,6 +42,12 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 		if params.Text == "" {
 			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
 				validationErr(ErrTextRequired)
+		}
+
+		pmErr := validateParseMode(deref(params.ParseMode))
+		if pmErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
+				validationErr(pmErr)
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)

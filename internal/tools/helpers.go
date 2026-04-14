@@ -81,6 +81,20 @@ func validSlowmode(sec int) bool {
 	}
 }
 
+// validateParseMode rejects unknown parseMode values and flags modes
+// that are recognised but not yet implemented. Empty string means
+// "plain text" and is always accepted.
+func validateParseMode(mode string) error {
+	switch mode {
+	case "", telegram.ParseModeMarkdown, telegram.ParseModeCommonMark:
+		return nil
+	case telegram.ParseModeHTML, telegram.ParseModeMarkdownV2:
+		return ErrParseModeNotImplemented
+	default:
+		return ErrUnknownParseMode
+	}
+}
+
 // truncateText returns text shortened to at most maxRunes runes,
 // appending an ellipsis when truncation happened. Operates on runes
 // to avoid splitting multi-byte sequences (Cyrillic, emoji, etc.).

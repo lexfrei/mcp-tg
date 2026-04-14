@@ -74,6 +74,18 @@ var ErrInvalidSlowmode = errors.New(
 	"invalid slowmode seconds; allowed: 0,10,30,60,300,900,3600,21600,43200",
 )
 
+// ErrUnknownParseMode is returned when parseMode is a value the wrapper
+// does not recognise.
+var ErrUnknownParseMode = errors.New(
+	"unknown parseMode; allowed: '' (plain), 'commonmark', 'markdown' (alias for commonmark), 'html', 'markdownv2'",
+)
+
+// ErrParseModeNotImplemented is returned when parseMode is a valid value
+// whose implementation is not yet available.
+var ErrParseModeNotImplemented = errors.New(
+	"parseMode not yet implemented; use 'commonmark' (supports **bold**, *italic*, `code`, [text](url), ```pre```, > quote)",
+)
+
 // validationErr marks an error as a validation error.
 func validationErr(err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category, the caller already provides context.

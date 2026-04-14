@@ -14,7 +14,7 @@ type MessagesSendParams struct {
 	Text         string  `json:"text"                   jsonschema:"Message text to send"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
-	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Text format: 'markdown' for rich text, empty for plain"`
+	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"'' plain; 'commonmark' (**bold**, [x](url)); 'markdown' alias"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
@@ -33,14 +33,9 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 		_ *mcp.CallToolRequest,
 		params MessagesSendParams,
 	) (*mcp.CallToolResult, MessagesSendResult, error) {
-		if params.Peer == "" {
-			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
-				validationErr(ErrPeerRequired)
-		}
-
-		if params.Text == "" {
-			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
-				validationErr(ErrTextRequired)
+		vErr := validateSendParams(&params)
+		if vErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{}, validationErr(vErr)
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)
@@ -49,16 +44,7 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 				telegramErr("failed to resolve peer", err)
 		}
 
-		opts := telegram.SendOpts{
-			ReplyTo:      deref(params.ReplyTo),
-			TopicID:      deref(params.TopicID),
-			ParseMode:    deref(params.ParseMode),
-			Silent:       deref(params.Silent),
-			NoWebpage:    deref(params.NoWebpage),
-			ScheduleDate: deref(params.ScheduleDate),
-		}
-
-		msg, err := client.SendMessage(ctx, peer, params.Text, opts)
+		msg, err := client.SendMessage(ctx, peer, params.Text, sendOptsFrom(&params))
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
 				telegramErr("failed to send message", err)
@@ -73,6 +59,29 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 			MessageID: msgID,
 			Output:    fmt.Sprintf("Message sent (ID: %d)", msgID),
 		}, nil
+	}
+}
+
+func validateSendParams(params *MessagesSendParams) error {
+	if params.Peer == "" {
+		return ErrPeerRequired
+	}
+
+	if params.Text == "" {
+		return ErrTextRequired
+	}
+
+	return validateParseMode(deref(params.ParseMode))
+}
+
+func sendOptsFrom(params *MessagesSendParams) telegram.SendOpts {
+	return telegram.SendOpts{
+		ReplyTo:      deref(params.ReplyTo),
+		TopicID:      deref(params.TopicID),
+		ParseMode:    deref(params.ParseMode),
+		Silent:       deref(params.Silent),
+		NoWebpage:    deref(params.NoWebpage),
+		ScheduleDate: deref(params.ScheduleDate),
 	}
 }
 

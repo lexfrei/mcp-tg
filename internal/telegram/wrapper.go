@@ -290,7 +290,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		RandomID: randID,
 	}
 
-	if opts.ParseMode == ParseModeMarkdown {
+	if IsCommonMarkParseMode(opts.ParseMode) {
 		plainText, entities := ParseMarkdown(text)
 		req.Message = plainText
 
@@ -333,7 +333,7 @@ func (w *Wrapper) EditMessage(
 		Message: text,
 	}
 
-	if parseMode == ParseModeMarkdown {
+	if IsCommonMarkParseMode(parseMode) {
 		plainText, entities := ParseMarkdown(text)
 		req.Message = plainText
 

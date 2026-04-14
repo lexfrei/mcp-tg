@@ -199,8 +199,28 @@ type SearchOpts struct {
 	OffsetID int
 }
 
-// ParseModeMarkdown is the parse mode value for Markdown formatting.
-const ParseModeMarkdown = "markdown"
+// ParseMode values understood by the Telegram wrapper.
+//
+// ParseModeMarkdown is the legacy alias kept for backward compatibility.
+// New callers should prefer ParseModeCommonMark — both map onto the same
+// parser, but the new name advertises its actual dialect (CommonMark
+// subset: `**bold**`, `*italic*`, “ `code` “, `[text](url)`, etc.).
+//
+// ParseModeMarkdownV2 and ParseModeHTML are recognised for validation
+// but not yet implemented; the wrapper returns a clear error instead
+// of silently dropping formatting.
+const (
+	ParseModeMarkdown   = "markdown"
+	ParseModeCommonMark = "commonmark"
+	ParseModeMarkdownV2 = "markdownv2"
+	ParseModeHTML       = "html"
+)
+
+// IsCommonMarkParseMode reports whether the parseMode string selects
+// the CommonMark-flavoured parser used by the wrapper.
+func IsCommonMarkParseMode(mode string) bool {
+	return mode == ParseModeMarkdown || mode == ParseModeCommonMark
+}
 
 // SendOpts configures message sending.
 type SendOpts struct {

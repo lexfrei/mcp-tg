@@ -121,7 +121,7 @@ func attachReplyParents(
 	inBatch map[int]*telegram.Message,
 	fetched map[int]*telegram.Message,
 ) {
-	nameByID := fromNameLookup(msgs)
+	nameByID := buildNameLookup(msgs, fetched)
 
 	for idx := range items {
 		reply := items[idx].ReplyTo
@@ -154,11 +154,22 @@ func attachReplyParents(
 	}
 }
 
-func fromNameLookup(msgs []telegram.Message) map[int64]string {
-	lookup := make(map[int64]string, len(msgs))
+// buildNameLookup combines FromID→FromName from the primary batch and
+// from any parents fetched by the resolver. Without fetched entries,
+// a parent whose own FromName is empty but whose FromID appears in
+// the fetched payload would miss its display name.
+func buildNameLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]string {
+	lookup := make(map[int64]string, len(msgs)+len(fetched))
+
 	for idx := range msgs {
 		if msgs[idx].FromName != "" {
 			lookup[msgs[idx].FromID] = msgs[idx].FromName
+		}
+	}
+
+	for _, parent := range fetched {
+		if parent != nil && parent.FromName != "" {
+			lookup[parent.FromID] = parent.FromName
 		}
 	}
 

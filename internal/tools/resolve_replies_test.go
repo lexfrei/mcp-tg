@@ -205,6 +205,35 @@ func TestResolveReplyParents_NoReplies(t *testing.T) {
 	}
 }
 
+func TestResolveReplyParents_NameFromFetchedLookup(t *testing.T) {
+	// A fetched parent with empty FromName must still get a name when
+	// another fetched entry shares its FromID and carries the name.
+	msgs := []telegram.Message{
+		{ID: 11, Text: "reply", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{
+		parentMessages: []telegram.Message{
+			// The actual parent: known author ID, name missing.
+			{ID: 10, Text: "parent text", FromID: 42, FromName: ""},
+			// Another fetched entry naming FromID 42.
+			{ID: 99, Text: "sibling", FromID: 42, FromName: testAliceName},
+		},
+	}
+
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if items[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated")
+	}
+
+	if items[0].ReplyToMessage.FromName != testAliceName {
+		t.Errorf("ReplyToMessage.FromName = %q, want %q (should fall back to fetched lookup)",
+			items[0].ReplyToMessage.FromName, testAliceName)
+	}
+}
+
 func TestResolveReplyParents_Truncates(t *testing.T) {
 	long := make([]rune, 300)
 	for i := range long {

@@ -76,25 +76,69 @@ func extractFromID(from tg.PeerClass) int64 {
 	}
 }
 
-func extractReplyTo(reply tg.MessageReplyHeaderClass) int {
+func extractReplyTo(reply tg.MessageReplyHeaderClass) *ReplyToInfo {
+	hdr := replyHeader(reply)
+	if hdr == nil {
+		return nil
+	}
+
+	info := &ReplyToInfo{MessageID: hdr.ReplyToMsgID}
+	fillReplyTopID(info, hdr)
+	fillReplyQuote(info, hdr)
+	fillReplyPeer(info, hdr)
+
+	return info
+}
+
+func replyHeader(reply tg.MessageReplyHeaderClass) *tg.MessageReplyHeader {
 	if reply == nil {
-		return 0
+		return nil
 	}
 
 	hdr, ok := reply.(*tg.MessageReplyHeader)
 	if !ok {
-		return 0
+		return nil
+	}
+
+	if hdr.ReplyToMsgID == 0 {
+		return nil
 	}
 
 	// In forum topics without explicit ReplyToTopID,
 	// ReplyToMsgID is the topic root, not a reply target.
 	if hdr.ForumTopic {
 		if _, hasTop := hdr.GetReplyToTopID(); !hasTop {
-			return 0
+			return nil
 		}
 	}
 
-	return hdr.ReplyToMsgID
+	return hdr
+}
+
+func fillReplyTopID(info *ReplyToInfo, hdr *tg.MessageReplyHeader) {
+	if topID, hasTop := hdr.GetReplyToTopID(); hasTop && topID != 0 {
+		info.TopID = topID
+	}
+}
+
+func fillReplyQuote(info *ReplyToInfo, hdr *tg.MessageReplyHeader) {
+	if quote, hasQuote := hdr.GetQuoteText(); hasQuote && quote != "" {
+		info.QuoteText = quote
+	}
+}
+
+func fillReplyPeer(info *ReplyToInfo, hdr *tg.MessageReplyHeader) {
+	peer, hasPeer := hdr.GetReplyToPeerID()
+	if !hasPeer || peer == nil {
+		return
+	}
+
+	extracted := extractPeerID(peer)
+	if extracted == (InputPeer{}) {
+		return
+	}
+
+	info.FromPeerID = &extracted
 }
 
 func extractTopicID(reply tg.MessageReplyHeaderClass) int {

@@ -22,18 +22,27 @@ type InputPeer struct {
 
 // Message represents a simplified Telegram message.
 type Message struct {
-	ID        int       `json:"id"`
-	PeerID    InputPeer `json:"peerId"`
-	FromID    int64     `json:"fromId"`
-	FromName  string    `json:"fromName,omitempty"`
-	TopicID   int       `json:"topicId,omitempty"`
-	Date      int       `json:"date"`
-	Text      string    `json:"text"`
-	MediaType string    `json:"mediaType,omitempty"`
-	ReplyTo   int       `json:"replyTo,omitempty"`
-	Views     int       `json:"views,omitempty"`
-	Forwards  int       `json:"forwards,omitempty"`
-	EditDate  int       `json:"editDate,omitempty"`
+	ID        int          `json:"id"`
+	PeerID    InputPeer    `json:"peerId"`
+	FromID    int64        `json:"fromId"`
+	FromName  string       `json:"fromName,omitempty"`
+	TopicID   int          `json:"topicId,omitempty"`
+	Date      int          `json:"date"`
+	Text      string       `json:"text"`
+	MediaType string       `json:"mediaType,omitempty"`
+	ReplyTo   *ReplyToInfo `json:"replyTo,omitempty"`
+	Views     int          `json:"views,omitempty"`
+	Forwards  int          `json:"forwards,omitempty"`
+	EditDate  int          `json:"editDate,omitempty"`
+}
+
+// ReplyToInfo captures Telegram MessageReplyHeader fields relevant for
+// reconstructing thread structure from a message history response.
+type ReplyToInfo struct {
+	MessageID  int        `json:"messageId"`
+	TopID      int        `json:"topId,omitempty"`
+	QuoteText  string     `json:"quoteText,omitempty"`
+	FromPeerID *InputPeer `json:"fromPeerId,omitempty"`
 }
 
 // User represents a simplified Telegram user.

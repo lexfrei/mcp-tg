@@ -108,7 +108,7 @@ func TestParseMarkdown_Pre(t *testing.T) {
 		t.Fatalf("offset=%d length=%d", ent.Offset, ent.Length)
 	}
 
-	if ent.Language != "go" {
+	if ent.Language != testLangGo {
 		t.Fatalf("language=%q", ent.Language)
 	}
 }
@@ -176,7 +176,7 @@ func TestParseMarkdown_Link(t *testing.T) {
 		t.Fatalf("expected TextURL, got %T", entities[0])
 	}
 
-	if ent.URL != "https://example.com" {
+	if ent.URL != testExampleURL {
 		t.Fatalf("url=%q", ent.URL)
 	}
 

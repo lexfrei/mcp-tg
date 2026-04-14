@@ -31,6 +31,7 @@ type Message struct {
 	Text      string       `json:"text"`
 	MediaType string       `json:"mediaType,omitempty"`
 	ReplyTo   *ReplyToInfo `json:"replyTo,omitempty"`
+	Entities  []Entity     `json:"entities,omitempty"`
 	Views     int          `json:"views,omitempty"`
 	Forwards  int          `json:"forwards,omitempty"`
 	EditDate  int          `json:"editDate,omitempty"`
@@ -43,6 +44,18 @@ type ReplyToInfo struct {
 	TopID      int        `json:"topId,omitempty"`
 	QuoteText  string     `json:"quoteText,omitempty"`
 	FromPeerID *InputPeer `json:"fromPeerId,omitempty"`
+}
+
+// Entity describes a span of formatted text within a message. Offset
+// and Length are counted in UTF-16 code units — the Telegram-native
+// convention — so callers using a UTF-8 runtime must translate.
+type Entity struct {
+	Type     string `json:"type"`
+	Offset   int    `json:"offset"`
+	Length   int    `json:"length"`
+	URL      string `json:"url,omitempty"`
+	Language string `json:"language,omitempty"`
+	UserID   int64  `json:"userId,omitempty"`
 }
 
 // User represents a simplified Telegram user.

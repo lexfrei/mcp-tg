@@ -38,6 +38,7 @@ func ConvertMessage(raw *tg.Message) Message {
 	msg.FromID = extractFromID(raw.FromID)
 	msg.ReplyTo = extractReplyTo(raw.ReplyTo)
 	msg.TopicID = extractTopicID(raw.ReplyTo)
+	msg.Entities = ConvertEntities(raw.Entities)
 
 	return msg
 }

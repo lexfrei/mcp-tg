@@ -35,12 +35,22 @@ func formatMessage(msg *telegram.Message) string {
 	text := msg.Text
 	timestamp := formatTimestamp(msg.Date)
 	sender := formatSender(msg)
+	header := formatMessageHeader(msg)
 
 	if msg.MediaType != "" {
-		return fmt.Sprintf("[%d] %s %s[%s] %s", msg.ID, timestamp, sender, msg.MediaType, text)
+		return fmt.Sprintf("%s %s %s[%s] %s", header, timestamp, sender, msg.MediaType, text)
 	}
 
-	return fmt.Sprintf("[%d] %s %s%s", msg.ID, timestamp, sender, text)
+	return fmt.Sprintf("%s %s %s%s", header, timestamp, sender, text)
+}
+
+// formatMessageHeader returns the "[ID]" or "[ID ↩parentID]" prefix.
+func formatMessageHeader(msg *telegram.Message) string {
+	if msg.ReplyTo != nil && msg.ReplyTo.MessageID != 0 {
+		return fmt.Sprintf("[%d ↩%d]", msg.ID, msg.ReplyTo.MessageID)
+	}
+
+	return fmt.Sprintf("[%d]", msg.ID)
 }
 
 func formatSender(msg *telegram.Message) string {

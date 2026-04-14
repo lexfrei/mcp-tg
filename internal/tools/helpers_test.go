@@ -3,6 +3,7 @@ package tools
 import (
 	"testing"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
@@ -200,6 +201,39 @@ func TestTruncateText_ZeroMax(t *testing.T) {
 
 	if got != "" {
 		t.Errorf("truncateText with max=0 = %q, want empty", got)
+	}
+}
+
+func TestValidateParseMode_Allowed(t *testing.T) {
+	cases := []string{"", "markdown", "commonmark", "Markdown", "COMMONMARK"}
+
+	for _, mode := range cases {
+		err := validateParseMode(mode)
+		if err != nil {
+			t.Errorf("validateParseMode(%q) = %v, want nil", mode, err)
+		}
+	}
+}
+
+func TestValidateParseMode_NotImplemented(t *testing.T) {
+	cases := []string{"html", "markdownv2", "HTML", "MarkdownV2"}
+
+	for _, mode := range cases {
+		err := validateParseMode(mode)
+		if !errors.Is(err, ErrParseModeNotImplemented) {
+			t.Errorf("validateParseMode(%q) = %v, want ErrParseModeNotImplemented", mode, err)
+		}
+	}
+}
+
+func TestValidateParseMode_Unknown(t *testing.T) {
+	cases := []string{"md", "whatever", "rich"}
+
+	for _, mode := range cases {
+		err := validateParseMode(mode)
+		if !errors.Is(err, ErrUnknownParseMode) {
+			t.Errorf("validateParseMode(%q) = %v, want ErrUnknownParseMode", mode, err)
+		}
 	}
 }
 

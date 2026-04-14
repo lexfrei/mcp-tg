@@ -290,7 +290,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		RandomID: randID,
 	}
 
-	if opts.ParseMode == ParseModeMarkdown {
+	if IsCommonMarkParseMode(opts.ParseMode) {
 		plainText, entities := ParseMarkdown(text)
 		req.Message = plainText
 
@@ -333,7 +333,7 @@ func (w *Wrapper) EditMessage(
 		Message: text,
 	}
 
-	if parseMode == ParseModeMarkdown {
+	if IsCommonMarkParseMode(parseMode) {
 		plainText, entities := ParseMarkdown(text)
 		req.Message = plainText
 
@@ -441,8 +441,8 @@ func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 }
 
 // SendFile sends a file with an optional caption.
-// Uses Silent, ScheduleDate from opts.
-// ParseMode and NoWebpage are not applicable to media sends.
+// Uses ParseMode, Silent, ScheduleDate from opts.
+// NoWebpage is not applicable to media sends.
 func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error) {
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
@@ -468,6 +468,15 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		Silent:   opts.Silent,
 	}
 
+	if IsCommonMarkParseMode(opts.ParseMode) && caption != "" {
+		plain, entities := ParseMarkdown(caption)
+		req.Message = plain
+
+		if len(entities) > 0 {
+			req.SetEntities(entities)
+		}
+	}
+
 	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
 		req.ReplyTo = reply
 	}
@@ -485,8 +494,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 }
 
 // SendAlbum sends a group of media files.
-// Uses Silent, ScheduleDate from opts.
-// ParseMode and NoWebpage are not applicable to media sends.
+// Uses ParseMode (for the first item's caption), Silent, ScheduleDate.
+// NoWebpage is not applicable to media sends.
 func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error) {
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
@@ -513,7 +522,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		}
 
 		if idx == 0 {
-			media.Message = caption
+			applyAlbumCaption(&media, caption, opts.ParseMode)
 		}
 
 		multiMedia = append(multiMedia, media)
@@ -527,6 +536,24 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 	}
 
 	return messagesFromUpdates(result), nil
+}
+
+// applyAlbumCaption sets the caption on the first album item, parsing
+// CommonMark markers into entities when opts.ParseMode selects the
+// CommonMark dialect.
+func applyAlbumCaption(media *tg.InputSingleMedia, caption, parseMode string) {
+	media.Message = caption
+
+	if !IsCommonMarkParseMode(parseMode) || caption == "" {
+		return
+	}
+
+	plain, entities := ParseMarkdown(caption)
+	media.Message = plain
+
+	if len(entities) > 0 {
+		media.Entities = entities
+	}
 }
 
 // DownloadMedia downloads media from a message to the specified directory.

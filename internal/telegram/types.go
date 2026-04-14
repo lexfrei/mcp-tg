@@ -31,6 +31,7 @@ type Message struct {
 	Text      string       `json:"text"`
 	MediaType string       `json:"mediaType,omitempty"`
 	ReplyTo   *ReplyToInfo `json:"replyTo,omitempty"`
+	Entities  []Entity     `json:"entities,omitempty"`
 	Views     int          `json:"views,omitempty"`
 	Forwards  int          `json:"forwards,omitempty"`
 	EditDate  int          `json:"editDate,omitempty"`
@@ -43,6 +44,19 @@ type ReplyToInfo struct {
 	TopID      int        `json:"topId,omitempty"`
 	QuoteText  string     `json:"quoteText,omitempty"`
 	FromPeerID *InputPeer `json:"fromPeerId,omitempty"`
+}
+
+// Entity describes a span of formatted text within a message. Offset
+// and Length are counted in UTF-16 code units — the Telegram-native
+// convention — so callers using a UTF-8 runtime must translate.
+type Entity struct {
+	Type          string `json:"type"`
+	Offset        int    `json:"offset"`
+	Length        int    `json:"length"`
+	URL           string `json:"url,omitempty"`
+	Language      string `json:"language,omitempty"`
+	UserID        int64  `json:"userId,omitempty"`
+	CustomEmojiID int64  `json:"customEmojiId,omitempty"`
 }
 
 // User represents a simplified Telegram user.
@@ -199,8 +213,28 @@ type SearchOpts struct {
 	OffsetID int
 }
 
-// ParseModeMarkdown is the parse mode value for Markdown formatting.
-const ParseModeMarkdown = "markdown"
+// ParseMode values understood by the Telegram wrapper.
+//
+// ParseModeMarkdown is the legacy alias kept for backward compatibility.
+// New callers should prefer ParseModeCommonMark — both map onto the same
+// parser, but the new name advertises its actual dialect (CommonMark
+// subset: `**bold**`, `*italic*`, “ `code` “, `[text](url)`, etc.).
+//
+// ParseModeMarkdownV2 and ParseModeHTML are recognised for validation
+// but not yet implemented; the wrapper returns a clear error instead
+// of silently dropping formatting.
+const (
+	ParseModeMarkdown   = "markdown"
+	ParseModeCommonMark = "commonmark"
+	ParseModeMarkdownV2 = "markdownv2"
+	ParseModeHTML       = "html"
+)
+
+// IsCommonMarkParseMode reports whether the parseMode string selects
+// the CommonMark-flavoured parser used by the wrapper.
+func IsCommonMarkParseMode(mode string) bool {
+	return mode == ParseModeMarkdown || mode == ParseModeCommonMark
+}
 
 // SendOpts configures message sending.
 type SendOpts struct {

@@ -180,7 +180,26 @@ func matchMarker(
 		start: start, length: length, kind: marker.kind,
 	})
 
-	return pos + len(marker.open) + closeIdx + len(marker.close)
+	endPos := pos + len(marker.open) + closeIdx + len(marker.close)
+
+	// Stray-marker guard: a doubled-char marker (** __ ~~ ||) followed
+	// immediately by the same character would otherwise let the lone
+	// char open a new marker (e.g. "**x***" → bold "x" + italic "…"
+	// eating the rest of the text). Consume that trailing char as a
+	// literal instead so the run stays balanced.
+	if isDoubledCharMarker(marker) && endPos < len(text) && text[endPos] == marker.open[0] {
+		result.WriteByte(text[endPos])
+
+		endPos++
+	}
+
+	return endPos
+}
+
+// isDoubledCharMarker reports whether the marker is a 2-byte token
+// built from the same byte repeated, like "**" or "__".
+func isDoubledCharMarker(marker inlineMarker) bool {
+	return len(marker.open) == 2 && marker.open[0] == marker.open[1]
 }
 
 // writeMarkerContent writes inner content, parsing nested markers if needed.

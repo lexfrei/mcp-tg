@@ -106,6 +106,20 @@ The first four tools also accept an optional `resolveReplies` parameter (default
 
 `resolveReplies` enriches only the JSON `replyToMessage` field. The text `output` is built once from the fetched batch and keeps just the `↩<parentId>` marker regardless of the flag — callers that need resolved parent text should read the JSON structure.
 
+### Message entities (formatting on read)
+
+`MessageItem` carries an optional `entities` array with the message's formatting spans as read from MTProto `Message.Entities`. Each entry has `type` (Bot API naming: `bold`, `italic`, `code`, `pre`, `text_url`, `url`, `mention`, `hashtag`, etc.), `offset` and `length` in UTF-16 code units, plus optional `url`/`language`/`userId` for types that carry metadata. Plain messages omit the field entirely.
+
+### Parse mode (formatting on write)
+
+Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_file`, `media_send_album`) accept `parseMode`:
+
+- `""` (empty / omitted) — plain text, no formatting.
+- `"commonmark"` — CommonMark subset: `**bold**`, `*italic*`, `` `code` ``, ` ```pre``` `, `[text](url)`, `> quote`, `~~strike~~`, `__underline__`, `||spoiler||`. Parsed into `tg.MessageEntity` on the server side.
+- `"markdown"` — legacy alias for `commonmark`.
+- `"html"` / `"markdownv2"` — recognised but not yet implemented; return a clear error.
+- Anything else — rejected with the list of allowed values.
+
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication

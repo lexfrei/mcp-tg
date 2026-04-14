@@ -45,6 +45,7 @@ type MessageItem struct {
 	FromName       string                `json:"fromName,omitempty"`
 	TopicID        int                   `json:"topicId,omitempty"`
 	MediaType      string                `json:"mediaType,omitempty"`
+	Entities       []telegram.Entity     `json:"entities,omitempty"`
 	ReplyTo        *telegram.ReplyToInfo `json:"replyTo,omitempty"`
 	ReplyToMessage *ReplyToMessage       `json:"replyToMessage,omitempty"`
 }
@@ -128,6 +129,7 @@ func messageToItem(msg *telegram.Message) MessageItem {
 		FromName:  msg.FromName,
 		TopicID:   msg.TopicID,
 		MediaType: msg.MediaType,
+		Entities:  msg.Entities,
 		ReplyTo:   msg.ReplyTo,
 	}
 }

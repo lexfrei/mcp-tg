@@ -14,6 +14,7 @@ type MessagesSendFileParams struct {
 	Path         string  `json:"path"                   jsonschema:"Local file path to send"`
 	Caption      *string `json:"caption,omitempty"      jsonschema:"Optional caption for the file"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
+	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Caption formatting: '' plain; 'commonmark' or 'markdown' alias"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
@@ -41,6 +42,12 @@ func NewMessagesSendFileHandler(
 		if params.Path == "" {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
 				validationErr(ErrPathRequired)
+		}
+
+		pmErr := validateParseMode(deref(params.ParseMode))
+		if pmErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
+				validationErr(pmErr)
 		}
 
 		msg, err := uploadAndSendFile(ctx, client, req, params)
@@ -80,6 +87,7 @@ func uploadAndSendFile(
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
+		ParseMode:    deref(params.ParseMode),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 	}

@@ -14,6 +14,7 @@ type MediaSendAlbumParams struct {
 	Paths        []string `json:"paths"                  jsonschema:"Local file paths to send as album"`
 	Caption      *string  `json:"caption,omitempty"      jsonschema:"Optional caption for the album"`
 	TopicID      *int     `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
+	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption formatting: '' plain; 'commonmark' or 'markdown' alias"`
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
@@ -43,7 +44,13 @@ func NewMediaSendAlbumHandler(
 				validationErr(ErrPathsRequired)
 		}
 
-		msgs, err := sendAlbum(ctx, client, req, params)
+		pmErr := validateParseMode(deref(params.ParseMode))
+		if pmErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
+				validationErr(pmErr)
+		}
+
+		msgs, err := sendAlbum(ctx, client, req, &params)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{}, err
 		}
@@ -56,7 +63,7 @@ func NewMediaSendAlbumHandler(
 }
 
 func sendAlbum(
-	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params MediaSendAlbumParams,
+	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params *MediaSendAlbumParams,
 ) ([]telegram.Message, error) {
 	token := req.Params.GetProgressToken()
 	total := float64(len(params.Paths))
@@ -81,6 +88,7 @@ func sendAlbum(
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
+		ParseMode:    deref(params.ParseMode),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 	}

@@ -234,6 +234,33 @@ func TestResolveReplyParents_NameFromFetchedLookup(t *testing.T) {
 	}
 }
 
+func TestResolveReplyParents_EmptyFetchResponse(t *testing.T) {
+	// Telegram can legitimately return zero messages (deleted parent,
+	// revoked, etc.). Resolver must not panic and must leave the item's
+	// ReplyToMessage nil.
+	msgs := []telegram.Message{
+		{ID: 11, Text: "orphan", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{
+		getMessagesFn: func(_ []int) []telegram.Message {
+			return []telegram.Message{}
+		},
+	}
+
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if mock.getMessagesCalls != 1 {
+		t.Errorf("GetMessages called %d times, want 1", mock.getMessagesCalls)
+	}
+
+	if items[0].ReplyToMessage != nil {
+		t.Errorf("ReplyToMessage = %+v, want nil on empty fetch response",
+			items[0].ReplyToMessage)
+	}
+}
+
 func TestResolveReplyParents_Truncates(t *testing.T) {
 	long := make([]rune, 300)
 	for i := range long {

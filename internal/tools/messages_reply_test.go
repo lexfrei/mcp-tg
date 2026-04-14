@@ -448,4 +448,11 @@ func TestMessagesSearchGlobalHandler_ReplyTo_Propagated(t *testing.T) {
 	if res.Messages[0].ReplyTo.MessageID != 26150 {
 		t.Errorf("ReplyTo.MessageID = %d, want 26150", res.Messages[0].ReplyTo.MessageID)
 	}
+
+	// Global search intentionally returns only a summary line as
+	// output; individual ↩ markers are not emitted. Pin that, so a
+	// future change to output format has to touch this test.
+	if strings.Contains(res.Output, "↩") {
+		t.Errorf("Output must not contain reply markers for global search, got %q", res.Output)
+	}
 }

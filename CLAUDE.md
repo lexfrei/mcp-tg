@@ -100,7 +100,7 @@ Tools that send messages (`messages_send`, `messages_send_file`, `media_send_alb
 Reading tools (`messages_list`, `messages_context`, `messages_get`, `messages_search`, `messages_search_global`) expose reply-header fields on each `MessageItem`:
 
 - Structured `replyTo` object (`messageId`, `topId`, `quoteText`, `fromPeerId`) when the message replies to another. Omitted otherwise.
-- Text `output` prefixes replying messages with `[<id> ↩<parentId>]` so humans can see thread links without parsing JSON.
+- Text `output` prefixes replying messages with `[<id> ↩<parentId>]` so humans can see thread links without parsing JSON. This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N message(s)`) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies.
 
 The first four tools also accept an optional `resolveReplies` parameter (default `false`). When `true`, parent messages that aren't in the returned batch are fetched in a single batched `GetMessages` call and attached as `replyToMessage: { fromName, text }` (text truncated to 200 runes). Cross-chat replies (`replyTo.fromPeerId` points elsewhere) are skipped since we lack the foreign peer's access hash. `messages_search_global` does not offer `resolveReplies` for the same reason — its results span arbitrary peers, a batched lookup is not feasible.
 

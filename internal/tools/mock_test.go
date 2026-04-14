@@ -9,37 +9,41 @@ import (
 // mockClient implements telegram.Client for testing.
 type mockClient struct {
 	// Return values
-	messages  []telegram.Message
-	message   *telegram.Message
-	total     int
-	dialogs   []telegram.Dialog
-	user      *telegram.User
-	users     []telegram.User
-	group     *telegram.GroupInfo
-	info      *telegram.PeerInfo
-	infos     []telegram.PeerInfo
-	photos    []telegram.Photo
-	topics    []telegram.ForumTopic
-	topic     *telegram.ForumTopic
-	sets      []telegram.StickerSet
-	setFull   *telegram.StickerSetFull
-	folders   []telegram.Folder
-	folder    *telegram.Folder
-	uploaded  *telegram.UploadedFile
-	reactions []telegram.ReactionUser
-	statuses  []telegram.ContactStatus
-	link      string
-	filePath  string
-	peer      telegram.InputPeer
+	messages       []telegram.Message
+	parentMessages []telegram.Message // see getMessages for selection rules
+	getMessagesFn  func(ids []int) []telegram.Message
+	message        *telegram.Message
+	total          int
+	dialogs        []telegram.Dialog
+	user           *telegram.User
+	users          []telegram.User
+	group          *telegram.GroupInfo
+	info           *telegram.PeerInfo
+	infos          []telegram.PeerInfo
+	photos         []telegram.Photo
+	topics         []telegram.ForumTopic
+	topic          *telegram.ForumTopic
+	sets           []telegram.StickerSet
+	setFull        *telegram.StickerSetFull
+	folders        []telegram.Folder
+	folder         *telegram.Folder
+	uploaded       *telegram.UploadedFile
+	reactions      []telegram.ReactionUser
+	statuses       []telegram.ContactStatus
+	link           string
+	filePath       string
+	peer           telegram.InputPeer
 
 	// Error to return
 	err error
 
 	// Last call tracking
-	lastPeer     telegram.InputPeer
-	lastQuery    string
-	lastTopicID  int
-	lastSendOpts telegram.SendOpts
+	lastPeer         telegram.InputPeer
+	lastQuery        string
+	lastTopicID      int
+	lastSendOpts     telegram.SendOpts
+	getMessagesCalls int
+	getMessagesIDs   []int
 }
 
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
@@ -48,10 +52,47 @@ func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram
 	return m.peer, m.err
 }
 
-func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, _ []int) ([]telegram.Message, error) {
+func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, ids []int) ([]telegram.Message, error) {
 	m.lastPeer = peer
+	m.getMessagesCalls++
+	m.getMessagesIDs = append(m.getMessagesIDs, ids...)
+
+	if m.getMessagesFn != nil {
+		return m.getMessagesFn(ids), m.err
+	}
+
+	if m.parentMessages != nil && requestedMatchesParents(ids, m.parentMessages) {
+		return m.parentMessages, m.err
+	}
 
 	return m.messages, m.err
+}
+
+// requestedMatchesParents returns true when at least one requested id
+// is present in the parentMessages set AND every requested id is in
+// that set, meaning this is the resolver's lookup call rather than the
+// primary message fetch.
+//
+// This heuristic assumes primary-batch and parentMessages IDs do NOT
+// overlap. Tests that need overlap must set getMessagesFn for explicit
+// per-call control instead of relying on id-based dispatch.
+func requestedMatchesParents(ids []int, parents []telegram.Message) bool {
+	if len(ids) == 0 {
+		return false
+	}
+
+	have := make(map[int]bool, len(parents))
+	for i := range parents {
+		have[parents[i].ID] = true
+	}
+
+	for _, id := range ids {
+		if !have[id] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *mockClient) GetHistory(_ context.Context, peer telegram.InputPeer, _ telegram.HistoryOpts) ([]telegram.Message, int, error) {

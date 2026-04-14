@@ -38,13 +38,23 @@ func dialogPeerType(dlg *telegram.Dialog) string {
 
 // MessageItem is a structured message entry for JSON results.
 type MessageItem struct {
-	ID        int    `json:"id"`
-	Date      int    `json:"date"`
-	Text      string `json:"text"`
-	FromID    int64  `json:"fromId"`
-	FromName  string `json:"fromName,omitempty"`
-	TopicID   int    `json:"topicId,omitempty"`
-	MediaType string `json:"mediaType,omitempty"`
+	ID             int                   `json:"id"`
+	Date           int                   `json:"date"`
+	Text           string                `json:"text"`
+	FromID         int64                 `json:"fromId"`
+	FromName       string                `json:"fromName,omitempty"`
+	TopicID        int                   `json:"topicId,omitempty"`
+	MediaType      string                `json:"mediaType,omitempty"`
+	ReplyTo        *telegram.ReplyToInfo `json:"replyTo,omitempty"`
+	ReplyToMessage *ReplyToMessage       `json:"replyToMessage,omitempty"`
+}
+
+// ReplyToMessage carries minimal parent-message context used to help
+// callers reconstruct thread structure when the parent is outside the
+// returned batch.
+type ReplyToMessage struct {
+	FromName string `json:"fromName,omitempty"`
+	Text     string `json:"text,omitempty"`
 }
 
 // ParticipantItem maps a user ID to display name for message attribution.
@@ -118,6 +128,7 @@ func messageToItem(msg *telegram.Message) MessageItem {
 		FromName:  msg.FromName,
 		TopicID:   msg.TopicID,
 		MediaType: msg.MediaType,
+		ReplyTo:   msg.ReplyTo,
 	}
 }
 

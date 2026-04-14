@@ -40,6 +40,39 @@ func TestFormatMessage_TextOnly(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_WithReply(t *testing.T) {
+	msg := &telegram.Message{
+		ID:      26154,
+		Date:    1700000000,
+		Text:    "по твоему сдвгшник это камера?",
+		ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
+	}
+
+	got := formatMessage(msg)
+	want := "[26154 ↩26150] 2023-11-14T22:13:20Z по твоему сдвгшник это камера?"
+
+	if got != want {
+		t.Errorf("formatMessage() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatMessage_WithReplyAndMedia(t *testing.T) {
+	msg := &telegram.Message{
+		ID:        100,
+		Date:      1700000000,
+		Text:      "caption",
+		MediaType: "photo",
+		ReplyTo:   &telegram.ReplyToInfo{MessageID: 99},
+	}
+
+	got := formatMessage(msg)
+	want := "[100 ↩99] 2023-11-14T22:13:20Z [photo] caption"
+
+	if got != want {
+		t.Errorf("formatMessage() = %q, want %q", got, want)
+	}
+}
+
 func TestFormatMessage_WithMedia(t *testing.T) {
 	msg := &telegram.Message{
 		ID:        42,

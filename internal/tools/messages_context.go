@@ -14,9 +14,10 @@ const defaultContextRadius = 10
 
 // MessagesContextParams defines the parameters for the tg_messages_context tool.
 type MessagesContextParams struct {
-	Peer      string `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
-	MessageID int    `json:"messageId"        jsonschema:"Message ID to get context around"`
-	Radius    *int   `json:"radius,omitempty" jsonschema:"Number of messages before and after (default 10)"`
+	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
+	MessageID      int    `json:"messageId"                jsonschema:"Message ID to get context around"`
+	Radius         *int   `json:"radius,omitempty"         jsonschema:"Number of messages before and after (default 10)"`
+	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
 // MessagesContextResult is the output of the tg_messages_context tool.
@@ -56,10 +57,16 @@ func NewMessagesContextHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 				telegramErr("failed to get message context", err)
 		}
 
+		items := messagesToItems(msgs)
+
+		if deref(params.ResolveReplies) {
+			resolveReplyParents(ctx, client, peer, items, msgs)
+		}
+
 		return nil, MessagesContextResult{
 			Count:        len(msgs),
 			Participants: participantsFromMessages(msgs),
-			Messages:     messagesToItems(msgs),
+			Messages:     items,
 			Output:       formatContextMessages(msgs, params.MessageID),
 		}, nil
 	}

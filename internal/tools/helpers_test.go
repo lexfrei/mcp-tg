@@ -151,3 +151,62 @@ func TestValidateIDCount_Empty(t *testing.T) {
 		t.Error("expected nil for empty IDs")
 	}
 }
+
+const truncateHello = "hello"
+
+func TestTruncateText_Short(t *testing.T) {
+	got := truncateText(truncateHello, 10)
+
+	if got != truncateHello {
+		t.Errorf("truncateText = %q, want %q", got, truncateHello)
+	}
+}
+
+func TestTruncateText_ExactLength(t *testing.T) {
+	got := truncateText(truncateHello, 5)
+
+	if got != truncateHello {
+		t.Errorf("truncateText at exact length = %q, want no ellipsis", got)
+	}
+}
+
+func TestTruncateText_Long(t *testing.T) {
+	got := truncateText("helloworld", 5)
+
+	if got != "hello…" {
+		t.Errorf("truncateText = %q, want %q", got, "hello…")
+	}
+}
+
+func TestTruncateText_UTF8(t *testing.T) {
+	// Кириллица — 2 байта на рун, не должно биться по байтам.
+	got := truncateText("привет мир", 6)
+
+	if got != "привет…" {
+		t.Errorf("truncateText (UTF-8) = %q, want %q", got, "привет…")
+	}
+}
+
+func TestTruncateText_Emoji(t *testing.T) {
+	got := truncateText("ab🙂cd", 3)
+
+	if got != "ab🙂…" {
+		t.Errorf("truncateText (emoji) = %q, want %q", got, "ab🙂…")
+	}
+}
+
+func TestTruncateText_ZeroMax(t *testing.T) {
+	got := truncateText("anything", 0)
+
+	if got != "" {
+		t.Errorf("truncateText with max=0 = %q, want empty", got)
+	}
+}
+
+func TestTruncateText_NegativeMax(t *testing.T) {
+	got := truncateText("anything", -1)
+
+	if got != "" {
+		t.Errorf("truncateText with negative max = %q, want empty", got)
+	}
+}

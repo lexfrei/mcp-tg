@@ -9,6 +9,11 @@ import (
 )
 
 // MessagesSearchGlobalParams defines parameters for tg_messages_search_global.
+//
+// Note: resolveReplies is intentionally not offered here. Global search
+// returns messages from arbitrary peers, each needing its own access
+// hash to fetch the parent; a single batched lookup is not possible.
+// Structural replyTo metadata is still populated.
 type MessagesSearchGlobalParams struct {
 	Query string `json:"query"           jsonschema:"Search query"`
 	Limit *int   `json:"limit,omitempty" jsonschema:"Maximum results (default 100)"`

@@ -266,16 +266,32 @@ func TestExtractReplyTo_Header(t *testing.T) {
 	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 77}
 	got := extractReplyTo(hdr)
 
-	if got != 77 {
-		t.Errorf("extractReplyTo(header) = %d, want 77", got)
+	if got == nil {
+		t.Fatal("extractReplyTo(header) = nil, want non-nil")
+	}
+
+	if got.MessageID != 77 {
+		t.Errorf("MessageID = %d, want 77", got.MessageID)
+	}
+
+	if got.TopID != 0 {
+		t.Errorf("TopID = %d, want 0", got.TopID)
+	}
+
+	if got.QuoteText != "" {
+		t.Errorf("QuoteText = %q, want empty", got.QuoteText)
+	}
+
+	if got.FromPeerID != nil {
+		t.Errorf("FromPeerID = %+v, want nil", got.FromPeerID)
 	}
 }
 
 func TestExtractReplyTo_Nil(t *testing.T) {
 	got := extractReplyTo(nil)
 
-	if got != 0 {
-		t.Errorf("extractReplyTo(nil) = %d, want 0", got)
+	if got != nil {
+		t.Errorf("extractReplyTo(nil) = %+v, want nil", got)
 	}
 }
 
@@ -288,12 +304,133 @@ func TestExtractReplyTo_ForumTopicNotReply(t *testing.T) {
 
 	got := ConvertMessage(raw)
 
-	if got.ReplyTo != 0 {
-		t.Errorf("ReplyTo = %d, want 0", got.ReplyTo)
+	if got.ReplyTo != nil {
+		t.Errorf("ReplyTo = %+v, want nil", got.ReplyTo)
 	}
 
 	if got.TopicID != 99 {
 		t.Errorf("TopicID = %d, want 99", got.TopicID)
+	}
+}
+
+func TestExtractReplyTo_ZeroMsgID(t *testing.T) {
+	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 0}
+
+	got := extractReplyTo(hdr)
+
+	if got != nil {
+		t.Errorf("extractReplyTo(zero id) = %+v, want nil", got)
+	}
+}
+
+func TestExtractReplyTo_WithTopID(t *testing.T) {
+	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 50}
+	hdr.SetReplyToTopID(10)
+
+	got := extractReplyTo(hdr)
+
+	if got == nil {
+		t.Fatal("extractReplyTo = nil, want non-nil")
+	}
+
+	if got.MessageID != 50 {
+		t.Errorf("MessageID = %d, want 50", got.MessageID)
+	}
+
+	if got.TopID != 10 {
+		t.Errorf("TopID = %d, want 10", got.TopID)
+	}
+}
+
+func TestExtractReplyTo_WithQuoteText(t *testing.T) {
+	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 50}
+	hdr.SetQuoteText("the quoted part")
+
+	got := extractReplyTo(hdr)
+
+	if got == nil {
+		t.Fatal("extractReplyTo = nil, want non-nil")
+	}
+
+	if got.QuoteText != "the quoted part" {
+		t.Errorf("QuoteText = %q, want %q", got.QuoteText, "the quoted part")
+	}
+}
+
+func TestExtractReplyTo_CrossChat(t *testing.T) {
+	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 50}
+	hdr.SetReplyToPeerID(&tg.PeerChannel{ChannelID: 999})
+
+	got := extractReplyTo(hdr)
+
+	if got == nil {
+		t.Fatal("extractReplyTo = nil, want non-nil")
+	}
+
+	if got.FromPeerID == nil {
+		t.Fatal("FromPeerID = nil, want non-nil")
+	}
+
+	if got.FromPeerID.Type != PeerChannel {
+		t.Errorf("FromPeerID.Type = %d, want PeerChannel", got.FromPeerID.Type)
+	}
+
+	if got.FromPeerID.ID != 999 {
+		t.Errorf("FromPeerID.ID = %d, want 999", got.FromPeerID.ID)
+	}
+}
+
+func TestConvertMessage_ForumTopicRootSelfReference(t *testing.T) {
+	// Edge case: a message in a forum topic whose ReplyToMsgID equals
+	// its ReplyToTopID. Current behaviour emits a ReplyToInfo pointing
+	// at the topic root — the header carries that target so we surface
+	// it and let the caller decide how to interpret. Documented here
+	// so any future semantic change is deliberate.
+	raw := &tg.Message{ID: 3, Date: 100}
+	hdr := &tg.MessageReplyHeader{
+		ForumTopic:   true,
+		ReplyToMsgID: 42,
+	}
+	hdr.SetReplyToTopID(42)
+	raw.ReplyTo = hdr
+
+	got := ConvertMessage(raw)
+
+	if got.ReplyTo == nil {
+		t.Fatal("ReplyTo = nil, want ReplyToInfo{42,42}")
+	}
+
+	if got.ReplyTo.MessageID != 42 || got.ReplyTo.TopID != 42 {
+		t.Errorf("ReplyTo = %+v, want MessageID=42 TopID=42", got.ReplyTo)
+	}
+
+	if got.TopicID != 42 {
+		t.Errorf("TopicID = %d, want 42", got.TopicID)
+	}
+}
+
+func TestConvertMessage_ReplyInsideTopicKept(t *testing.T) {
+	raw := &tg.Message{ID: 3, Date: 100}
+	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 200}
+	hdr.SetReplyToTopID(42)
+	raw.ReplyTo = hdr
+
+	got := ConvertMessage(raw)
+
+	if got.ReplyTo == nil {
+		t.Fatal("ReplyTo = nil, want non-nil reply inside topic")
+	}
+
+	if got.ReplyTo.MessageID != 200 {
+		t.Errorf("ReplyTo.MessageID = %d, want 200", got.ReplyTo.MessageID)
+	}
+
+	if got.ReplyTo.TopID != 42 {
+		t.Errorf("ReplyTo.TopID = %d, want 42", got.ReplyTo.TopID)
+	}
+
+	if got.TopicID != 42 {
+		t.Errorf("TopicID = %d, want 42", got.TopicID)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
@@ -78,6 +79,23 @@ func validSlowmode(sec int) bool {
 	default:
 		return false
 	}
+}
+
+// truncateText returns text shortened to at most maxRunes runes,
+// appending an ellipsis when truncation happened. Operates on runes
+// to avoid splitting multi-byte sequences (Cyrillic, emoji, etc.).
+func truncateText(text string, maxRunes int) string {
+	if maxRunes <= 0 {
+		return ""
+	}
+
+	if utf8.RuneCountInString(text) <= maxRunes {
+		return text
+	}
+
+	runes := []rune(text)
+
+	return string(runes[:maxRunes]) + "…"
 }
 
 // formatUserName builds a display name from first/last name and username.

@@ -202,3 +202,11 @@ func TestTruncateText_ZeroMax(t *testing.T) {
 		t.Errorf("truncateText with max=0 = %q, want empty", got)
 	}
 }
+
+func TestTruncateText_NegativeMax(t *testing.T) {
+	got := truncateText("anything", -1)
+
+	if got != "" {
+		t.Errorf("truncateText with negative max = %q, want empty", got)
+	}
+}

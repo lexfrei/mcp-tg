@@ -295,6 +295,54 @@ func TestMessagesSearchHandler_ReplyTo_Propagated(t *testing.T) {
 	}
 }
 
+func TestMessagesSearchHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
+	resolveOn := true
+	primary := []telegram.Message{
+		{
+			ID:      26154,
+			Text:    "punchline",
+			ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
+		},
+	}
+	fetched := []telegram.Message{
+		{ID: 26150, Text: testSetupFromEarly, FromName: testAliceName},
+	}
+	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: primary,
+		getMessagesFn: func(_ []int) []telegram.Message {
+			return fetched
+		},
+	}
+	handler := NewMessagesSearchHandler(mock)
+
+	_, res, err := handler(
+		context.Background(),
+		&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}},
+		MessagesSearchParams{
+			Peer:           "@chat",
+			Query:          "punchline",
+			ResolveReplies: &resolveOn,
+		},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.getMessagesCalls != 1 {
+		t.Errorf("GetMessages called %d times, want 1", mock.getMessagesCalls)
+	}
+
+	if res.Messages[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated via fetch")
+	}
+
+	if res.Messages[0].ReplyToMessage.Text != testSetupFromEarly {
+		t.Errorf("ReplyToMessage.Text = %q, want %q",
+			res.Messages[0].ReplyToMessage.Text, testSetupFromEarly)
+	}
+}
+
 func TestMessagesSearchGlobalHandler_ReplyTo_Propagated(t *testing.T) {
 	mock := &mockClient{
 		messages: []telegram.Message{

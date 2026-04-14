@@ -380,6 +380,35 @@ func TestExtractReplyTo_CrossChat(t *testing.T) {
 	}
 }
 
+func TestConvertMessage_ForumTopicRootSelfReference(t *testing.T) {
+	// Edge case: a message in a forum topic whose ReplyToMsgID equals
+	// its ReplyToTopID. Current behaviour emits a ReplyToInfo pointing
+	// at the topic root — the header carries that target so we surface
+	// it and let the caller decide how to interpret. Documented here
+	// so any future semantic change is deliberate.
+	raw := &tg.Message{ID: 3, Date: 100}
+	hdr := &tg.MessageReplyHeader{
+		ForumTopic:   true,
+		ReplyToMsgID: 42,
+	}
+	hdr.SetReplyToTopID(42)
+	raw.ReplyTo = hdr
+
+	got := ConvertMessage(raw)
+
+	if got.ReplyTo == nil {
+		t.Fatal("ReplyTo = nil, want ReplyToInfo{42,42}")
+	}
+
+	if got.ReplyTo.MessageID != 42 || got.ReplyTo.TopID != 42 {
+		t.Errorf("ReplyTo = %+v, want MessageID=42 TopID=42", got.ReplyTo)
+	}
+
+	if got.TopicID != 42 {
+		t.Errorf("TopicID = %d, want 42", got.TopicID)
+	}
+}
+
 func TestConvertMessage_ReplyInsideTopicKept(t *testing.T) {
 	raw := &tg.Message{ID: 3, Date: 100}
 	hdr := &tg.MessageReplyHeader{ReplyToMsgID: 200}

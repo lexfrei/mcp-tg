@@ -143,6 +143,41 @@ func TestResolveReplyParents_CrossChatSkipped(t *testing.T) {
 	}
 }
 
+func TestResolveReplyParents_CrossChatSameIDDifferentType(t *testing.T) {
+	// Same numeric ID, different peer type — must be treated as cross-chat.
+	// Protects against someone "optimising" the filter into an ID-only
+	// comparison.
+	currentPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}
+	otherPeer := telegram.InputPeer{Type: telegram.PeerUser, ID: 555}
+
+	msgs := []telegram.Message{
+		{
+			ID:   11,
+			Text: "cross",
+			ReplyTo: &telegram.ReplyToInfo{
+				MessageID:  10,
+				FromPeerID: &otherPeer,
+			},
+		},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{
+		parentMessages: []telegram.Message{{ID: 10, Text: "whatever"}},
+	}
+
+	resolveReplyParents(context.Background(), mock, currentPeer, items, msgs)
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 (different Type must count as cross-chat)",
+			mock.getMessagesCalls)
+	}
+
+	if items[0].ReplyToMessage != nil {
+		t.Errorf("ReplyToMessage = %+v, want nil", items[0].ReplyToMessage)
+	}
+}
+
 func TestResolveReplyParents_CrossChatNotAttachedEvenIfIDCollides(t *testing.T) {
 	// A cross-chat reply whose parent-id happens to match a message ID
 	// present in the current batch must NOT be resolved from the batch

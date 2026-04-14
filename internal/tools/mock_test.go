@@ -68,14 +68,19 @@ func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, ids
 	return m.messages, m.err
 }
 
-// requestedMatchesParents returns true when all requested ids are present
-// in the parentMessages set, meaning this is the resolver's lookup call
-// rather than the primary message fetch.
+// requestedMatchesParents returns true when at least one requested id
+// is present in the parentMessages set AND every requested id is in
+// that set, meaning this is the resolver's lookup call rather than the
+// primary message fetch.
 //
 // This heuristic assumes primary-batch and parentMessages IDs do NOT
 // overlap. Tests that need overlap must set getMessagesFn for explicit
 // per-call control instead of relying on id-based dispatch.
 func requestedMatchesParents(ids []int, parents []telegram.Message) bool {
+	if len(ids) == 0 {
+		return false
+	}
+
 	have := make(map[int]bool, len(parents))
 	for i := range parents {
 		have[parents[i].ID] = true

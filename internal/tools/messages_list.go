@@ -9,10 +9,11 @@ import (
 
 // MessagesListParams defines the parameters for the tg_messages_list tool.
 type MessagesListParams struct {
-	Peer     string `json:"peer"               jsonschema:"@username, t.me/ link, or numeric ID"`
-	TopicID  *int   `json:"topicId,omitempty"  jsonschema:"Forum topic ID to filter messages"`
-	Limit    *int   `json:"limit,omitempty"    jsonschema:"Max messages to return (default 100)"`
-	OffsetID *int   `json:"offsetId,omitempty" jsonschema:"Message ID to start from"`
+	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
+	TopicID        *int   `json:"topicId,omitempty"        jsonschema:"Forum topic ID to filter messages"`
+	Limit          *int   `json:"limit,omitempty"          jsonschema:"Max messages to return (default 100)"`
+	OffsetID       *int   `json:"offsetId,omitempty"       jsonschema:"Message ID to start from"`
+	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
 // MessagesListResult is the output of the tg_messages_list tool.
@@ -50,9 +51,13 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 				validationErr(limitErr)
 		}
 
-		result, err := fetchMessages(ctx, client, peer, &params)
+		result, msgs, err := fetchMessages(ctx, client, peer, &params)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesListResult{}, err
+		}
+
+		if deref(params.ResolveReplies) {
+			resolveReplyParents(ctx, client, peer, result.Messages, msgs)
 		}
 
 		return nil, result, nil
@@ -62,7 +67,7 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 func fetchMessages(
 	ctx context.Context, client telegram.Client,
 	peer telegram.InputPeer, params *MessagesListParams,
-) (MessagesListResult, error) {
+) (MessagesListResult, []telegram.Message, error) {
 	topicID := deref(params.TopicID)
 	opts := telegram.HistoryOpts{
 		Limit:    deref(params.Limit),
@@ -82,7 +87,7 @@ func fetchMessages(
 	}
 
 	if err != nil {
-		return MessagesListResult{}, telegramErr("failed to get messages", err)
+		return MessagesListResult{}, nil, telegramErr("failed to get messages", err)
 	}
 
 	return MessagesListResult{
@@ -91,7 +96,7 @@ func fetchMessages(
 		Participants: participantsFromMessages(msgs),
 		Messages:     messagesToItems(msgs),
 		Output:       formatMessages(msgs),
-	}, nil
+	}, msgs, nil
 }
 
 // MessagesListTool returns the MCP tool definition for tg_messages_list.

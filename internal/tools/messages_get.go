@@ -11,8 +11,9 @@ import (
 
 // MessagesGetParams defines the parameters for the tg_messages_get tool.
 type MessagesGetParams struct {
-	Peer string `json:"peer" jsonschema:"@username, t.me/ link, or numeric ID"`
-	IDs  []int  `json:"ids"  jsonschema:"Message IDs to retrieve"`
+	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
+	IDs            []int  `json:"ids"                      jsonschema:"Message IDs to retrieve"`
+	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
 // MessagesGetResult is the output of the tg_messages_get tool.
@@ -58,18 +59,28 @@ func NewMessagesGetHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesGe
 				telegramErr("failed to get messages", err)
 		}
 
-		var buf strings.Builder
+		items := messagesToItems(msgs)
 
-		for idx := range msgs {
-			fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
+		if deref(params.ResolveReplies) {
+			resolveReplyParents(ctx, client, peer, items, msgs)
 		}
 
-		return nil, MessagesGetResult{
-			Count:        len(msgs),
-			Participants: participantsFromMessages(msgs),
-			Messages:     messagesToItems(msgs),
-			Output:       buf.String(),
-		}, nil
+		return nil, buildMessagesGetResult(msgs, items), nil
+	}
+}
+
+func buildMessagesGetResult(msgs []telegram.Message, items []MessageItem) MessagesGetResult {
+	var buf strings.Builder
+
+	for idx := range msgs {
+		fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
+	}
+
+	return MessagesGetResult{
+		Count:        len(msgs),
+		Participants: participantsFromMessages(msgs),
+		Messages:     items,
+		Output:       buf.String(),
 	}
 }
 

@@ -1,0 +1,164 @@
+package tools
+
+import (
+	"context"
+	"testing"
+
+	"github.com/cockroachdb/errors"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
+)
+
+const testSetupLine = "setup line"
+
+func replyToInfo(id int) *telegram.ReplyToInfo {
+	return &telegram.ReplyToInfo{MessageID: id}
+}
+
+func TestResolveReplyParents_ParentInBatch(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 10, Text: testSetupLine, FromName: "Alice"},
+		{ID: 11, Text: "punchline", FromName: "Bob", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{}
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 (parent already in batch)", mock.getMessagesCalls)
+	}
+
+	if items[1].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated from batch")
+	}
+
+	if items[1].ReplyToMessage.Text != testSetupLine {
+		t.Errorf("ReplyToMessage.Text = %q, want %q", items[1].ReplyToMessage.Text, testSetupLine)
+	}
+
+	if items[1].ReplyToMessage.FromName != "Alice" {
+		t.Errorf("ReplyToMessage.FromName = %q, want %q", items[1].ReplyToMessage.FromName, "Alice")
+	}
+}
+
+func TestResolveReplyParents_ParentOutsideBatch(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 11, Text: "punchline", FromName: "Bob", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+	peer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}
+
+	mock := &mockClient{
+		parentMessages: []telegram.Message{{ID: 10, Text: testSetupLine, FromName: "Alice"}},
+	}
+
+	resolveReplyParents(context.Background(), mock, peer, items, msgs)
+
+	if mock.getMessagesCalls != 1 {
+		t.Errorf("GetMessages called %d times, want 1", mock.getMessagesCalls)
+	}
+
+	if mock.lastPeer != peer {
+		t.Errorf("lastPeer = %+v, want %+v", mock.lastPeer, peer)
+	}
+
+	if len(mock.getMessagesIDs) != 1 || mock.getMessagesIDs[0] != 10 {
+		t.Errorf("requested IDs = %v, want [10]", mock.getMessagesIDs)
+	}
+
+	if items[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated via fetch")
+	}
+
+	if items[0].ReplyToMessage.Text != testSetupLine {
+		t.Errorf("ReplyToMessage.Text = %q, want %q", items[0].ReplyToMessage.Text, testSetupLine)
+	}
+}
+
+func TestResolveReplyParents_CrossChatSkipped(t *testing.T) {
+	otherPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
+	msgs := []telegram.Message{
+		{
+			ID:   11,
+			Text: "cross-chat",
+			ReplyTo: &telegram.ReplyToInfo{
+				MessageID:  10,
+				FromPeerID: &otherPeer,
+			},
+		},
+	}
+	items := messagesToItems(msgs)
+	currentPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}
+
+	mock := &mockClient{
+		parentMessages: []telegram.Message{{ID: 10, Text: "whatever"}},
+	}
+
+	resolveReplyParents(context.Background(), mock, currentPeer, items, msgs)
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 (cross-chat must not trigger fetch)", mock.getMessagesCalls)
+	}
+
+	if items[0].ReplyToMessage != nil {
+		t.Errorf("ReplyToMessage = %+v, want nil for cross-chat reply", items[0].ReplyToMessage)
+	}
+}
+
+func TestResolveReplyParents_FetchError_BestEffort(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 11, Text: "orphan", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{err: errors.New("api down")}
+
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if items[0].ReplyToMessage != nil {
+		t.Errorf("ReplyToMessage = %+v, want nil when fetch errors (best-effort)", items[0].ReplyToMessage)
+	}
+}
+
+func TestResolveReplyParents_NoReplies(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 10, Text: "plain"},
+		{ID: 11, Text: "also plain"},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{}
+
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 (no replies)", mock.getMessagesCalls)
+	}
+}
+
+func TestResolveReplyParents_Truncates(t *testing.T) {
+	long := make([]rune, 300)
+	for i := range long {
+		long[i] = 'x'
+	}
+
+	msgs := []telegram.Message{
+		{ID: 10, Text: string(long), FromName: "Alice"},
+		{ID: 11, Text: "reply", ReplyTo: replyToInfo(10)},
+	}
+	items := messagesToItems(msgs)
+
+	mock := &mockClient{}
+
+	resolveReplyParents(context.Background(), mock, telegram.InputPeer{}, items, msgs)
+
+	if items[1].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil")
+	}
+
+	runes := []rune(items[1].ReplyToMessage.Text)
+	// truncateText limits to 200 runes + ellipsis.
+	if len(runes) != replyParentTextLimit+1 {
+		t.Errorf("truncated length = %d runes, want %d", len(runes), replyParentTextLimit+1)
+	}
+}

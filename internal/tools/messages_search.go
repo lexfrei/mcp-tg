@@ -9,10 +9,11 @@ import (
 
 // MessagesSearchParams defines the parameters for the tg_messages_search tool.
 type MessagesSearchParams struct {
-	Peer     string `json:"peer"               jsonschema:"@username, t.me/ link, or numeric ID"`
-	Query    string `json:"query"              jsonschema:"Search query"`
-	Limit    *int   `json:"limit,omitempty"    jsonschema:"Max results (default 100)"`
-	OffsetID *int   `json:"offsetId,omitempty" jsonschema:"Message ID to start search from (for pagination)"`
+	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
+	Query          string `json:"query"                    jsonschema:"Search query"`
+	Limit          *int   `json:"limit,omitempty"          jsonschema:"Max results (default 100)"`
+	OffsetID       *int   `json:"offsetId,omitempty"       jsonschema:"Message ID to start search from (for pagination)"`
+	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
 // MessagesSearchResult is the output of the tg_messages_search tool.
@@ -59,9 +60,13 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 
 		notifyProgress(ctx, req.Session, token, 0, 1, "Searching messages")
 
-		result, err := executeSearch(ctx, client, peer, params)
+		result, msgs, err := executeSearch(ctx, client, peer, params)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{}, err
+		}
+
+		if deref(params.ResolveReplies) {
+			resolveReplyParents(ctx, client, peer, result.Messages, msgs)
 		}
 
 		return nil, result, nil
@@ -70,7 +75,7 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 
 func executeSearch(
 	ctx context.Context, client telegram.Client, peer telegram.InputPeer, params MessagesSearchParams,
-) (MessagesSearchResult, error) {
+) (MessagesSearchResult, []telegram.Message, error) {
 	opts := telegram.SearchOpts{
 		Limit:    deref(params.Limit),
 		OffsetID: deref(params.OffsetID),
@@ -78,7 +83,7 @@ func executeSearch(
 
 	msgs, err := client.SearchMessages(ctx, peer, params.Query, opts)
 	if err != nil {
-		return MessagesSearchResult{}, telegramErr("failed to search messages", err)
+		return MessagesSearchResult{}, nil, telegramErr("failed to search messages", err)
 	}
 
 	return MessagesSearchResult{
@@ -86,7 +91,7 @@ func executeSearch(
 		Participants: participantsFromMessages(msgs),
 		Messages:     messagesToItems(msgs),
 		Output:       formatMessages(msgs),
-	}, nil
+	}, msgs, nil
 }
 
 // MessagesSearchTool returns the MCP tool definition for tg_messages_search.

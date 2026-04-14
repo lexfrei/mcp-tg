@@ -9,37 +9,40 @@ import (
 // mockClient implements telegram.Client for testing.
 type mockClient struct {
 	// Return values
-	messages  []telegram.Message
-	message   *telegram.Message
-	total     int
-	dialogs   []telegram.Dialog
-	user      *telegram.User
-	users     []telegram.User
-	group     *telegram.GroupInfo
-	info      *telegram.PeerInfo
-	infos     []telegram.PeerInfo
-	photos    []telegram.Photo
-	topics    []telegram.ForumTopic
-	topic     *telegram.ForumTopic
-	sets      []telegram.StickerSet
-	setFull   *telegram.StickerSetFull
-	folders   []telegram.Folder
-	folder    *telegram.Folder
-	uploaded  *telegram.UploadedFile
-	reactions []telegram.ReactionUser
-	statuses  []telegram.ContactStatus
-	link      string
-	filePath  string
-	peer      telegram.InputPeer
+	messages       []telegram.Message
+	parentMessages []telegram.Message // returned by GetMessages if set, else messages
+	message        *telegram.Message
+	total          int
+	dialogs        []telegram.Dialog
+	user           *telegram.User
+	users          []telegram.User
+	group          *telegram.GroupInfo
+	info           *telegram.PeerInfo
+	infos          []telegram.PeerInfo
+	photos         []telegram.Photo
+	topics         []telegram.ForumTopic
+	topic          *telegram.ForumTopic
+	sets           []telegram.StickerSet
+	setFull        *telegram.StickerSetFull
+	folders        []telegram.Folder
+	folder         *telegram.Folder
+	uploaded       *telegram.UploadedFile
+	reactions      []telegram.ReactionUser
+	statuses       []telegram.ContactStatus
+	link           string
+	filePath       string
+	peer           telegram.InputPeer
 
 	// Error to return
 	err error
 
 	// Last call tracking
-	lastPeer     telegram.InputPeer
-	lastQuery    string
-	lastTopicID  int
-	lastSendOpts telegram.SendOpts
+	lastPeer         telegram.InputPeer
+	lastQuery        string
+	lastTopicID      int
+	lastSendOpts     telegram.SendOpts
+	getMessagesCalls int
+	getMessagesIDs   []int
 }
 
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
@@ -48,8 +51,14 @@ func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram
 	return m.peer, m.err
 }
 
-func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, _ []int) ([]telegram.Message, error) {
+func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, ids []int) ([]telegram.Message, error) {
 	m.lastPeer = peer
+	m.getMessagesCalls++
+	m.getMessagesIDs = append(m.getMessagesIDs, ids...)
+
+	if m.parentMessages != nil {
+		return m.parentMessages, m.err
+	}
 
 	return m.messages, m.err
 }

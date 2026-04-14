@@ -56,11 +56,29 @@ func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, ids
 	m.getMessagesCalls++
 	m.getMessagesIDs = append(m.getMessagesIDs, ids...)
 
-	if m.parentMessages != nil {
+	if m.parentMessages != nil && requestedMatchesParents(ids, m.parentMessages) {
 		return m.parentMessages, m.err
 	}
 
 	return m.messages, m.err
+}
+
+// requestedMatchesParents returns true when all requested ids are present
+// in the parentMessages set, meaning this is the resolver's lookup call
+// rather than the primary message fetch.
+func requestedMatchesParents(ids []int, parents []telegram.Message) bool {
+	have := make(map[int]bool, len(parents))
+	for i := range parents {
+		have[parents[i].ID] = true
+	}
+
+	for _, id := range ids {
+		if !have[id] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (m *mockClient) GetHistory(_ context.Context, peer telegram.InputPeer, _ telegram.HistoryOpts) ([]telegram.Message, int, error) {

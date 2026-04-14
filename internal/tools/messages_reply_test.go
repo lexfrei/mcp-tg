@@ -9,7 +9,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const testAliceName = "Alice"
+const (
+	testAliceName      = "Alice"
+	testSetupFromEarly = "setup from earlier"
+)
 
 func messagesWithReply() []telegram.Message {
 	return []telegram.Message{
@@ -73,7 +76,7 @@ func TestMessagesListHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 			},
 		},
 		parentMessages: []telegram.Message{
-			{ID: 26150, Text: "setup from earlier", FromName: testAliceName},
+			{ID: 26150, Text: testSetupFromEarly, FromName: testAliceName},
 		},
 		total: 1,
 	}
@@ -95,14 +98,128 @@ func TestMessagesListHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 		t.Fatal("ReplyToMessage = nil, want populated via fetch")
 	}
 
-	if res.Messages[0].ReplyToMessage.Text != "setup from earlier" {
+	if res.Messages[0].ReplyToMessage.Text != testSetupFromEarly {
 		t.Errorf("ReplyToMessage.Text = %q, want %q",
-			res.Messages[0].ReplyToMessage.Text, "setup from earlier")
+			res.Messages[0].ReplyToMessage.Text, testSetupFromEarly)
 	}
 
 	if res.Messages[0].ReplyToMessage.FromName != testAliceName {
 		t.Errorf("ReplyToMessage.FromName = %q, want %q",
 			res.Messages[0].ReplyToMessage.FromName, testAliceName)
+	}
+}
+
+func TestMessagesListHandler_ResolveReplies_ParentInBatchNoFetch(t *testing.T) {
+	resolveOn := true
+	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: messagesWithReply(),
+		total:    2,
+	}
+	handler := NewMessagesListHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesListParams{
+		Peer:           "@chat",
+		ResolveReplies: &resolveOn,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 when parent already in batch",
+			mock.getMessagesCalls)
+	}
+
+	if res.Messages[1].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated from batch when resolveReplies is on")
+	}
+
+	if res.Messages[1].ReplyToMessage.Text != "setup" {
+		t.Errorf("ReplyToMessage.Text = %q, want %q",
+			res.Messages[1].ReplyToMessage.Text, "setup")
+	}
+}
+
+func TestMessagesContextHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
+	resolveOn := true
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: []telegram.Message{
+			{
+				ID:      26154,
+				Text:    "punchline",
+				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
+			},
+		},
+		parentMessages: []telegram.Message{
+			{ID: 26150, Text: testSetupFromEarly, FromName: testAliceName},
+		},
+	}
+	handler := NewMessagesContextHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesContextParams{
+		Peer:           "@chat",
+		MessageID:      26154,
+		ResolveReplies: &resolveOn,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.getMessagesCalls != 1 {
+		t.Errorf("GetMessages called %d times, want 1", mock.getMessagesCalls)
+	}
+
+	if res.Messages[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated via fetch")
+	}
+
+	if res.Messages[0].ReplyToMessage.Text != testSetupFromEarly {
+		t.Errorf("ReplyToMessage.Text = %q, want %q",
+			res.Messages[0].ReplyToMessage.Text, testSetupFromEarly)
+	}
+}
+
+func TestMessagesGetHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
+	resolveOn := true
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: []telegram.Message{
+			{
+				ID:      26154,
+				Text:    "punchline",
+				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
+			},
+		},
+		parentMessages: []telegram.Message{
+			{ID: 26150, Text: testSetupFromEarly, FromName: testAliceName},
+		},
+	}
+	handler := NewMessagesGetHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesGetParams{
+		Peer:           "@chat",
+		IDs:            []int{26154},
+		ResolveReplies: &resolveOn,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// GetMessages was called twice: once for the primary fetch of IDs=[26154],
+	// once by the resolver for the missing parent 26150.
+	if mock.getMessagesCalls != 2 {
+		t.Errorf("GetMessages called %d times, want 2", mock.getMessagesCalls)
+	}
+
+	if res.Messages[0].ReplyToMessage == nil {
+		t.Fatal("ReplyToMessage = nil, want populated via fetch")
+	}
+
+	if res.Messages[0].ReplyToMessage.Text != testSetupFromEarly {
+		t.Errorf("ReplyToMessage.Text = %q, want %q",
+			res.Messages[0].ReplyToMessage.Text, testSetupFromEarly)
 	}
 }
 

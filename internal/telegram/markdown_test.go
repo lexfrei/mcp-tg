@@ -2,9 +2,63 @@ package telegram
 
 import (
 	"testing"
+	"unicode/utf16"
 
 	"github.com/gotd/td/tg"
 )
+
+// preSlice returns the UTF-16 substring of plain at [offset, offset+length).
+// Entity offsets are UTF-16 code units, and the invariant for a pre entity is
+// that this slice must equal the original fenced body byte-for-byte.
+func preSlice(plain string, offset, length int) string {
+	units := utf16.Encode([]rune(plain))
+	if offset < 0 || offset+length > len(units) {
+		return ""
+	}
+
+	return string(utf16.Decode(units[offset : offset+length]))
+}
+
+// findPre returns the first MessageEntityPre in the slice, or nil.
+func findPre(ents []tg.MessageEntityClass) *tg.MessageEntityPre {
+	for _, ent := range ents {
+		if pre, ok := ent.(*tg.MessageEntityPre); ok {
+			return pre
+		}
+	}
+
+	return nil
+}
+
+// findAllPre returns every MessageEntityPre in the slice, in order.
+func findAllPre(ents []tg.MessageEntityClass) []*tg.MessageEntityPre {
+	var out []*tg.MessageEntityPre
+
+	for _, ent := range ents {
+		if pre, ok := ent.(*tg.MessageEntityPre); ok {
+			out = append(out, pre)
+		}
+	}
+
+	return out
+}
+
+// assertPreBody fails the test unless the pre entity points at exactly body in plain.
+func assertPreBody(t *testing.T, plain string, pre *tg.MessageEntityPre, body string) {
+	t.Helper()
+
+	if pre == nil {
+		t.Fatalf("no pre entity found in %q", plain)
+	}
+
+	got := preSlice(plain, pre.Offset, pre.Length)
+	if got != body {
+		t.Fatalf(
+			"pre slice mismatch: offset=%d length=%d\n got=%q\nwant=%q\nplain=%q",
+			pre.Offset, pre.Length, got, body, plain,
+		)
+	}
+}
 
 func TestParseMarkdown_TripleAsteriskKeepsStrayLiteral(t *testing.T) {
 	// Regression: pattern "**word***" previously closed bold, then
@@ -369,5 +423,227 @@ func TestParseMarkdown_EdgeCases(t *testing.T) {
 			_ = text
 			_ = entities
 		})
+	}
+}
+
+func TestParseMarkdown_InlineCodeBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown("`a` `b`\n```\ncode\n```")
+
+	const wantPlain = "a b\ncode"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "code")
+}
+
+func TestParseMarkdown_BoldBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown("**x** **y**\n```\ncode\n```")
+
+	const wantPlain = "x y\ncode"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "code")
+}
+
+func TestParseMarkdown_ItalicBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown("*i*\n```\nz\n```")
+
+	const wantPlain = "i\nz"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "z")
+}
+
+func TestParseMarkdown_LinkBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown("[a](http://x)\n```\nc\n```")
+
+	const wantPlain = "a\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "c")
+}
+
+func TestParseMarkdown_StrikeSpoilerUnderlineBeforePre(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		plain string
+	}{
+		{"strike", "~~s~~\n```\nc\n```", "s\nc"},
+		{"spoiler", "||s||\n```\nc\n```", "s\nc"},
+		{"underline", "__s__\n```\nc\n```", "s\nc"},
+	}
+
+	for _, tCase := range cases {
+		t.Run(tCase.name, func(t *testing.T) {
+			text, entities := ParseMarkdown(tCase.input)
+			if text != tCase.plain {
+				t.Fatalf("plain = %q, want %q", text, tCase.plain)
+			}
+
+			assertPreBody(t, text, findPre(entities), "c")
+		})
+	}
+}
+
+func TestParseMarkdown_BlockquoteBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown("> q\n```\nc\n```")
+
+	const wantPlain = "q\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "c")
+}
+
+func TestParseMarkdown_MultiplePreBlocks(t *testing.T) {
+	text, entities := ParseMarkdown("`x`\n```go\nfirst\n```\n`y`\n```py\nsecond\n```")
+
+	const wantPlain = "x\nfirst\ny\nsecond"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	pres := findAllPre(entities)
+	if len(pres) != 2 {
+		t.Fatalf("want 2 pre entities, got %d", len(pres))
+	}
+
+	assertPreBody(t, text, pres[0], "first")
+	assertPreBody(t, text, pres[1], "second")
+
+	if pres[0].Language != "go" {
+		t.Errorf("pre[0] language = %q, want %q", pres[0].Language, "go")
+	}
+
+	if pres[1].Language != "py" {
+		t.Errorf("pre[1] language = %q, want %q", pres[1].Language, "py")
+	}
+}
+
+func TestParseMarkdown_PreThenInline(t *testing.T) {
+	text, entities := ParseMarkdown("```\nc\n```\n**b**")
+
+	const wantPlain = "c\nb"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "c")
+
+	// Bold must land on "b" at the right spot after substitution.
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if ebold, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = ebold
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing")
+	}
+
+	got := preSlice(text, bold.Offset, bold.Length)
+	if got != "b" {
+		t.Fatalf("bold slice = %q, want %q", got, "b")
+	}
+}
+
+func TestParseMarkdown_InlineSurroundingTwoPres(t *testing.T) {
+	text, entities := ParseMarkdown("`a`\n```\nP1\n```\n`b`\n```\nP2\n```\n`c`")
+
+	const wantPlain = "a\nP1\nb\nP2\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	pres := findAllPre(entities)
+	if len(pres) != 2 {
+		t.Fatalf("want 2 pre entities, got %d", len(pres))
+	}
+
+	assertPreBody(t, text, pres[0], "P1")
+	assertPreBody(t, text, pres[1], "P2")
+}
+
+func TestParseMarkdown_EscapedBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown(`\*x\*` + "\n```\nc\n```")
+
+	const wantPlain = "*x*\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "c")
+}
+
+func TestParseMarkdown_EmojiBeforePre(t *testing.T) {
+	text, entities := ParseMarkdown("\U0001F389 **b**\n```\nc\n```")
+
+	const wantPlain = "\U0001F389 b\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	assertPreBody(t, text, findPre(entities), "c")
+}
+
+func TestParseMarkdown_UserTextContainsPlaceholderRune(t *testing.T) {
+	// U+FDD0 is the internal placeholder. If it appears in user input it
+	// must not be treated as a pre block and must not corrupt offsets.
+	text, entities := ParseMarkdown("hello \uFDD0 **world**")
+
+	// Placeholder rune must be stripped or preserved, but never emit a pre.
+	for _, ent := range entities {
+		if _, ok := ent.(*tg.MessageEntityPre); ok {
+			t.Fatalf("unexpected pre entity from placeholder in user input")
+		}
+	}
+
+	// Bold must still point at "world".
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if ebold, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = ebold
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing")
+	}
+
+	got := preSlice(text, bold.Offset, bold.Length)
+	if got != "world" {
+		t.Fatalf("bold slice = %q, want %q", got, "world")
+	}
+}
+
+func TestParseMarkdown_RegressionPost12(t *testing.T) {
+	// Reproduction of @claudedreams/12: four inline-code entities before a
+	// fenced pre block. Previously pre.Offset was computed in the pre-inline
+	// text coordinate space and drifted by 2 UTF-16 units per inline code.
+	input := "prefix `/etc/rancher/k3s/config.yaml` mid `server: https://...` " +
+		"more `--server=...` tail `k3s server --cluster-reset`:\n\n" +
+		"```text\ncannot perform cluster-reset\n```\n\nafter"
+
+	text, entities := ParseMarkdown(input)
+
+	const body = "cannot perform cluster-reset"
+
+	pre := findPre(entities)
+	assertPreBody(t, text, pre, body)
+
+	if pre.Language != "text" {
+		t.Errorf("Language = %q, want %q", pre.Language, "text")
 	}
 }

@@ -647,3 +647,409 @@ func TestParseMarkdown_RegressionPost12(t *testing.T) {
 		t.Errorf("Language = %q, want %q", pre.Language, "text")
 	}
 }
+
+// findBlockquote returns the first MessageEntityBlockquote in the slice, or nil.
+func findBlockquote(ents []tg.MessageEntityClass) *tg.MessageEntityBlockquote {
+	for _, ent := range ents {
+		if bq, ok := ent.(*tg.MessageEntityBlockquote); ok {
+			return bq
+		}
+	}
+
+	return nil
+}
+
+// findAllBlockquotes returns every MessageEntityBlockquote in the slice, in order.
+func findAllBlockquotes(ents []tg.MessageEntityClass) []*tg.MessageEntityBlockquote {
+	var out []*tg.MessageEntityBlockquote
+
+	for _, ent := range ents {
+		if bq, ok := ent.(*tg.MessageEntityBlockquote); ok {
+			out = append(out, bq)
+		}
+	}
+
+	return out
+}
+
+// findCode returns the first MessageEntityCode, or nil.
+func findCode(ents []tg.MessageEntityClass) *tg.MessageEntityCode {
+	for _, ent := range ents {
+		if code, ok := ent.(*tg.MessageEntityCode); ok {
+			return code
+		}
+	}
+
+	return nil
+}
+
+// assertEntitySlice fails the test if plain[offset:offset+length] (UTF-16) != want.
+func assertEntitySlice(t *testing.T, plain string, offset, length int, want, label string) {
+	t.Helper()
+
+	got := preSlice(plain, offset, length)
+	if got != want {
+		t.Fatalf(
+			"%s slice mismatch: offset=%d length=%d\n got=%q\nwant=%q\nplain=%q",
+			label, offset, length, got, want, plain,
+		)
+	}
+}
+
+func TestParseMarkdown_BlockquoteAfterInlineCode(t *testing.T) {
+	// Regression: inline-code entities consumed before a blockquote previously
+	// shifted the blockquote.Offset by 2 UTF-16 units per backtick pair.
+	text, entities := ParseMarkdown("`code`\n\n> quoted")
+
+	const wantPlain = "code\n\nquoted"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "quoted", "blockquote")
+}
+
+func TestParseMarkdown_BlockquoteAfterMultipleInlineMarkers(t *testing.T) {
+	// Combined inline markers (code + bold + italic) before a blockquote.
+	text, entities := ParseMarkdown("`a` **b** *c*\n\n> q")
+
+	const wantPlain = "a b c\n\nq"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "q", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "a", "code")
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, "b", "bold")
+
+	var italic *tg.MessageEntityItalic
+
+	for _, ent := range entities {
+		if i, ok := ent.(*tg.MessageEntityItalic); ok {
+			italic = i
+		}
+	}
+
+	if italic == nil {
+		t.Fatalf("italic entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, italic.Offset, italic.Length, "c", "italic")
+}
+
+func TestParseMarkdown_BlockquoteAfterInlineCode_Cyrillic(t *testing.T) {
+	// Reproduction from the @claudedreams/26 bug report: cyrillic prose with
+	// three inline-code spans, then two blockquotes. Previously each
+	// blockquote.Offset was shifted by 2 * (number of consumed backtick pairs
+	// before it) — exactly +6 in this input. Verifies UTF-16 offsets land on
+	// the right characters in the cleaned plain text.
+	input := "Дополнение про того же `authelia/chartrepo`. На feature-request " +
+		"issue #364 («опубликуйте чарт в OCI registry, у меня " +
+		"`charts.authelia.com` отдаёт ~300 B/s, ArgoCD renders таймаутятся»), " +
+		"мейнтейнер закрыл моё предложение `gh actions`-workflow двумя " +
+		"аргументами:\n\n" +
+		"> We don't use GHA for security critical jobs.\n\n" +
+		"и про их собственный планируемый внутренний PR:\n\n" +
+		"> it's uploading to GitHub so it probably won't solve your " +
+		"underlying issue since it's the same CDN."
+
+	text, entities := ParseMarkdown(input)
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 2 {
+		t.Fatalf("want 2 blockquote entities, got %d", len(bqs))
+	}
+
+	const (
+		firstQuote  = "We don't use GHA for security critical jobs."
+		secondQuote = "it's uploading to GitHub so it probably won't solve your " +
+			"underlying issue since it's the same CDN."
+	)
+
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, firstQuote, "blockquote[0]")
+	assertEntitySlice(t, text, bqs[1].Offset, bqs[1].Length, secondQuote, "blockquote[1]")
+}
+
+func TestParseMarkdown_InlineCodeInsideBlockquote(t *testing.T) {
+	// Inline code inside a blockquote line: parse order must still emit a
+	// code entity that points at the right UTF-16 slice in the cleaned text,
+	// and the blockquote must cover the full line.
+	text, entities := ParseMarkdown("> text `code`")
+
+	const wantPlain = "text code"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "text code", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+}
+
+func TestParseMarkdown_BlockquoteThenInlineCode(t *testing.T) {
+	// Regression for the inverse order: blockquote first, then inline code.
+	// The fix must not break this case (inline code computed in cleaned space
+	// after the blockquote line is stripped).
+	text, entities := ParseMarkdown("> q\n\n`code`")
+
+	const wantPlain = "q\n\ncode"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "q", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+}
+
+func TestParseMarkdown_BoldCrossingBlockquote(t *testing.T) {
+	// A bold span whose range straddles a "> " line: previously the inline
+	// parser captured the "> " inside the bold length, and stripping the
+	// prefix in extractBlockquotes left the length stale (offset+length past
+	// end of plain).
+	text, entities := ParseMarkdown("**a\n> b\nc**")
+
+	const wantPlain = "a\nb\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, "a\nb\nc", "bold")
+}
+
+func TestParseMarkdown_LinkCrossingBlockquote(t *testing.T) {
+	// text_url whose visible-text spans across a quoted line.
+	text, entities := ParseMarkdown("[link\n> q\ntext](http://e.com)")
+
+	const wantPlain = "link\nq\ntext"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var link *tg.MessageEntityTextURL
+
+	for _, ent := range entities {
+		if l, ok := ent.(*tg.MessageEntityTextURL); ok {
+			link = l
+		}
+	}
+
+	if link == nil {
+		t.Fatalf("text_url entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, link.Offset, link.Length, "link\nq\ntext", "text_url")
+
+	if link.URL != "http://e.com" {
+		t.Errorf("URL = %q, want %q", link.URL, "http://e.com")
+	}
+}
+
+func TestParseMarkdown_BoldCrossingMultipleBlockquotes(t *testing.T) {
+	// Bold spans across two consecutive quoted lines: length must shrink by
+	// 2 UTF-16 units per stripped "> " prefix that lies inside the bold.
+	text, entities := ParseMarkdown("**before\n> q1\n> q2\nafter**")
+
+	const wantPlain = "before\nq1\nq2\nafter"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, wantPlain, "bold")
+}
+
+func TestParseMarkdown_BlockquoteEmptyLineDropped(t *testing.T) {
+	// A bare "> " line (with empty content) must not produce a zero-length
+	// blockquote entity — Telegram MTProto rejects entities with length=0.
+	_, entities := ParseMarkdown("> \nplain")
+
+	for _, ent := range entities {
+		bq, ok := ent.(*tg.MessageEntityBlockquote)
+		if !ok {
+			continue
+		}
+
+		if bq.Length == 0 {
+			t.Fatalf("blockquote with length=0 emitted: %+v", bq)
+		}
+	}
+}
+
+func TestParseMarkdown_EscapedQuoteMarker(t *testing.T) {
+	// "\> literal" must render as plain "> literal" with no blockquote: the
+	// backslash escapes the quote-marker so the line is literal text.
+	text, entities := ParseMarkdown(`\> literal`)
+
+	const wantPlain = "> literal"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	if findBlockquote(entities) != nil {
+		t.Fatalf("unexpected blockquote entity in %+v", entities)
+	}
+}
+
+func TestParseMarkdown_EscapedQuoteMarkerOnSecondLine(t *testing.T) {
+	// Same escape rule on a non-first line: "\> literal" on line two must
+	// not turn into a blockquote.
+	text, entities := ParseMarkdown("hello\n\\> literal")
+
+	const wantPlain = "hello\n> literal"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	if findBlockquote(entities) != nil {
+		t.Fatalf("unexpected blockquote entity in %+v", entities)
+	}
+}
+
+func TestParseMarkdown_BlockquoteWithEscapeInside(t *testing.T) {
+	// An escape sequence (\*) inside a blockquote: removeEscapes strips the
+	// backslash; blockquote.Length must shrink to match the cleaned text.
+	text, entities := ParseMarkdown(`> hello \* world`)
+
+	const wantPlain = "hello * world"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, wantPlain, "blockquote")
+}
+
+func TestParseMarkdown_BoldWithEscapeAcrossBlockquote(t *testing.T) {
+	// Bold span containing both an escape (\\) and a stripped "> " prefix:
+	// length must reflect both removals so offset+length stays within plain.
+	text, entities := ParseMarkdown("**a\\\n> b\nc**")
+
+	const wantPlain = "a\nb\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, wantPlain, "bold")
+}
+
+func TestParseMarkdown_BoldEndingAtBlockquoteMarker(t *testing.T) {
+	// Partial-overlap: bold ends inside a "> " prefix. The ">" was visible
+	// inside the original bold; after strip it is gone, so bold must shrink
+	// to the kept prefix instead of expanding past the cut.
+	text, entities := ParseMarkdown("**a\n>** b")
+
+	const wantPlain = "a\nb"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, "a\n", "bold")
+}

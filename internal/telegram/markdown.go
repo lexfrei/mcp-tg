@@ -30,12 +30,19 @@ const preHolder = '\uFDD0'
 
 // ParseMarkdown converts Markdown text to plain text and Telegram entities.
 //
-// Pipeline: fenced blocks are replaced with a single-rune placeholder first
-// so that the blockquote, inline-marker, and escape passes operate on a
-// text where the only mutable content is the marker they own. After those
-// passes, substituteCodeBlocks splices the saved bodies back in and emits
-// the pre entities with offsets taken from the final builder state, so no
-// earlier pass can ever corrupt a pre offset by deleting marker bytes.
+// Pipeline: fenced blocks are replaced with a single-rune placeholder first.
+// Inline markers are resolved next, so every inline-entity offset lives in
+// the cleaned UTF-16 space (no backticks, asterisks, etc., absorbed into the
+// count). extractBlockquotes then runs against that text — crucially before
+// removeEscapes, so a backslash-escaped "\> literal" line still begins with
+// "\" rather than ">", and is not promoted to a blockquote. extractBlockquotes
+// also rebases every existing entity onto the post-strip space: entities that
+// follow a "> " prefix have their start shifted left by 2 UTF-16 units, and
+// entities whose range straddles a "> " prefix (e.g. **bold spanning across
+// a quoted line**) have their length shrunk by the same amount per stripped
+// prefix. removeEscapes then strips the backslashes and remaps offsets, and
+// substituteCodeBlocks splices the saved fenced bodies back in, emitting pre
+// entities with offsets taken from the final builder state.
 func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	text = sanitizePlaceholders(text)
 
@@ -43,8 +50,8 @@ func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 
 	var entities []rawEntity
 
-	plain, entities = extractBlockquotes(plain, entities)
 	plain, entities = extractInlineEntities(plain, entities)
+	plain, entities = extractBlockquotes(plain, entities)
 	plain, entities = removeEscapes(plain, entities)
 	plain, entities = substituteCodeBlocks(plain, entities, blocks)
 
@@ -202,7 +209,15 @@ type blockquoteLine struct {
 	isQuote bool
 }
 
-// extractBlockquotes processes lines starting with "> ".
+// quotePrefixLen is the UTF-16 length of the "> " marker stripped from each
+// blockquote line.
+const quotePrefixLen = 2
+
+// extractBlockquotes processes lines starting with "> ". Existing entities
+// (inline markers, code, etc.) come in already remapped onto the cleaned text;
+// this pass strips the "> " prefixes, emits blockquote entities at offsets
+// taken from the cleaned-text builder, and shifts every prior entity left by
+// 2 UTF-16 units for each "> " prefix that lay before its old start.
 func extractBlockquotes(
 	text string, existing []rawEntity,
 ) (string, []rawEntity) {
@@ -231,30 +246,111 @@ func parseQuoteLines(lines []string) []blockquoteLine {
 	return parsed
 }
 
-// buildBlockquoteResult assembles plain text and blockquote entities.
+// buildBlockquoteResult assembles plain text, emits new blockquote entities,
+// and rebases existing entities to account for stripped "> " prefixes.
+// Empty "> " lines are intentionally not emitted as blockquote entities:
+// Telegram MTProto rejects entities with length=0.
 func buildBlockquoteResult(
 	parsed []blockquoteLine, existing []rawEntity,
 ) (string, []rawEntity) {
 	var result strings.Builder
 
-	entities := append([]rawEntity{}, existing...)
+	stripPositions := make([]int, 0, len(parsed))
+
+	newEntities := make([]rawEntity, 0, len(parsed))
+	oldOffset := 0
 
 	for idx, line := range parsed {
 		if idx > 0 {
 			result.WriteByte('\n')
+
+			oldOffset++
 		}
 
 		if line.isQuote {
-			start := utf16Len(result.String())
+			stripPositions = append(stripPositions, oldOffset)
+			innerStart := utf16Len(result.String())
+
 			result.WriteString(line.text)
-			entities = append(entities, rawEntity{
-				start: start, length: utf16Len(line.text),
-				kind: "blockquote",
-			})
+
+			lineLen := utf16Len(line.text)
+			if lineLen > 0 {
+				newEntities = append(newEntities, rawEntity{
+					start:  innerStart,
+					length: lineLen,
+					kind:   "blockquote",
+				})
+			}
+
+			oldOffset += quotePrefixLen + lineLen
 		} else {
 			result.WriteString(line.text)
+
+			oldOffset += utf16Len(line.text)
 		}
 	}
 
-	return result.String(), entities
+	adjusted := shiftForStrippedQuotes(existing, stripPositions)
+
+	return result.String(), append(adjusted, newEntities...)
+}
+
+// shiftForStrippedQuotes returns existing entities rebased onto the
+// post-strip UTF-16 space. For each "> " strip range [sp, sp+quotePrefixLen)
+// and each entity range [start, start+length):
+//   - units of the strip range lying before the entity move start left;
+//   - units of the strip range lying inside the entity shrink length.
+//
+// The same arithmetic handles both clean cases (strip fully before / fully
+// inside the entity) and partial-overlap cases (strip straddling the entity
+// boundary, e.g. bold ending exactly on the ">" of a "> " prefix).
+//
+// stripPositions are UTF-16 offsets in the pre-strip text where each "> "
+// starts.
+func shiftForStrippedQuotes(
+	existing []rawEntity, stripPositions []int,
+) []rawEntity {
+	if len(existing) == 0 || len(stripPositions) == 0 {
+		return append([]rawEntity{}, existing...)
+	}
+
+	out := make([]rawEntity, len(existing))
+	copy(out, existing)
+
+	for idx := range out {
+		out[idx] = remapForStrips(out[idx], stripPositions)
+	}
+
+	return out
+}
+
+// remapForStrips applies the start/length adjustment for one entity.
+func remapForStrips(ent rawEntity, stripPositions []int) rawEntity {
+	startShift := 0
+	lengthShift := 0
+	end := ent.start + ent.length
+
+	for _, sp := range stripPositions {
+		spEnd := sp + quotePrefixLen
+		startShift += rangeOverlap(sp, spEnd, 0, ent.start)
+		lengthShift += rangeOverlap(sp, spEnd, ent.start, end)
+	}
+
+	ent.start -= startShift
+	ent.length -= lengthShift
+
+	return ent
+}
+
+// rangeOverlap returns the length of [aStart,aEnd) ∩ [bStart,bEnd). Returns
+// 0 when either input is empty or the ranges do not overlap.
+func rangeOverlap(aStart, aEnd, bStart, bEnd int) int {
+	lower := max(aStart, bStart)
+	upper := min(aEnd, bEnd)
+
+	if upper <= lower {
+		return 0
+	}
+
+	return upper - lower
 }

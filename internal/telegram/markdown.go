@@ -35,10 +35,13 @@ const preHolder = '\uFDD0'
 // every entity offset they emit lives in the cleaned UTF-16 space.
 // extractBlockquotes runs next: at this point inline markers are gone, so a
 // blockquote starting after some `…` runs no longer absorbs the consumed
-// backticks into its offset. It also shifts any inline-entity that sat after
-// a "> " prefix by the 2 UTF-16 units that prefix occupies. Finally,
-// substituteCodeBlocks splices the saved fenced bodies back in and emits pre
-// entities with offsets taken from the final builder state.
+// backticks into its offset. It also rebases every existing entity onto the
+// post-strip space — entities that follow a "> " prefix have their start
+// shifted left by 2 UTF-16 units, and entities whose range straddles a "> "
+// prefix (e.g. **bold spanning across\n> a quote\nline**) have their length
+// shrunk by the same amount per stripped prefix. Finally, substituteCodeBlocks
+// splices the saved fenced bodies back in and emits pre entities with offsets
+// taken from the final builder state.
 func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	text = sanitizePlaceholders(text)
 
@@ -244,14 +247,16 @@ func parseQuoteLines(lines []string) []blockquoteLine {
 
 // buildBlockquoteResult assembles plain text, emits new blockquote entities,
 // and rebases existing entities to account for stripped "> " prefixes.
+// Empty "> " lines are intentionally not emitted as blockquote entities:
+// Telegram MTProto rejects entities with length=0.
 func buildBlockquoteResult(
 	parsed []blockquoteLine, existing []rawEntity,
 ) (string, []rawEntity) {
 	var result strings.Builder
 
-	stripPositions := make([]int, 0)
+	stripPositions := make([]int, 0, len(parsed))
 
-	newEntities := make([]rawEntity, 0)
+	newEntities := make([]rawEntity, 0, len(parsed))
 	oldOffset := 0
 
 	for idx, line := range parsed {
@@ -266,13 +271,17 @@ func buildBlockquoteResult(
 			innerStart := utf16Len(result.String())
 
 			result.WriteString(line.text)
-			newEntities = append(newEntities, rawEntity{
-				start:  innerStart,
-				length: utf16Len(line.text),
-				kind:   "blockquote",
-			})
 
-			oldOffset += quotePrefixLen + utf16Len(line.text)
+			lineLen := utf16Len(line.text)
+			if lineLen > 0 {
+				newEntities = append(newEntities, rawEntity{
+					start:  innerStart,
+					length: lineLen,
+					kind:   "blockquote",
+				})
+			}
+
+			oldOffset += quotePrefixLen + lineLen
 		} else {
 			result.WriteString(line.text)
 
@@ -285,10 +294,16 @@ func buildBlockquoteResult(
 	return result.String(), append(adjusted, newEntities...)
 }
 
-// shiftForStrippedQuotes returns existing entities with each start moved left
-// by quotePrefixLen for every "> " prefix removed strictly before its old
-// position. stripPositions are UTF-16 offsets in the input (pre-strip) text
-// where each "> " starts.
+// shiftForStrippedQuotes returns existing entities rebased onto the
+// post-strip UTF-16 space. For each entity:
+//   - every "> " prefix that lay strictly before its old start moves the
+//     start left by quotePrefixLen;
+//   - every "> " prefix that lay strictly inside its old range
+//     [start, start+length) shrinks the length by quotePrefixLen.
+//
+// stripPositions are UTF-16 offsets in the pre-strip text where each "> "
+// starts. The inline parser does not emit entities that begin or end inside
+// a "> " prefix, so partial-overlap cases are not handled here.
 func shiftForStrippedQuotes(
 	existing []rawEntity, stripPositions []int,
 ) []rawEntity {
@@ -300,16 +315,29 @@ func shiftForStrippedQuotes(
 	copy(out, existing)
 
 	for idx := range out {
-		shift := 0
-
-		for _, sp := range stripPositions {
-			if sp+quotePrefixLen <= out[idx].start {
-				shift += quotePrefixLen
-			}
-		}
-
-		out[idx].start -= shift
+		out[idx] = remapForStrips(out[idx], stripPositions)
 	}
 
 	return out
+}
+
+// remapForStrips applies the start/length adjustment for one entity.
+func remapForStrips(ent rawEntity, stripPositions []int) rawEntity {
+	startShift := 0
+	lengthShift := 0
+	end := ent.start + ent.length
+
+	for _, sp := range stripPositions {
+		switch {
+		case sp+quotePrefixLen <= ent.start:
+			startShift += quotePrefixLen
+		case ent.start <= sp && sp+quotePrefixLen <= end:
+			lengthShift += quotePrefixLen
+		}
+	}
+
+	ent.start -= startShift
+	ent.length -= lengthShift
+
+	return ent
 }

@@ -857,3 +857,100 @@ func TestParseMarkdown_BlockquoteThenInlineCode(t *testing.T) {
 
 	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
 }
+
+func TestParseMarkdown_BoldCrossingBlockquote(t *testing.T) {
+	// A bold span whose range straddles a "> " line: previously the inline
+	// parser captured the "> " inside the bold length, and stripping the
+	// prefix in extractBlockquotes left the length stale (offset+length past
+	// end of plain).
+	text, entities := ParseMarkdown("**a\n> b\nc**")
+
+	const wantPlain = "a\nb\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, "a\nb\nc", "bold")
+}
+
+func TestParseMarkdown_LinkCrossingBlockquote(t *testing.T) {
+	// text_url whose visible-text spans across a quoted line.
+	text, entities := ParseMarkdown("[link\n> q\ntext](http://e.com)")
+
+	const wantPlain = "link\nq\ntext"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var link *tg.MessageEntityTextURL
+
+	for _, ent := range entities {
+		if l, ok := ent.(*tg.MessageEntityTextURL); ok {
+			link = l
+		}
+	}
+
+	if link == nil {
+		t.Fatalf("text_url entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, link.Offset, link.Length, "link\nq\ntext", "text_url")
+
+	if link.URL != "http://e.com" {
+		t.Errorf("URL = %q, want %q", link.URL, "http://e.com")
+	}
+}
+
+func TestParseMarkdown_BoldCrossingMultipleBlockquotes(t *testing.T) {
+	// Bold spans across two consecutive quoted lines: length must shrink by
+	// 2 UTF-16 units per stripped "> " prefix that lies inside the bold.
+	text, entities := ParseMarkdown("**before\n> q1\n> q2\nafter**")
+
+	const wantPlain = "before\nq1\nq2\nafter"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, wantPlain, "bold")
+}
+
+func TestParseMarkdown_BlockquoteEmptyLineDropped(t *testing.T) {
+	// A bare "> " line (with empty content) must not produce a zero-length
+	// blockquote entity — Telegram MTProto rejects entities with length=0.
+	_, entities := ParseMarkdown("> \nplain")
+
+	for _, ent := range entities {
+		bq, ok := ent.(*tg.MessageEntityBlockquote)
+		if !ok {
+			continue
+		}
+
+		if bq.Length == 0 {
+			t.Fatalf("blockquote with length=0 emitted: %+v", bq)
+		}
+	}
+}

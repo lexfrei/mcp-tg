@@ -31,17 +31,18 @@ const preHolder = '\uFDD0'
 // ParseMarkdown converts Markdown text to plain text and Telegram entities.
 //
 // Pipeline: fenced blocks are replaced with a single-rune placeholder first.
-// Inline markers and escapes are then resolved on the placeholdered text so
-// every entity offset they emit lives in the cleaned UTF-16 space.
-// extractBlockquotes runs next: at this point inline markers are gone, so a
-// blockquote starting after some `…` runs no longer absorbs the consumed
-// backticks into its offset. It also rebases every existing entity onto the
-// post-strip space — entities that follow a "> " prefix have their start
-// shifted left by 2 UTF-16 units, and entities whose range straddles a "> "
-// prefix (e.g. **bold spanning across\n> a quote\nline**) have their length
-// shrunk by the same amount per stripped prefix. Finally, substituteCodeBlocks
-// splices the saved fenced bodies back in and emits pre entities with offsets
-// taken from the final builder state.
+// Inline markers are resolved next, so every inline-entity offset lives in
+// the cleaned UTF-16 space (no backticks, asterisks, etc., absorbed into the
+// count). extractBlockquotes then runs against that text — crucially before
+// removeEscapes, so a backslash-escaped "\> literal" line still begins with
+// "\" rather than ">", and is not promoted to a blockquote. extractBlockquotes
+// also rebases every existing entity onto the post-strip space: entities that
+// follow a "> " prefix have their start shifted left by 2 UTF-16 units, and
+// entities whose range straddles a "> " prefix (e.g. **bold spanning across
+// a quoted line**) have their length shrunk by the same amount per stripped
+// prefix. removeEscapes then strips the backslashes and remaps offsets, and
+// substituteCodeBlocks splices the saved fenced bodies back in, emitting pre
+// entities with offsets taken from the final builder state.
 func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	text = sanitizePlaceholders(text)
 
@@ -50,8 +51,8 @@ func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	var entities []rawEntity
 
 	plain, entities = extractInlineEntities(plain, entities)
-	plain, entities = removeEscapes(plain, entities)
 	plain, entities = extractBlockquotes(plain, entities)
+	plain, entities = removeEscapes(plain, entities)
 	plain, entities = substituteCodeBlocks(plain, entities, blocks)
 
 	return plain, toTelegramEntities(entities)

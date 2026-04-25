@@ -954,3 +954,33 @@ func TestParseMarkdown_BlockquoteEmptyLineDropped(t *testing.T) {
 		}
 	}
 }
+
+func TestParseMarkdown_EscapedQuoteMarker(t *testing.T) {
+	// "\> literal" must render as plain "> literal" with no blockquote: the
+	// backslash escapes the quote-marker so the line is literal text.
+	text, entities := ParseMarkdown(`\> literal`)
+
+	const wantPlain = "> literal"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	if findBlockquote(entities) != nil {
+		t.Fatalf("unexpected blockquote entity in %+v", entities)
+	}
+}
+
+func TestParseMarkdown_EscapedQuoteMarkerOnSecondLine(t *testing.T) {
+	// Same escape rule on a non-first line: "\> literal" on line two must
+	// not turn into a blockquote.
+	text, entities := ParseMarkdown("hello\n\\> literal")
+
+	const wantPlain = "hello\n> literal"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	if findBlockquote(entities) != nil {
+		t.Fatalf("unexpected blockquote entity in %+v", entities)
+	}
+}

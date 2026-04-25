@@ -984,3 +984,72 @@ func TestParseMarkdown_EscapedQuoteMarkerOnSecondLine(t *testing.T) {
 		t.Fatalf("unexpected blockquote entity in %+v", entities)
 	}
 }
+
+func TestParseMarkdown_BlockquoteWithEscapeInside(t *testing.T) {
+	// An escape sequence (\*) inside a blockquote: removeEscapes strips the
+	// backslash; blockquote.Length must shrink to match the cleaned text.
+	text, entities := ParseMarkdown(`> hello \* world`)
+
+	const wantPlain = "hello * world"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, wantPlain, "blockquote")
+}
+
+func TestParseMarkdown_BoldWithEscapeAcrossBlockquote(t *testing.T) {
+	// Bold span containing both an escape (\\) and a stripped "> " prefix:
+	// length must reflect both removals so offset+length stays within plain.
+	text, entities := ParseMarkdown("**a\\\n> b\nc**")
+
+	const wantPlain = "a\nb\nc"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, wantPlain, "bold")
+}
+
+func TestParseMarkdown_BoldEndingAtBlockquoteMarker(t *testing.T) {
+	// Partial-overlap: bold ends inside a "> " prefix. The ">" was visible
+	// inside the original bold; after strip it is gone, so bold must shrink
+	// to the kept prefix instead of expanding past the cut.
+	text, entities := ParseMarkdown("**a\n>** b")
+
+	const wantPlain = "a\nb"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, "a\n", "bold")
+}

@@ -69,13 +69,27 @@ func adjustEntities(
 	return adjusted
 }
 
-// remapEntity converts a single entity's offsets using the mapping.
+// remapEntity converts a single entity's start and length using the mapping.
+// Both ends of the entity range are translated so that an escape sequence
+// inside the entity (e.g. blockquote covering "hello \\* world") shrinks the
+// length along with the cleaned text.
+//
+// mapping is rune-based; entity offsets are UTF-16 based. For escape removal
+// we only remove ASCII backslashes, so as long as every preceding code unit
+// is in the BMP, UTF-16 offset == rune offset and the rune-indexed mapping
+// can be addressed with the entity's UTF-16 start. Supplementary-plane
+// characters before an entity remain a known limitation.
 func remapEntity(ent rawEntity, mapping []int) rawEntity {
-	// mapping is rune-based; entity offsets are UTF-16 based.
-	// For escape removal, we only remove ASCII backslashes,
-	// so UTF-16 offset == rune offset in this context.
+	end := ent.start + ent.length
+
 	if ent.start < len(mapping) {
-		ent.start = mapping[ent.start]
+		newStart := mapping[ent.start]
+
+		if end < len(mapping) {
+			ent.length = mapping[end] - newStart
+		}
+
+		ent.start = newStart
 	}
 
 	return ent

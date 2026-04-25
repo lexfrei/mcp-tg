@@ -296,15 +296,17 @@ func buildBlockquoteResult(
 }
 
 // shiftForStrippedQuotes returns existing entities rebased onto the
-// post-strip UTF-16 space. For each entity:
-//   - every "> " prefix that lay strictly before its old start moves the
-//     start left by quotePrefixLen;
-//   - every "> " prefix that lay strictly inside its old range
-//     [start, start+length) shrinks the length by quotePrefixLen.
+// post-strip UTF-16 space. For each "> " strip range [sp, sp+quotePrefixLen)
+// and each entity range [start, start+length):
+//   - units of the strip range lying before the entity move start left;
+//   - units of the strip range lying inside the entity shrink length.
+//
+// The same arithmetic handles both clean cases (strip fully before / fully
+// inside the entity) and partial-overlap cases (strip straddling the entity
+// boundary, e.g. bold ending exactly on the ">" of a "> " prefix).
 //
 // stripPositions are UTF-16 offsets in the pre-strip text where each "> "
-// starts. The inline parser does not emit entities that begin or end inside
-// a "> " prefix, so partial-overlap cases are not handled here.
+// starts.
 func shiftForStrippedQuotes(
 	existing []rawEntity, stripPositions []int,
 ) []rawEntity {
@@ -329,16 +331,26 @@ func remapForStrips(ent rawEntity, stripPositions []int) rawEntity {
 	end := ent.start + ent.length
 
 	for _, sp := range stripPositions {
-		switch {
-		case sp+quotePrefixLen <= ent.start:
-			startShift += quotePrefixLen
-		case ent.start <= sp && sp+quotePrefixLen <= end:
-			lengthShift += quotePrefixLen
-		}
+		spEnd := sp + quotePrefixLen
+		startShift += rangeOverlap(sp, spEnd, 0, ent.start)
+		lengthShift += rangeOverlap(sp, spEnd, ent.start, end)
 	}
 
 	ent.start -= startShift
 	ent.length -= lengthShift
 
 	return ent
+}
+
+// rangeOverlap returns the length of [aStart,aEnd) ∩ [bStart,bEnd). Returns
+// 0 when either input is empty or the ranges do not overlap.
+func rangeOverlap(aStart, aEnd, bStart, bEnd int) int {
+	lower := max(aStart, bStart)
+	upper := min(aEnd, bEnd)
+
+	if upper <= lower {
+		return 0
+	}
+
+	return upper - lower
 }

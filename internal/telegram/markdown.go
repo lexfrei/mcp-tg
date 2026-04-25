@@ -30,12 +30,15 @@ const preHolder = '\uFDD0'
 
 // ParseMarkdown converts Markdown text to plain text and Telegram entities.
 //
-// Pipeline: fenced blocks are replaced with a single-rune placeholder first
-// so that the blockquote, inline-marker, and escape passes operate on a
-// text where the only mutable content is the marker they own. After those
-// passes, substituteCodeBlocks splices the saved bodies back in and emits
-// the pre entities with offsets taken from the final builder state, so no
-// earlier pass can ever corrupt a pre offset by deleting marker bytes.
+// Pipeline: fenced blocks are replaced with a single-rune placeholder first.
+// Inline markers and escapes are then resolved on the placeholdered text so
+// every entity offset they emit lives in the cleaned UTF-16 space.
+// extractBlockquotes runs next: at this point inline markers are gone, so a
+// blockquote starting after some `…` runs no longer absorbs the consumed
+// backticks into its offset. It also shifts any inline-entity that sat after
+// a "> " prefix by the 2 UTF-16 units that prefix occupies. Finally,
+// substituteCodeBlocks splices the saved fenced bodies back in and emits pre
+// entities with offsets taken from the final builder state.
 func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	text = sanitizePlaceholders(text)
 
@@ -43,9 +46,9 @@ func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 
 	var entities []rawEntity
 
-	plain, entities = extractBlockquotes(plain, entities)
 	plain, entities = extractInlineEntities(plain, entities)
 	plain, entities = removeEscapes(plain, entities)
+	plain, entities = extractBlockquotes(plain, entities)
 	plain, entities = substituteCodeBlocks(plain, entities, blocks)
 
 	return plain, toTelegramEntities(entities)
@@ -202,7 +205,15 @@ type blockquoteLine struct {
 	isQuote bool
 }
 
-// extractBlockquotes processes lines starting with "> ".
+// quotePrefixLen is the UTF-16 length of the "> " marker stripped from each
+// blockquote line.
+const quotePrefixLen = 2
+
+// extractBlockquotes processes lines starting with "> ". Existing entities
+// (inline markers, code, etc.) come in already remapped onto the cleaned text;
+// this pass strips the "> " prefixes, emits blockquote entities at offsets
+// taken from the cleaned-text builder, and shifts every prior entity left by
+// 2 UTF-16 units for each "> " prefix that lay before its old start.
 func extractBlockquotes(
 	text string, existing []rawEntity,
 ) (string, []rawEntity) {
@@ -231,30 +242,74 @@ func parseQuoteLines(lines []string) []blockquoteLine {
 	return parsed
 }
 
-// buildBlockquoteResult assembles plain text and blockquote entities.
+// buildBlockquoteResult assembles plain text, emits new blockquote entities,
+// and rebases existing entities to account for stripped "> " prefixes.
 func buildBlockquoteResult(
 	parsed []blockquoteLine, existing []rawEntity,
 ) (string, []rawEntity) {
 	var result strings.Builder
 
-	entities := append([]rawEntity{}, existing...)
+	stripPositions := make([]int, 0)
+
+	newEntities := make([]rawEntity, 0)
+	oldOffset := 0
 
 	for idx, line := range parsed {
 		if idx > 0 {
 			result.WriteByte('\n')
+
+			oldOffset++
 		}
 
 		if line.isQuote {
-			start := utf16Len(result.String())
+			stripPositions = append(stripPositions, oldOffset)
+			innerStart := utf16Len(result.String())
+
 			result.WriteString(line.text)
-			entities = append(entities, rawEntity{
-				start: start, length: utf16Len(line.text),
-				kind: "blockquote",
+			newEntities = append(newEntities, rawEntity{
+				start:  innerStart,
+				length: utf16Len(line.text),
+				kind:   "blockquote",
 			})
+
+			oldOffset += quotePrefixLen + utf16Len(line.text)
 		} else {
 			result.WriteString(line.text)
+
+			oldOffset += utf16Len(line.text)
 		}
 	}
 
-	return result.String(), entities
+	adjusted := shiftForStrippedQuotes(existing, stripPositions)
+
+	return result.String(), append(adjusted, newEntities...)
+}
+
+// shiftForStrippedQuotes returns existing entities with each start moved left
+// by quotePrefixLen for every "> " prefix removed strictly before its old
+// position. stripPositions are UTF-16 offsets in the input (pre-strip) text
+// where each "> " starts.
+func shiftForStrippedQuotes(
+	existing []rawEntity, stripPositions []int,
+) []rawEntity {
+	if len(existing) == 0 || len(stripPositions) == 0 {
+		return append([]rawEntity{}, existing...)
+	}
+
+	out := make([]rawEntity, len(existing))
+	copy(out, existing)
+
+	for idx := range out {
+		shift := 0
+
+		for _, sp := range stripPositions {
+			if sp+quotePrefixLen <= out[idx].start {
+				shift += quotePrefixLen
+			}
+		}
+
+		out[idx].start -= shift
+	}
+
+	return out
 }

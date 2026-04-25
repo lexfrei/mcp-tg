@@ -647,3 +647,213 @@ func TestParseMarkdown_RegressionPost12(t *testing.T) {
 		t.Errorf("Language = %q, want %q", pre.Language, "text")
 	}
 }
+
+// findBlockquote returns the first MessageEntityBlockquote in the slice, or nil.
+func findBlockquote(ents []tg.MessageEntityClass) *tg.MessageEntityBlockquote {
+	for _, ent := range ents {
+		if bq, ok := ent.(*tg.MessageEntityBlockquote); ok {
+			return bq
+		}
+	}
+
+	return nil
+}
+
+// findAllBlockquotes returns every MessageEntityBlockquote in the slice, in order.
+func findAllBlockquotes(ents []tg.MessageEntityClass) []*tg.MessageEntityBlockquote {
+	var out []*tg.MessageEntityBlockquote
+
+	for _, ent := range ents {
+		if bq, ok := ent.(*tg.MessageEntityBlockquote); ok {
+			out = append(out, bq)
+		}
+	}
+
+	return out
+}
+
+// findCode returns the first MessageEntityCode, or nil.
+func findCode(ents []tg.MessageEntityClass) *tg.MessageEntityCode {
+	for _, ent := range ents {
+		if code, ok := ent.(*tg.MessageEntityCode); ok {
+			return code
+		}
+	}
+
+	return nil
+}
+
+// assertEntitySlice fails the test if plain[offset:offset+length] (UTF-16) != want.
+func assertEntitySlice(t *testing.T, plain string, offset, length int, want, label string) {
+	t.Helper()
+
+	got := preSlice(plain, offset, length)
+	if got != want {
+		t.Fatalf(
+			"%s slice mismatch: offset=%d length=%d\n got=%q\nwant=%q\nplain=%q",
+			label, offset, length, got, want, plain,
+		)
+	}
+}
+
+func TestParseMarkdown_BlockquoteAfterInlineCode(t *testing.T) {
+	// Regression: inline-code entities consumed before a blockquote previously
+	// shifted the blockquote.Offset by 2 UTF-16 units per backtick pair.
+	text, entities := ParseMarkdown("`code`\n\n> quoted")
+
+	const wantPlain = "code\n\nquoted"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "quoted", "blockquote")
+}
+
+func TestParseMarkdown_BlockquoteAfterMultipleInlineMarkers(t *testing.T) {
+	// Combined inline markers (code + bold + italic) before a blockquote.
+	text, entities := ParseMarkdown("`a` **b** *c*\n\n> q")
+
+	const wantPlain = "a b c\n\nq"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "q", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "a", "code")
+
+	var bold *tg.MessageEntityBold
+
+	for _, ent := range entities {
+		if b, ok := ent.(*tg.MessageEntityBold); ok {
+			bold = b
+		}
+	}
+
+	if bold == nil {
+		t.Fatalf("bold entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bold.Offset, bold.Length, "b", "bold")
+
+	var italic *tg.MessageEntityItalic
+
+	for _, ent := range entities {
+		if i, ok := ent.(*tg.MessageEntityItalic); ok {
+			italic = i
+		}
+	}
+
+	if italic == nil {
+		t.Fatalf("italic entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, italic.Offset, italic.Length, "c", "italic")
+}
+
+func TestParseMarkdown_BlockquoteAfterInlineCode_Cyrillic(t *testing.T) {
+	// Reproduction from the @claudedreams/26 bug report: cyrillic prose with
+	// three inline-code spans, then two blockquotes. Previously each
+	// blockquote.Offset was shifted by 2 * (number of consumed backtick pairs
+	// before it) — exactly +6 in this input. Verifies UTF-16 offsets land on
+	// the right characters in the cleaned plain text.
+	input := "Дополнение про того же `authelia/chartrepo`. На feature-request " +
+		"issue #364 («опубликуйте чарт в OCI registry, у меня " +
+		"`charts.authelia.com` отдаёт ~300 B/s, ArgoCD renders таймаутятся»), " +
+		"мейнтейнер закрыл моё предложение `gh actions`-workflow двумя " +
+		"аргументами:\n\n" +
+		"> We don't use GHA for security critical jobs.\n\n" +
+		"и про их собственный планируемый внутренний PR:\n\n" +
+		"> it's uploading to GitHub so it probably won't solve your " +
+		"underlying issue since it's the same CDN."
+
+	text, entities := ParseMarkdown(input)
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 2 {
+		t.Fatalf("want 2 blockquote entities, got %d", len(bqs))
+	}
+
+	const (
+		firstQuote  = "We don't use GHA for security critical jobs."
+		secondQuote = "it's uploading to GitHub so it probably won't solve your " +
+			"underlying issue since it's the same CDN."
+	)
+
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, firstQuote, "blockquote[0]")
+	assertEntitySlice(t, text, bqs[1].Offset, bqs[1].Length, secondQuote, "blockquote[1]")
+}
+
+func TestParseMarkdown_InlineCodeInsideBlockquote(t *testing.T) {
+	// Inline code inside a blockquote line: parse order must still emit a
+	// code entity that points at the right UTF-16 slice in the cleaned text,
+	// and the blockquote must cover the full line.
+	text, entities := ParseMarkdown("> text `code`")
+
+	const wantPlain = "text code"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "text code", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+}
+
+func TestParseMarkdown_BlockquoteThenInlineCode(t *testing.T) {
+	// Regression for the inverse order: blockquote first, then inline code.
+	// The fix must not break this case (inline code computed in cleaned space
+	// after the blockquote line is stripped).
+	text, entities := ParseMarkdown("> q\n\n`code`")
+
+	const wantPlain = "q\n\ncode"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bq := findBlockquote(entities)
+	if bq == nil {
+		t.Fatalf("blockquote entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, bq.Offset, bq.Length, "q", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+}

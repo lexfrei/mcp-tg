@@ -34,6 +34,7 @@ internal/tools/              MCP tool handlers (74 tools)
   roots.go                   File path validation against client roots
   progress.go                Progress notification helper
   result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
+  register.go                tools.AddTool wrapper that records bool fields into the coercer registry
   mock_test.go               Mock telegram.Client for tests
 cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
 internal/telegram/
@@ -43,7 +44,7 @@ internal/telegram/
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
 internal/completions/        Argument autocompletion
-internal/middleware/         Auth guard + request logging middleware
+internal/middleware/         Auth guard, request logging, and bool-coercion middleware
 internal/testutil/           NoopClient for registration tests
 ```
 
@@ -57,7 +58,7 @@ internal/testutil/           NoopClient for registration tests
    - `NewXxxHandler(client telegram.Client) mcp.ToolHandlerFor[XxxParams, XxxResult]`
    - `XxxTool() *mcp.Tool` with appropriate `Annotations`
 2. Create `internal/tools/xxx_test.go` (TDD: tests first)
-3. Register in `cmd/mcp-tg/main.go` `registerTools()`
+3. Register in `cmd/mcp-tg/main.go` `registerTools()` via `tools.AddTool(server, registry, ...)` — NOT `mcp.AddTool`. The wrapper reflects over the Params struct, records every `bool`/`*bool` field into the registry consumed by the bool-coercion middleware, and then delegates to the SDK. Bypassing it silently disables coercion for the new tool's bool params.
 4. Add mock method in `internal/tools/mock_test.go`
 5. Add noop method in `internal/testutil/noop_client.go`
 

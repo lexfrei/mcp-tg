@@ -21,16 +21,30 @@ func TestRegisterTools(t *testing.T) {
 	registry := tools.BoolFieldRegistry{}
 	registerTools(server, client, registry, "/tmp/mcp-tg/downloads")
 
-	// tg_messages_send must register both bool params for coercion.
-	got, ok := registry["tg_messages_send"]
-	if !ok {
-		t.Fatalf("tg_messages_send missing from bool registry: %v", registry)
+	// Sample several tools spread across registration phases. If any of
+	// these is missing, someone registered the tool via mcp.AddTool instead
+	// of tools.AddTool — silently disabling bool-coercion for its params.
+	cases := map[string][]string{
+		"tg_messages_send":      {"silent", "noWebpage"},
+		"tg_messages_send_file": {"silent"},
+		"tg_dialogs_pin":        {"pinned"},
+		"tg_groups_admin_set":   {"banUsers", "addAdmins"},
+		"tg_chats_create":       {"isChannel"},
 	}
 
-	for _, name := range []string{"silent", "noWebpage"} {
-		_, has := got[name]
-		if !has {
-			t.Errorf("expected %q in tg_messages_send bool fields, got %v", name, got)
+	for name, expected := range cases {
+		got, ok := registry[name]
+		if !ok {
+			t.Errorf("%s missing from bool registry — likely registered via mcp.AddTool instead of tools.AddTool", name)
+
+			continue
+		}
+
+		for _, field := range expected {
+			_, has := got[field]
+			if !has {
+				t.Errorf("expected %q in %s bool fields, got %v", field, name, got)
+			}
 		}
 	}
 }

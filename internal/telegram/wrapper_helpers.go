@@ -16,10 +16,15 @@ const (
 	defaultLimit   = 100
 	outputDirPerms = 0o750
 	fallbackMIME   = "application/octet-stream"
-	// messageLengthFastPath is the historical Telegram message length cap.
+	// messageLengthFastPath is the historical Telegram text-message length cap.
 	// Messages within this many UTF-8 codepoints are accepted without
-	// querying the live server config, which is the hot path.
+	// querying the live server config (hot path).
 	messageLengthFastPath = 4096
+	// captionLengthFastPath is the always-safe lower bound for media captions
+	// (non-Premium default). Captions within this size never need a server
+	// roundtrip; longer ones go through the live caption_length_max check
+	// because Premium and non-Premium accounts have different caps.
+	captionLengthFastPath = 1024
 )
 
 func uploadedFileID(file tg.InputFileClass) int64 {
@@ -88,21 +93,19 @@ func buildReplyTo(topicID, replyTo int) *tg.InputReplyToMessage {
 // expensive (one MTProto round-trip on first call, cached afterwards).
 type messageLengthResolver func(context.Context) (int, error)
 
-// validateMessageLength rejects empty messages and messages that exceed the
-// server-reported message_length_max. Counting follows the Telegram
-// documentation ("length in utf8 codepoints"). If resolveMax fails (network
-// blip, transient API error), we let MTProto be authoritative — the worst
-// case is a MESSAGE_TOO_LONG round-trip, the best case is the message went
-// through.
-func validateMessageLength(
-	ctx context.Context, text string, resolveMax messageLengthResolver,
+// validateLengthAgainstServer is the shared core for message and caption
+// length validation: skip the live config lookup when text fits the
+// always-safe fast-path, otherwise compare against the server-reported cap.
+// kind is used in the error message ("message" or "caption"). On resolver
+// error returns nil so MTProto stays authoritative.
+func validateLengthAgainstServer(
+	ctx context.Context,
+	text, kind string,
+	fastPath int,
+	resolveMax messageLengthResolver,
 ) error {
-	if text == "" {
-		return errors.New("message text cannot be empty")
-	}
-
 	codepoints := utf8.RuneCountInString(text)
-	if codepoints <= messageLengthFastPath {
+	if codepoints <= fastPath {
 		return nil
 	}
 
@@ -114,12 +117,37 @@ func validateMessageLength(
 
 	if codepoints > serverMax {
 		return errors.Errorf(
-			"message length %d codepoints exceeds server limit of %d",
-			codepoints, serverMax,
+			"%s length %d codepoints exceeds server limit of %d",
+			kind, codepoints, serverMax,
 		)
 	}
 
 	return nil
+}
+
+// validateMessageLength rejects empty text-message bodies and bodies that
+// exceed the server-reported message_length_max. Counting follows the
+// Telegram documentation ("length in utf8 codepoints").
+func validateMessageLength(
+	ctx context.Context, text string, resolveMax messageLengthResolver,
+) error {
+	if text == "" {
+		return errors.New("message text cannot be empty")
+	}
+
+	return validateLengthAgainstServer(ctx, text, "message", messageLengthFastPath, resolveMax)
+}
+
+// validateCaptionLength checks media captions against the server-reported
+// caption_length_max. An empty caption is accepted (captions are optional).
+func validateCaptionLength(
+	ctx context.Context, caption string, resolveMax messageLengthResolver,
+) error {
+	if caption == "" {
+		return nil
+	}
+
+	return validateLengthAgainstServer(ctx, caption, "caption", captionLengthFastPath, resolveMax)
 }
 
 // mimeByPath guesses MIME type from file extension, falling back to octet-stream.

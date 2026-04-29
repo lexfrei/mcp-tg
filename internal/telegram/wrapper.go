@@ -14,6 +14,7 @@ import (
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -22,6 +23,14 @@ const (
 	warmDialogsThrottle  = 60 * time.Second
 )
 
+// cachedServerConfig holds the subset of help.getConfig fields we read.
+// Stored as a pointer so atomic loads see "fetched" vs "not fetched"
+// unambiguously, even when a field happens to be zero.
+type cachedServerConfig struct {
+	messageLengthMax int
+	captionLengthMax int
+}
+
 // Wrapper implements Client using gotd/td.
 type Wrapper struct {
 	api      *tg.Client
@@ -29,6 +38,8 @@ type Wrapper struct {
 	down     *downloader.Downloader
 	cache    *PeerCache
 	warmedAt atomic.Int64
+	cfg      atomic.Pointer[cachedServerConfig]
+	cfgSF    singleflight.Group
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -67,6 +78,30 @@ func NewWrapper(api *tg.Client) *Wrapper {
 		down:  downloader.NewDownloader(),
 		cache: NewPeerCache(),
 	}
+}
+
+// MessageLengthMax returns the server-reported maximum text message length
+// in UTF-8 codepoints. See serverConfig for caching semantics.
+func (w *Wrapper) MessageLengthMax(ctx context.Context) (int, error) {
+	cfg, err := w.serverConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return cfg.messageLengthMax, nil
+}
+
+// CaptionLengthMax returns the server-reported maximum media caption length
+// in UTF-8 codepoints. Premium accounts get a higher limit than non-Premium
+// — the server reports the value applicable to the current account. See
+// serverConfig for caching semantics.
+func (w *Wrapper) CaptionLengthMax(ctx context.Context) (int, error) {
+	cfg, err := w.serverConfig(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	return cfg.captionLengthMax, nil
 }
 
 // ResolvePeer resolves a string identifier to an InputPeer.
@@ -299,7 +334,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		}
 	}
 
-	validErr := validateMessageText(req.Message)
+	validErr := validateMessageLength(ctx, req.Message, w.MessageLengthMax)
 	if validErr != nil {
 		return nil, validErr
 	}
@@ -342,7 +377,7 @@ func (w *Wrapper) EditMessage(
 		}
 	}
 
-	validErr := validateMessageText(req.Message)
+	validErr := validateMessageLength(ctx, req.Message, w.MessageLengthMax)
 	if validErr != nil {
 		return nil, validErr
 	}
@@ -444,6 +479,11 @@ func (w *Wrapper) MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 // Uses ParseMode, Silent, ScheduleDate from opts.
 // NoWebpage is not applicable to media sends.
 func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error) {
+	validErr := validateCaptionLength(ctx, renderCaption(caption, opts.ParseMode), w.CaptionLengthMax)
+	if validErr != nil {
+		return nil, validErr
+	}
+
 	file, err := w.up.FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
@@ -463,19 +503,11 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 				&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
 			},
 		},
-		Message:  caption,
 		RandomID: randID,
 		Silent:   opts.Silent,
 	}
 
-	if IsCommonMarkParseMode(opts.ParseMode) && caption != "" {
-		plain, entities := ParseMarkdown(caption)
-		req.Message = plain
-
-		if len(entities) > 0 {
-			req.SetEntities(entities)
-		}
-	}
+	applySendMediaCaption(req, caption, opts.ParseMode)
 
 	if reply := buildReplyTo(opts.TopicID, opts.ReplyTo); reply != nil {
 		req.ReplyTo = reply
@@ -497,6 +529,11 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 // Uses ParseMode (for the first item's caption), Silent, ScheduleDate.
 // NoWebpage is not applicable to media sends.
 func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error) {
+	validErr := validateCaptionLength(ctx, renderCaption(caption, opts.ParseMode), w.CaptionLengthMax)
+	if validErr != nil {
+		return nil, validErr
+	}
+
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
 	for idx, path := range paths {
@@ -536,6 +573,37 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 	}
 
 	return messagesFromUpdates(result), nil
+}
+
+// renderCaption returns the on-the-wire plaintext for a caption after
+// optional CommonMark normalization. The server measures length on this
+// rendered form, not on the source markdown, so validation must too.
+func renderCaption(caption, parseMode string) string {
+	if !IsCommonMarkParseMode(parseMode) || caption == "" {
+		return caption
+	}
+
+	plain, _ := ParseMarkdown(caption)
+
+	return plain
+}
+
+// applySendMediaCaption sets the caption on a single-file media send,
+// parsing CommonMark markers into entities when parseMode selects the
+// CommonMark dialect.
+func applySendMediaCaption(req *tg.MessagesSendMediaRequest, caption, parseMode string) {
+	req.Message = caption
+
+	if !IsCommonMarkParseMode(parseMode) || caption == "" {
+		return
+	}
+
+	plain, entities := ParseMarkdown(caption)
+	req.Message = plain
+
+	if len(entities) > 0 {
+		req.SetEntities(entities)
+	}
 }
 
 // applyAlbumCaption sets the caption on the first album item, parsing
@@ -1467,6 +1535,41 @@ func (w *Wrapper) ClearAllDrafts(ctx context.Context) error {
 	_, err := w.api.MessagesClearAllDrafts(ctx)
 
 	return errors.Wrap(err, "clearing all drafts")
+}
+
+// serverConfig returns the cached help.getConfig snapshot, fetching once on
+// first need. After the first successful fetch the cache is read lock-free
+// via atomic.Pointer. Concurrent first callers are deduped via singleflight,
+// so the wire call happens at most once even under thundering-herd. Errors
+// are not cached: transient API failures retry on the next call.
+func (w *Wrapper) serverConfig(ctx context.Context) (*cachedServerConfig, error) {
+	if cached := w.cfg.Load(); cached != nil {
+		return cached, nil
+	}
+
+	val, err, _ := w.cfgSF.Do("config", func() (any, error) {
+		if cached := w.cfg.Load(); cached != nil {
+			return cached, nil
+		}
+
+		raw, err := w.api.HelpGetConfig(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "fetching help.getConfig")
+		}
+
+		snapshot := &cachedServerConfig{
+			messageLengthMax: raw.MessageLengthMax,
+			captionLengthMax: raw.CaptionLengthMax,
+		}
+		w.cfg.Store(snapshot)
+
+		return snapshot, nil
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "loading server config")
+	}
+
+	return val.(*cachedServerConfig), nil //nolint:forcetypeassert // Do() callback always returns *cachedServerConfig.
 }
 
 // warmDialogsCache paginates the full dialog list once per throttle window

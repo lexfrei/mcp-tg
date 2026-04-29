@@ -6,16 +6,20 @@ import (
 	"mime"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
 )
 
 const (
-	defaultLimit     = 100
-	outputDirPerms   = 0o750
-	fallbackMIME     = "application/octet-stream"
-	maxMessageLength = 4096
+	defaultLimit   = 100
+	outputDirPerms = 0o750
+	fallbackMIME   = "application/octet-stream"
+	// messageLengthFastPath is the historical Telegram message length cap.
+	// Messages within this many UTF-8 codepoints are accepted without
+	// querying the live server config, which is the hot path.
+	messageLengthFastPath = 4096
 )
 
 func uploadedFileID(file tg.InputFileClass) int64 {
@@ -79,14 +83,39 @@ func buildReplyTo(topicID, replyTo int) *tg.InputReplyToMessage {
 	return reply
 }
 
-func validateMessageText(text string) error {
+// messageLengthResolver returns the server-side message_length_max cap.
+// Called only when the text exceeds messageLengthFastPath, so it can be
+// expensive (one MTProto round-trip on first call, cached afterwards).
+type messageLengthResolver func(context.Context) (int, error)
+
+// validateMessageLength rejects empty messages and messages that exceed the
+// server-reported message_length_max. Counting follows the Telegram
+// documentation ("length in utf8 codepoints"). If resolveMax fails (network
+// blip, transient API error), we let MTProto be authoritative — the worst
+// case is a MESSAGE_TOO_LONG round-trip, the best case is the message went
+// through.
+func validateMessageLength(
+	ctx context.Context, text string, resolveMax messageLengthResolver,
+) error {
 	if text == "" {
 		return errors.New("message text cannot be empty")
 	}
 
-	if utf16Len(text) > maxMessageLength {
+	codepoints := utf8.RuneCountInString(text)
+	if codepoints <= messageLengthFastPath {
+		return nil
+	}
+
+	serverMax, err := resolveMax(ctx)
+	if err != nil {
+		// Resolver failure: let MTProto be authoritative, do not block on transient API hiccups.
+		return nil //nolint:nilerr // intentional fallback to server-side validation
+	}
+
+	if codepoints > serverMax {
 		return errors.Errorf(
-			"message exceeds %d character limit", maxMessageLength,
+			"message length %d codepoints exceeds server limit of %d",
+			codepoints, serverMax,
 		)
 	}
 

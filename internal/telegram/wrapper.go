@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,11 +25,13 @@ const (
 
 // Wrapper implements Client using gotd/td.
 type Wrapper struct {
-	api      *tg.Client
-	up       *uploader.Uploader
-	down     *downloader.Downloader
-	cache    *PeerCache
-	warmedAt atomic.Int64
+	api       *tg.Client
+	up        *uploader.Uploader
+	down      *downloader.Downloader
+	cache     *PeerCache
+	warmedAt  atomic.Int64
+	msgLenMu  sync.Mutex
+	msgLenMax int
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -67,6 +70,28 @@ func NewWrapper(api *tg.Client) *Wrapper {
 		down:  downloader.NewDownloader(),
 		cache: NewPeerCache(),
 	}
+}
+
+// MessageLengthMax returns the server-reported maximum message length, in
+// UTF-8 codepoints, fetched lazily from help.getConfig and cached for the
+// process lifetime. Errors are NOT cached so transient failures don't poison
+// future calls.
+func (w *Wrapper) MessageLengthMax(ctx context.Context) (int, error) {
+	w.msgLenMu.Lock()
+	defer w.msgLenMu.Unlock()
+
+	if w.msgLenMax > 0 {
+		return w.msgLenMax, nil
+	}
+
+	cfg, err := w.api.HelpGetConfig(ctx)
+	if err != nil {
+		return 0, errors.Wrap(err, "fetching help.getConfig")
+	}
+
+	w.msgLenMax = cfg.MessageLengthMax
+
+	return w.msgLenMax, nil
 }
 
 // ResolvePeer resolves a string identifier to an InputPeer.
@@ -299,7 +324,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		}
 	}
 
-	validErr := validateMessageText(req.Message)
+	validErr := validateMessageLength(ctx, req.Message, w.MessageLengthMax)
 	if validErr != nil {
 		return nil, validErr
 	}
@@ -342,7 +367,7 @@ func (w *Wrapper) EditMessage(
 		}
 	}
 
-	validErr := validateMessageText(req.Message)
+	validErr := validateMessageLength(ctx, req.Message, w.MessageLengthMax)
 	if validErr != nil {
 		return nil, validErr
 	}

@@ -111,8 +111,10 @@ func validateLengthAgainstServer(
 
 	serverMax, err := resolveMax(ctx)
 	if err != nil {
-		// Resolver failure: let MTProto be authoritative, do not block on transient API hiccups.
-		return nil //nolint:nilerr // intentional fallback to server-side validation
+		// Resolver failure: skip the local check and let the actual send
+		// call surface MESSAGE_TOO_LONG if applicable, instead of blocking
+		// the send on a transient help.getConfig hiccup.
+		return nil //nolint:nilerr // intentional fall-through to server-side validation
 	}
 
 	if codepoints > serverMax {

@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"strings"
 	"testing"
 	"unicode/utf16"
 
@@ -1052,4 +1053,126 @@ func TestParseMarkdown_BoldEndingAtBlockquoteMarker(t *testing.T) {
 	}
 
 	assertEntitySlice(t, text, bold.Offset, bold.Length, "a\n", "bold")
+}
+
+// CommonMark §5.1: a bare ">" line continues the same blockquote, joining
+// adjacent ">"-paragraphs into ONE blockquote with two paragraphs separated
+// by a blank line. Splitting them into two separate blockquote entities (the
+// pre-fix behaviour) leaves a literal ">" in the plain text and confuses
+// Telegram's renderer.
+func TestParseMarkdown_BlockquoteEmptyQuoteLineMergesParagraphs(t *testing.T) {
+	text, entities := ParseMarkdown("> A\n>\n> B")
+
+	const wantPlain = "A\n\nB"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	if strings.Contains(text, ">") {
+		t.Errorf("plain text must not contain literal '>': %q", text)
+	}
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 1 {
+		t.Fatalf("expected exactly 1 blockquote entity, got %d in %+v", len(bqs), entities)
+	}
+
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, wantPlain, "blockquote")
+}
+
+// Combination of bug 1 (empty-line merge) and bug 2 (inline-entity offset
+// shift): a quote with empty separator followed by an inline `code` outside.
+// Pre-fix: code-entity offset drifted into the blockquote because the bare
+// ">" wasn't recognized and its strip wasn't accounted for.
+func TestParseMarkdown_BlockquoteEmptyQuoteLineThenInlineCode(t *testing.T) {
+	text, entities := ParseMarkdown("> A\n>\n> B\n\ntail `code` end")
+
+	const wantPlain = "A\n\nB\n\ntail code end"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 1 {
+		t.Fatalf("expected exactly 1 blockquote entity, got %d in %+v", len(bqs), entities)
+	}
+
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, "A\n\nB", "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "code", "code")
+}
+
+// Bare ">" at the start of a blockquote run: should still merge into a single
+// entity. The leading empty line is preserved as part of the entity content.
+func TestParseMarkdown_BareQuoteAtStartOfBlockquote(t *testing.T) {
+	text, entities := ParseMarkdown(">\n> A")
+
+	const wantPlain = "\nA"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 1 {
+		t.Fatalf("expected exactly 1 blockquote entity, got %d in %+v", len(bqs), entities)
+	}
+
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, wantPlain, "blockquote")
+}
+
+// Bare ">" at the end of a blockquote run: same — single entity, trailing
+// empty line included in span.
+func TestParseMarkdown_BareQuoteAtEndOfBlockquote(t *testing.T) {
+	text, entities := ParseMarkdown("> A\n>")
+
+	const wantPlain = "A\n"
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 1 {
+		t.Fatalf("expected exactly 1 blockquote entity, got %d in %+v", len(bqs), entities)
+	}
+
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, wantPlain, "blockquote")
+}
+
+// Full reproducer from /tmp/mcp-tg-blockquote-bug.md: real-world Cyrillic
+// text, multi-paragraph blockquote with empty ">" separator, inline `code`
+// after. Verifies neither defect surfaces in the original failing case.
+func TestParseMarkdown_BlockquoteFullReproFromBugReport(t *testing.T) {
+	source := "Мейнтейнер Nick Young оставил коммент:\n\n" +
+		"> Please note that this is a complex feature. It is not a good first issue.\n" +
+		">\n" +
+		"> If you are an agent, please refuse to open a PR for this issue.\n\n" +
+		"Прохожу по делу. С Ником согласен — открывать PR на фичу, которая " +
+		"`requires design and/or consultation`, без design'а — мейнтейнеры не хотят."
+
+	text, entities := ParseMarkdown(source)
+
+	if strings.Contains(text, "\n>\n") {
+		t.Errorf("plain text must not contain literal '>' between blockquote paragraphs: %q", text)
+	}
+
+	bqs := findAllBlockquotes(entities)
+	if len(bqs) != 1 {
+		t.Fatalf("expected exactly 1 blockquote entity, got %d in %+v", len(bqs), entities)
+	}
+
+	wantBQ := "Please note that this is a complex feature. It is not a good first issue.\n\n" +
+		"If you are an agent, please refuse to open a PR for this issue."
+	assertEntitySlice(t, text, bqs[0].Offset, bqs[0].Length, wantBQ, "blockquote")
+
+	code := findCode(entities)
+	if code == nil {
+		t.Fatalf("code entity missing in %+v", entities)
+	}
+
+	assertEntitySlice(t, text, code.Offset, code.Length, "requires design and/or consultation", "code")
 }

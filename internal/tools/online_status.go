@@ -7,6 +7,11 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+const (
+	onlineStatusOnline  = "online"
+	onlineStatusOffline = "offline"
+)
+
 // OnlineStatusSetParams defines the parameters for the tg_online_status_set tool.
 type OnlineStatusSetParams struct {
 	Online bool `json:"online" jsonschema:"True to appear online, false to go offline"`
@@ -31,9 +36,9 @@ func NewOnlineStatusSetHandler(client telegram.Client) mcp.ToolHandlerFor[Online
 				telegramErr("failed to set online status", err)
 		}
 
-		status := "offline"
+		status := onlineStatusOffline
 		if params.Online {
-			status = "online"
+			status = onlineStatusOnline
 		}
 
 		return nil, OnlineStatusSetResult{

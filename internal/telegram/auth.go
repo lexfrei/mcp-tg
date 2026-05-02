@@ -114,6 +114,7 @@ func (aut *Authenticator) elicitString(ctx context.Context, message, fieldName s
 		return "", errors.New("no MCP session available for elicitation")
 	}
 
+	//nolint:goconst // "type" is a JSON Schema keyword; extracting a constant adds no clarity over the literal.
 	result, err := aut.session.Elicit(ctx, &mcp.ElicitParams{
 		Message: message,
 		RequestedSchema: map[string]any{

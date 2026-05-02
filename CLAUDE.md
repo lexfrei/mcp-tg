@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 74 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 75 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -26,7 +26,7 @@ internal/telegram/           Telegram abstraction layer
   auth.go                    Auth flow with MCP elicitation support
   resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs, invite links)
   peer_cache.go              Thread-safe cache for peer access hashes
-internal/tools/              MCP tool handlers (74 tools)
+internal/tools/              MCP tool handlers (75 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatUserName)

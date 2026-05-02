@@ -103,6 +103,7 @@ linters:
           - godox
           - revive
           - gochecknoglobals
+          - goconst
           - exhaustruct
         path: _test\.go
       - linters:

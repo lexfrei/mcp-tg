@@ -13,6 +13,20 @@ import (
 
 const defaultContextMessages = 10
 
+// Argument and prompt names. Pulled into constants because the same names
+// are referenced in the prompt definitions and in the handlers; keeping
+// them in sync via a shared symbol prevents typos.
+const (
+	promptReplyToMessage  = "reply_to_message"
+	promptSummarizeChat   = "summarize_chat"
+	promptSearchAndReply  = "search_and_reply"
+	argPeer               = "peer"
+	argMessageID          = "messageId"
+	argQuery              = "query"
+	argPeerDescription    = "Chat ID or @username"
+	promptMessageRoleUser = "user"
+)
+
 // Register adds all Telegram prompts to the MCP server.
 func Register(server *mcp.Server, client telegram.Client) {
 	server.AddPrompt(replyPrompt(), replyHandler(client))
@@ -22,32 +36,32 @@ func Register(server *mcp.Server, client telegram.Client) {
 
 func replyPrompt() *mcp.Prompt {
 	return &mcp.Prompt{
-		Name:        "reply_to_message",
+		Name:        promptReplyToMessage,
 		Description: "Get context around a message to compose a reply",
 		Arguments: []*mcp.PromptArgument{
-			{Name: "peer", Description: "Chat ID or @username", Required: true},
-			{Name: "messageId", Description: "Message ID to reply to", Required: true},
+			{Name: argPeer, Description: argPeerDescription, Required: true},
+			{Name: argMessageID, Description: "Message ID to reply to", Required: true},
 		},
 	}
 }
 
 func summarizePrompt() *mcp.Prompt {
 	return &mcp.Prompt{
-		Name:        "summarize_chat",
+		Name:        promptSummarizeChat,
 		Description: "Get recent messages from a chat for summarization",
 		Arguments: []*mcp.PromptArgument{
-			{Name: "peer", Description: "Chat ID or @username", Required: true},
+			{Name: argPeer, Description: argPeerDescription, Required: true},
 		},
 	}
 }
 
 func searchAndReplyPrompt() *mcp.Prompt {
 	return &mcp.Prompt{
-		Name:        "search_and_reply",
+		Name:        promptSearchAndReply,
 		Description: "Search for messages and prepare to reply",
 		Arguments: []*mcp.PromptArgument{
-			{Name: "peer", Description: "Chat ID or @username", Required: true},
-			{Name: "query", Description: "Search query", Required: true},
+			{Name: argPeer, Description: argPeerDescription, Required: true},
+			{Name: argQuery, Description: "Search query", Required: true},
 		},
 	}
 }
@@ -86,7 +100,7 @@ func replyHandler(client telegram.Client) mcp.PromptHandler {
 		return &mcp.GetPromptResult{
 			Description: "Reply to message " + msgIDStr + " in " + peerStr,
 			Messages: []*mcp.PromptMessage{
-				{Role: "user", Content: &mcp.TextContent{Text: buf.String()}},
+				{Role: promptMessageRoleUser, Content: &mcp.TextContent{Text: buf.String()}},
 			},
 		}, nil
 	}
@@ -122,7 +136,7 @@ func summarizeHandler(client telegram.Client) mcp.PromptHandler {
 		return &mcp.GetPromptResult{
 			Description: "Summarize conversation in " + peerStr,
 			Messages: []*mcp.PromptMessage{
-				{Role: "user", Content: &mcp.TextContent{Text: buf.String()}},
+				{Role: promptMessageRoleUser, Content: &mcp.TextContent{Text: buf.String()}},
 			},
 		}, nil
 	}
@@ -160,7 +174,7 @@ func searchAndReplyHandler(client telegram.Client) mcp.PromptHandler {
 		return &mcp.GetPromptResult{
 			Description: "Search and reply in " + peerStr,
 			Messages: []*mcp.PromptMessage{
-				{Role: "user", Content: &mcp.TextContent{Text: buf.String()}},
+				{Role: promptMessageRoleUser, Content: &mcp.TextContent{Text: buf.String()}},
 			},
 		}, nil
 	}

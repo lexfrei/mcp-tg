@@ -9,21 +9,32 @@ type inlineMarker struct {
 	kind  string
 }
 
+// markerBoldStrong / markerUnderlineStrong are the doubled inline-marker
+// patterns. Bold and underline use the same characters as italic, so they
+// must be matched first and as a single token rather than as two italic
+// markers in a row.
+const (
+	markerBoldStrong      = "**"
+	markerUnderlineStrong = "__"
+	markerStrike          = "~~"
+	markerSpoiler         = "||"
+	markerCode            = "`"
+	markerItalicAsterisk  = "*"
+	markerItalicUnderline = "_"
+)
+
 // getInlineMarkers returns markers in priority order (longest first).
 func getInlineMarkers() []inlineMarker {
 	return []inlineMarker{
-		{"**", "**", "bold"},
-		{"__", "__", "underline"},
-		{"~~", "~~", "strike"},
-		{"||", "||", "spoiler"},
-		{"`", "`", entityKindCode},
-		{"*", "*", "italic"},
-		{"_", "_", "italic"},
+		{markerBoldStrong, markerBoldStrong, EntityTypeBold},
+		{markerUnderlineStrong, markerUnderlineStrong, EntityTypeUnderline},
+		{markerStrike, markerStrike, EntityTypeStrike},
+		{markerSpoiler, markerSpoiler, EntityTypeSpoiler},
+		{markerCode, markerCode, EntityTypeCode},
+		{markerItalicAsterisk, markerItalicAsterisk, EntityTypeItalic},
+		{markerItalicUnderline, markerItalicUnderline, EntityTypeItalic},
 	}
 }
-
-// entityKindCode is the entity kind for inline code and code blocks.
-const entityKindCode = "code"
 
 // extractInlineEntities parses inline Markdown markers from text.
 func extractInlineEntities(
@@ -207,7 +218,7 @@ func writeMarkerContent(
 	inner string, marker inlineMarker, start int,
 	result *strings.Builder, entities *[]rawEntity,
 ) {
-	if marker.kind == entityKindCode {
+	if marker.kind == EntityTypeCode {
 		result.WriteString(inner)
 
 		return

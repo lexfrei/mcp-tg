@@ -204,20 +204,27 @@ func splitCodeBlock(inner string) (string, string) {
 }
 
 // blockquoteLine represents a parsed line with optional blockquote prefix.
+// stripLen records the UTF-16 length of the consumed prefix marker — 2 for
+// the canonical "> " form, 1 for a bare ">" continuation line (CommonMark
+// §5.1), and 0 for non-quote lines.
 type blockquoteLine struct {
-	text    string
-	isQuote bool
+	text     string
+	isQuote  bool
+	stripLen int
 }
 
-// quotePrefixLen is the UTF-16 length of the "> " marker stripped from each
-// blockquote line.
-const quotePrefixLen = 2
+// stripRange describes a single removed quote-prefix span in the pre-strip
+// UTF-16 coordinate system: [start, start+length).
+type stripRange struct {
+	start  int
+	length int
+}
 
-// extractBlockquotes processes lines starting with "> ". Existing entities
-// (inline markers, code, etc.) come in already remapped onto the cleaned text;
-// this pass strips the "> " prefixes, emits blockquote entities at offsets
-// taken from the cleaned-text builder, and shifts every prior entity left by
-// 2 UTF-16 units for each "> " prefix that lay before its old start.
+// extractBlockquotes processes ">"-prefixed lines. Existing entities come in
+// already remapped onto the cleaned text from the inline pass; this pass
+// strips the prefixes, merges consecutive quoted lines into one entity per
+// run (per CommonMark §5.1: a bare ">" continues the same blockquote), and
+// shifts prior entities to account for the removed UTF-16 units.
 func extractBlockquotes(
 	text string, existing []rawEntity,
 ) (string, []rawEntity) {
@@ -227,16 +234,27 @@ func extractBlockquotes(
 	return buildBlockquoteResult(parsed, existing)
 }
 
-// parseQuoteLines classifies each line as quoted or plain.
+// parseQuoteLines classifies each line. Recognised quote forms:
+//   - "> X..."  → quote line with content X, stripLen=2
+//   - ">"        → bare continuation line (empty content), stripLen=1
+//
+// Anything else is plain text. The escaped form "\>" is not handled here —
+// the leading backslash prevents the prefix match and the escape is removed
+// in a later pass.
 func parseQuoteLines(lines []string) []blockquoteLine {
 	parsed := make([]blockquoteLine, len(lines))
 
 	for idx, line := range lines {
-		if strings.HasPrefix(line, "> ") {
+		switch {
+		case strings.HasPrefix(line, "> "):
 			parsed[idx] = blockquoteLine{
-				text: line[2:], isQuote: true,
+				text: line[2:], isQuote: true, stripLen: 2,
 			}
-		} else {
+		case line == ">":
+			parsed[idx] = blockquoteLine{
+				text: "", isQuote: true, stripLen: 1,
+			}
+		default:
 			parsed[idx] = blockquoteLine{
 				text: line, isQuote: false,
 			}
@@ -246,71 +264,104 @@ func parseQuoteLines(lines []string) []blockquoteLine {
 	return parsed
 }
 
-// buildBlockquoteResult assembles plain text, emits new blockquote entities,
-// and rebases existing entities to account for stripped "> " prefixes.
-// Empty "> " lines are intentionally not emitted as blockquote entities:
-// Telegram MTProto rejects entities with length=0.
+// blockquoteState carries the running data while we walk the parsed lines
+// in buildBlockquoteResult. runStart is the cleaned-text UTF-16 offset where
+// the current quoted run began, or -1 when no run is open.
+type blockquoteState struct {
+	out         strings.Builder
+	stripRanges []stripRange
+	entities    []rawEntity
+	oldOffset   int
+	runStart    int
+}
+
+// closeRun emits one blockquote entity for the open run (if any) covering
+// [runStart, end), then resets runStart. Zero-length spans are dropped:
+// Telegram MTProto rejects length=0 entities.
+func (state *blockquoteState) closeRun(end int) {
+	if state.runStart < 0 {
+		return
+	}
+
+	if end > state.runStart {
+		state.entities = append(state.entities, rawEntity{
+			start: state.runStart, length: end - state.runStart, kind: EntityTypeBlockquote,
+		})
+	}
+
+	state.runStart = -1
+}
+
+// appendInterLineNewline writes the '\n' that joins the previous line to the
+// current one, after first closing any open run that won't continue.
+func (state *blockquoteState) appendInterLineNewline(currentIsQuote bool) {
+	if !currentIsQuote && state.runStart >= 0 {
+		state.closeRun(utf16Len(state.out.String()))
+	}
+
+	state.out.WriteByte('\n')
+	state.oldOffset++
+}
+
+// appendLine writes one parsed line's content and tracks strip ranges. For
+// quote lines it opens a run if none is open and records the stripped prefix.
+func (state *blockquoteState) appendLine(line blockquoteLine) {
+	if line.isQuote {
+		if state.runStart < 0 {
+			state.runStart = utf16Len(state.out.String())
+		}
+
+		state.stripRanges = append(state.stripRanges, stripRange{
+			start: state.oldOffset, length: line.stripLen,
+		})
+	}
+
+	state.out.WriteString(line.text)
+	state.oldOffset += line.stripLen + utf16Len(line.text)
+}
+
+// buildBlockquoteResult assembles plain text, emits one blockquote entity
+// per consecutive run of quoted lines (so "> A\n>\n> B" is ONE entity, not
+// two), and rebases existing entities to account for stripped prefixes.
+// Zero-length runs (a single bare ">" on its own with no quoted neighbours,
+// or "> " producing only an empty content line) emit no entity — Telegram
+// MTProto rejects length=0 entities.
 func buildBlockquoteResult(
 	parsed []blockquoteLine, existing []rawEntity,
 ) (string, []rawEntity) {
-	var result strings.Builder
-
-	stripPositions := make([]int, 0, len(parsed))
-
-	newEntities := make([]rawEntity, 0, len(parsed))
-	oldOffset := 0
+	state := blockquoteState{
+		stripRanges: make([]stripRange, 0, len(parsed)),
+		entities:    make([]rawEntity, 0),
+		runStart:    -1,
+	}
 
 	for idx, line := range parsed {
 		if idx > 0 {
-			result.WriteByte('\n')
-
-			oldOffset++
+			state.appendInterLineNewline(line.isQuote)
 		}
 
-		if line.isQuote {
-			stripPositions = append(stripPositions, oldOffset)
-			innerStart := utf16Len(result.String())
-
-			result.WriteString(line.text)
-
-			lineLen := utf16Len(line.text)
-			if lineLen > 0 {
-				newEntities = append(newEntities, rawEntity{
-					start:  innerStart,
-					length: lineLen,
-					kind:   "blockquote",
-				})
-			}
-
-			oldOffset += quotePrefixLen + lineLen
-		} else {
-			result.WriteString(line.text)
-
-			oldOffset += utf16Len(line.text)
-		}
+		state.appendLine(line)
 	}
 
-	adjusted := shiftForStrippedQuotes(existing, stripPositions)
+	state.closeRun(utf16Len(state.out.String()))
 
-	return result.String(), append(adjusted, newEntities...)
+	adjusted := shiftForStrippedQuotes(existing, state.stripRanges)
+
+	return state.out.String(), append(adjusted, state.entities...)
 }
 
 // shiftForStrippedQuotes returns existing entities rebased onto the
-// post-strip UTF-16 space. For each "> " strip range [sp, sp+quotePrefixLen)
-// and each entity range [start, start+length):
+// post-strip UTF-16 space. For each strip range and each entity range:
 //   - units of the strip range lying before the entity move start left;
 //   - units of the strip range lying inside the entity shrink length.
 //
-// The same arithmetic handles both clean cases (strip fully before / fully
-// inside the entity) and partial-overlap cases (strip straddling the entity
-// boundary, e.g. bold ending exactly on the ">" of a "> " prefix).
-//
-// stripPositions are UTF-16 offsets in the pre-strip text where each "> "
-// starts.
+// Strip ranges have variable length: 2 for a canonical "> " prefix, 1 for a
+// bare ">" continuation line. The same arithmetic handles both, plus
+// partial-overlap cases (e.g. bold ending exactly on the ">" of a "> ").
 func shiftForStrippedQuotes(
-	existing []rawEntity, stripPositions []int,
+	existing []rawEntity, stripRanges []stripRange,
 ) []rawEntity {
-	if len(existing) == 0 || len(stripPositions) == 0 {
+	if len(existing) == 0 || len(stripRanges) == 0 {
 		return append([]rawEntity{}, existing...)
 	}
 
@@ -318,22 +369,22 @@ func shiftForStrippedQuotes(
 	copy(out, existing)
 
 	for idx := range out {
-		out[idx] = remapForStrips(out[idx], stripPositions)
+		out[idx] = remapForStrips(out[idx], stripRanges)
 	}
 
 	return out
 }
 
 // remapForStrips applies the start/length adjustment for one entity.
-func remapForStrips(ent rawEntity, stripPositions []int) rawEntity {
+func remapForStrips(ent rawEntity, stripRanges []stripRange) rawEntity {
 	startShift := 0
 	lengthShift := 0
 	end := ent.start + ent.length
 
-	for _, sp := range stripPositions {
-		spEnd := sp + quotePrefixLen
-		startShift += rangeOverlap(sp, spEnd, 0, ent.start)
-		lengthShift += rangeOverlap(sp, spEnd, ent.start, end)
+	for _, sr := range stripRanges {
+		spEnd := sr.start + sr.length
+		startShift += rangeOverlap(sr.start, spEnd, 0, ent.start)
+		lengthShift += rangeOverlap(sr.start, spEnd, ent.start, end)
 	}
 
 	ent.start -= startShift

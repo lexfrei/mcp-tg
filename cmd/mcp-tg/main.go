@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -211,6 +212,8 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 }
 
 func registerTools(server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry, downloadDir string) {
+	tools.AddTool(server, registry, tools.ServerVersionTool(),
+		tools.NewServerVersionHandler(version, revision, runtime.Version()))
 	tools.AddTool(server, registry, tools.ProfileGetTool(), tools.NewProfileGetHandler(client))
 	tools.AddTool(server, registry, tools.DialogsListTool(), tools.NewDialogsListHandler(client))
 	tools.AddTool(server, registry, tools.DialogsSearchTool(), tools.NewDialogsSearchHandler(client))

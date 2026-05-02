@@ -120,41 +120,41 @@ func toTelegramEntities(
 //nolint:cyclop // switch over entity kinds is inherently branchy but straightforward.
 func convertEntity(ent rawEntity) tg.MessageEntityClass {
 	switch ent.kind {
-	case "bold":
+	case EntityTypeBold:
 		return &tg.MessageEntityBold{
 			Offset: ent.start, Length: ent.length,
 		}
-	case "italic":
+	case EntityTypeItalic:
 		return &tg.MessageEntityItalic{
 			Offset: ent.start, Length: ent.length,
 		}
-	case "code":
+	case EntityTypeCode:
 		return &tg.MessageEntityCode{
 			Offset: ent.start, Length: ent.length,
 		}
-	case "pre":
+	case EntityTypePre:
 		return &tg.MessageEntityPre{
 			Offset: ent.start, Length: ent.length,
 			Language: ent.extra,
 		}
-	case "strike":
+	case EntityTypeStrike:
 		return &tg.MessageEntityStrike{
 			Offset: ent.start, Length: ent.length,
 		}
-	case "underline":
+	case EntityTypeUnderline:
 		return &tg.MessageEntityUnderline{
 			Offset: ent.start, Length: ent.length,
 		}
-	case "spoiler":
+	case EntityTypeSpoiler:
 		return &tg.MessageEntitySpoiler{
 			Offset: ent.start, Length: ent.length,
 		}
-	case "text_url":
+	case EntityTypeTextURL:
 		return &tg.MessageEntityTextURL{
 			Offset: ent.start, Length: ent.length,
 			URL: ent.extra,
 		}
-	case "blockquote":
+	case EntityTypeBlockquote:
 		return &tg.MessageEntityBlockquote{
 			Offset: ent.start, Length: ent.length,
 		}

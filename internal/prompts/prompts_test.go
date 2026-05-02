@@ -2,8 +2,6 @@ package prompts
 
 import "testing"
 
-const argPeer = "peer"
-
 func TestReplyPrompt_Definition(t *testing.T) {
 	prompt := replyPrompt()
 	if prompt.Name != "reply_to_message" {

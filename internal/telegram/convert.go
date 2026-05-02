@@ -168,6 +168,19 @@ func extractTopicID(reply tg.MessageReplyHeaderClass) int {
 	return 0
 }
 
+// Media type labels returned by MessageMediaType. Exported because tests
+// reference the same string constants.
+const (
+	MediaTypePhoto    = "photo"
+	MediaTypeDocument = "document"
+	MediaTypeGeo      = "geo"
+	MediaTypeContact  = "contact"
+	MediaTypeVenue    = "venue"
+	MediaTypeWebpage  = "webpage"
+	MediaTypePoll     = "poll"
+	MediaTypeOther    = "other"
+)
+
 // MessageMediaType returns a string label for a message media type.
 func MessageMediaType(media tg.MessageMediaClass) string {
 	if media == nil {
@@ -176,21 +189,21 @@ func MessageMediaType(media tg.MessageMediaClass) string {
 
 	switch media.(type) {
 	case *tg.MessageMediaPhoto:
-		return "photo"
+		return MediaTypePhoto
 	case *tg.MessageMediaDocument:
-		return "document"
+		return MediaTypeDocument
 	case *tg.MessageMediaGeo:
-		return "geo"
+		return MediaTypeGeo
 	case *tg.MessageMediaContact:
-		return "contact"
+		return MediaTypeContact
 	case *tg.MessageMediaVenue:
-		return "venue"
+		return MediaTypeVenue
 	case *tg.MessageMediaWebPage:
-		return "webpage"
+		return MediaTypeWebpage
 	case *tg.MessageMediaPoll:
-		return "poll"
+		return MediaTypePoll
 	default:
-		return "other"
+		return MediaTypeOther
 	}
 }
 

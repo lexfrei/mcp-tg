@@ -12,6 +12,15 @@ import (
 	"github.com/gotd/td/tg"
 )
 
+// PeerInfo Type labels exposed in MCP JSON output. Distinct from the
+// internal PeerType enum — these are user-facing wire strings.
+const (
+	PeerInfoTypeUser       = "user"
+	PeerInfoTypeChat       = "chat"
+	PeerInfoTypeChannel    = "channel"
+	PeerInfoTypeSupergroup = "supergroup"
+)
+
 const (
 	defaultLimit   = 100
 	outputDirPerms = 0o750
@@ -238,7 +247,7 @@ func (w *Wrapper) getChatPeerInfo(ctx context.Context, peer InputPeer) (*PeerInf
 				Peer:  peer,
 				Title: c.Title,
 				About: about,
-				Type:  "chat",
+				Type:  PeerInfoTypeChat,
 			}, nil
 		}
 	}
@@ -820,7 +829,7 @@ func peerInfosFromChats(result tg.MessagesChatsClass) []PeerInfo {
 			infos = append(infos, PeerInfo{
 				Peer:  InputPeer{Type: PeerChat, ID: c.ID},
 				Title: c.Title,
-				Type:  "chat",
+				Type:  PeerInfoTypeChat,
 			})
 		case *tg.Channel:
 			infos = append(infos, PeerInfo{
@@ -851,7 +860,7 @@ func firstChatFromUpdates(result tg.UpdatesClass) *PeerInfo {
 			return &PeerInfo{
 				Peer:  InputPeer{Type: PeerChat, ID: c.ID},
 				Title: c.Title,
-				Type:  "chat",
+				Type:  PeerInfoTypeChat,
 			}
 		case *tg.Channel:
 			return &PeerInfo{

@@ -12,7 +12,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const defaultMessageLimit = 50
+const (
+	defaultMessageLimit = 50
+	mimeJSON            = "application/json"
+)
 
 // Register adds all Telegram resources and templates to the MCP server.
 func Register(server *mcp.Server, client telegram.Client) {
@@ -27,7 +30,7 @@ func dialogsResource() *mcp.Resource {
 		URI:         "tg://dialogs",
 		Name:        "dialogs",
 		Description: "List of all Telegram dialogs (chats, groups, channels)",
-		MIMEType:    "application/json",
+		MIMEType:    mimeJSON,
 	}
 }
 
@@ -36,7 +39,7 @@ func profileResource() *mcp.Resource {
 		URI:         "tg://profile",
 		Name:        "profile",
 		Description: "Authenticated user's Telegram profile",
-		MIMEType:    "application/json",
+		MIMEType:    mimeJSON,
 	}
 }
 
@@ -45,7 +48,7 @@ func chatInfoTemplate() *mcp.ResourceTemplate {
 		URITemplate: "tg://chat/{peer}",
 		Name:        "chat_info",
 		Description: "Information about a Telegram chat, group, or channel",
-		MIMEType:    "application/json",
+		MIMEType:    mimeJSON,
 	}
 }
 
@@ -54,7 +57,7 @@ func chatMessagesTemplate() *mcp.ResourceTemplate {
 		URITemplate: "tg://chat/{peer}/messages",
 		Name:        "chat_messages",
 		Description: "Recent messages from a Telegram chat",
-		MIMEType:    "application/json",
+		MIMEType:    mimeJSON,
 	}
 }
 
@@ -72,7 +75,7 @@ func dialogsHandler(client telegram.Client) mcp.ResourceHandler {
 
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{
-				{URI: req.Params.URI, MIMEType: "application/json", Text: string(data)},
+				{URI: req.Params.URI, MIMEType: mimeJSON, Text: string(data)},
 			},
 		}, nil
 	}
@@ -92,7 +95,7 @@ func profileHandler(client telegram.Client) mcp.ResourceHandler {
 
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{
-				{URI: req.Params.URI, MIMEType: "application/json", Text: string(data)},
+				{URI: req.Params.URI, MIMEType: mimeJSON, Text: string(data)},
 			},
 		}, nil
 	}
@@ -122,7 +125,7 @@ func chatInfoHandler(client telegram.Client) mcp.ResourceHandler {
 
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{
-				{URI: req.Params.URI, MIMEType: "application/json", Text: string(data)},
+				{URI: req.Params.URI, MIMEType: mimeJSON, Text: string(data)},
 			},
 		}, nil
 	}

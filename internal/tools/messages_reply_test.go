@@ -11,6 +11,9 @@ import (
 
 const (
 	testAliceName      = "Alice"
+	testBobName        = "Bob"
+	testPunchline      = "punchline"
+	testChatPeer       = "@chat"
 	testSetupFromEarly = "setup from earlier"
 	testSetupWord      = "setup"
 )
@@ -21,8 +24,8 @@ func messagesWithReply() []telegram.Message {
 		{
 			ID:       26154,
 			Date:     1700000001,
-			Text:     "punchline",
-			FromName: "Bob",
+			Text:     testPunchline,
+			FromName: testBobName,
 			ReplyTo:  &telegram.ReplyToInfo{MessageID: 26150},
 		},
 	}
@@ -36,7 +39,7 @@ func TestMessagesListHandler_ReplyTo_Propagated(t *testing.T) {
 	}
 	handler := NewMessagesListHandler(mock)
 
-	_, res, err := handler(context.Background(), nil, MessagesListParams{Peer: "@chat"})
+	_, res, err := handler(context.Background(), nil, MessagesListParams{Peer: testChatPeer})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +75,7 @@ func TestMessagesListHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 		messages: []telegram.Message{
 			{
 				ID:      26154,
-				Text:    "punchline",
+				Text:    testPunchline,
 				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 			},
 		},
@@ -84,7 +87,7 @@ func TestMessagesListHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 	handler := NewMessagesListHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesListParams{
-		Peer:           "@chat",
+		Peer:           testChatPeer,
 		ResolveReplies: &resolveOn,
 	})
 	if err != nil {
@@ -120,7 +123,7 @@ func TestMessagesListHandler_ResolveReplies_ParentInBatchNoFetch(t *testing.T) {
 	handler := NewMessagesListHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesListParams{
-		Peer:           "@chat",
+		Peer:           testChatPeer,
 		ResolveReplies: &resolveOn,
 	})
 	if err != nil {
@@ -149,7 +152,7 @@ func TestMessagesContextHandler_ResolveReplies_FetchesMissingParent(t *testing.T
 		messages: []telegram.Message{
 			{
 				ID:      26154,
-				Text:    "punchline",
+				Text:    testPunchline,
 				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 			},
 		},
@@ -160,7 +163,7 @@ func TestMessagesContextHandler_ResolveReplies_FetchesMissingParent(t *testing.T
 	handler := NewMessagesContextHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesContextParams{
-		Peer:           "@chat",
+		Peer:           testChatPeer,
 		MessageID:      26154,
 		ResolveReplies: &resolveOn,
 	})
@@ -189,7 +192,7 @@ func TestMessagesGetHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 		messages: []telegram.Message{
 			{
 				ID:      26154,
-				Text:    "punchline",
+				Text:    testPunchline,
 				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 			},
 		},
@@ -200,7 +203,7 @@ func TestMessagesGetHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 	handler := NewMessagesGetHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesGetParams{
-		Peer:           "@chat",
+		Peer:           testChatPeer,
 		IDs:            []int{26154},
 		ResolveReplies: &resolveOn,
 	})
@@ -236,7 +239,7 @@ func TestMessagesContextHandler_ReplyTo_Propagated(t *testing.T) {
 	handler := NewMessagesContextHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesContextParams{
-		Peer:      "@chat",
+		Peer:      testChatPeer,
 		MessageID: 26154,
 	})
 	if err != nil {
@@ -260,7 +263,7 @@ func TestMessagesGetHandler_ReplyTo_Propagated(t *testing.T) {
 	handler := NewMessagesGetHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesGetParams{
-		Peer: "@chat",
+		Peer: testChatPeer,
 		IDs:  []int{26150, 26154},
 	})
 	if err != nil {
@@ -285,7 +288,7 @@ func TestMessagesSearchHandler_ReplyTo_Propagated(t *testing.T) {
 
 	_, res, err := handler(context.Background(),
 		&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}},
-		MessagesSearchParams{Peer: "@chat", Query: "punchline"},
+		MessagesSearchParams{Peer: testChatPeer, Query: testPunchline},
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -305,7 +308,7 @@ func TestMessagesSearchHandler_ResolveReplies_FetchesMissingParent(t *testing.T)
 	primary := []telegram.Message{
 		{
 			ID:      26154,
-			Text:    "punchline",
+			Text:    testPunchline,
 			ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 		},
 	}
@@ -325,8 +328,8 @@ func TestMessagesSearchHandler_ResolveReplies_FetchesMissingParent(t *testing.T)
 		context.Background(),
 		&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}},
 		MessagesSearchParams{
-			Peer:           "@chat",
-			Query:          "punchline",
+			Peer:           testChatPeer,
+			Query:          testPunchline,
 			ResolveReplies: &resolveOn,
 		},
 	)
@@ -360,8 +363,8 @@ func TestMessagesSearchHandler_ResolveReplies_ParentInBatchNoFetch(t *testing.T)
 		context.Background(),
 		&mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}},
 		MessagesSearchParams{
-			Peer:           "@chat",
-			Query:          "punchline",
+			Peer:           testChatPeer,
+			Query:          testPunchline,
 			ResolveReplies: &resolveOn,
 		},
 	)
@@ -391,7 +394,7 @@ func TestMessagesListHandler_ResolveReplies_OutputUnchanged(t *testing.T) {
 		messages: []telegram.Message{
 			{
 				ID:      26154,
-				Text:    "punchline",
+				Text:    testPunchline,
 				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 			},
 		},
@@ -403,7 +406,7 @@ func TestMessagesListHandler_ResolveReplies_OutputUnchanged(t *testing.T) {
 	handler := NewMessagesListHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesListParams{
-		Peer:           "@chat",
+		Peer:           testChatPeer,
 		ResolveReplies: &resolveOn,
 	})
 	if err != nil {
@@ -427,7 +430,7 @@ func TestMessagesSearchGlobalHandler_ReplyTo_Propagated(t *testing.T) {
 		messages: []telegram.Message{
 			{
 				ID:      26154,
-				Text:    "punchline",
+				Text:    testPunchline,
 				ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 			},
 		},
@@ -435,7 +438,7 @@ func TestMessagesSearchGlobalHandler_ReplyTo_Propagated(t *testing.T) {
 	handler := NewMessagesSearchGlobalHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
-		Query: "punchline",
+		Query: testPunchline,
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

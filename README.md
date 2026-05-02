@@ -27,7 +27,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
 
-## Tools (58)
+## Tools (59)
 
 ### Messages (11)
 
@@ -122,6 +122,10 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 - `tg_typing_send` — Send typing indicator
 - `tg_online_status_set` — Set online/offline status
+
+### Server (1)
+
+- `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
 
 ## Resources
 

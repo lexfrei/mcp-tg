@@ -104,7 +104,7 @@ func startServer(
 	prompts.Register(server, wrapper)
 	server.AddReceivingMiddleware(
 		mcpmw.NewBoolCoercer(boolFields),
-		mcpmw.NewAuthGuard(authDone),
+		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
 		mcpmw.NewLogging(opts.Logger),
 	)
 

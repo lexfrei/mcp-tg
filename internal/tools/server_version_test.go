@@ -47,6 +47,26 @@ func TestServerVersionHandler_OutputFormat(t *testing.T) {
 	}
 }
 
+// Boundary: SHA exactly shortRevisionLen long must pass through unchanged.
+// The predicate is strict-greater (`> shortRevisionLen`), so an 8-char SHA
+// is rendered fully without a slice operation.
+func TestServerVersionHandler_RevisionExactlyEightChars(t *testing.T) {
+	handler := NewServerVersionHandler("1.2.3", "abcdefgh", "go1.26.2")
+
+	_, result, err := handler(t.Context(), nil, ServerVersionParams{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if result.Revision != "abcdefgh" {
+		t.Errorf("Revision = %q, want %q", result.Revision, "abcdefgh")
+	}
+
+	if !strings.Contains(result.Output, "abcdefgh") {
+		t.Errorf("Output %q must contain the full 8-char SHA", result.Output)
+	}
+}
+
 // Short revisions (already < 8 chars) must pass through unchanged rather than
 // crashing on the slice operation.
 func TestServerVersionHandler_ShortRevisionUnshortened(t *testing.T) {

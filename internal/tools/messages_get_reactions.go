@@ -26,6 +26,7 @@ type ReactionUserItem struct {
 // MessagesGetReactionsResult is the output of tg_messages_get_reactions.
 type MessagesGetReactionsResult struct {
 	Count     int                `json:"count"`
+	HasMore   bool               `json:"hasMore"`
 	Reactions []ReactionUserItem `json:"reactions"`
 	Output    string             `json:"output"`
 }
@@ -88,6 +89,7 @@ func fetchReactions(
 
 	return nil, MessagesGetReactionsResult{
 		Count:     len(reactions),
+		HasMore:   hasMorePage(len(reactions), limit),
 		Reactions: reactionUsersToItems(reactions),
 		Output:    formatReactionUsers(reactions),
 	}, nil

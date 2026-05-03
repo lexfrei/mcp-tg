@@ -21,8 +21,14 @@ const (
 	PeerInfoTypeSupergroup = "supergroup"
 )
 
+// DefaultLimit is the page size used by GetDialogs / GetHistory /
+// SearchMessages when the caller does not pass an explicit Limit.
+// Exported so the tools layer can compute hasMore without duplicating
+// the constant.
+const DefaultLimit = 100
+
 const (
-	defaultLimit   = 100
+	defaultLimit   = DefaultLimit
 	outputDirPerms = 0o750
 	fallbackMIME   = "application/octet-stream"
 	// messageLengthFastPath is the historical Telegram text-message length cap.

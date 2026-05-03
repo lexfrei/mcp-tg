@@ -63,6 +63,12 @@ func parseInline(text string) (string, []rawEntity) {
 			continue
 		}
 
+		if handled, newPos := tryAutolink(text, pos, &result, &entities); handled {
+			pos = newPos
+
+			continue
+		}
+
 		if handled, newPos := tryLink(text, pos, &result, &entities); handled {
 			pos = newPos
 
@@ -82,6 +88,64 @@ func parseInline(text string) (string, []rawEntity) {
 	}
 
 	return result.String(), entities
+}
+
+// kindAutolink marks a text_url entity that came from a `<url>` autolink
+// rather than a `[text](url)` link, so removeEscapes can preserve the
+// inner verbatim text per CommonMark §6.3.
+const kindAutolink = "autolink"
+
+// tryAutolink attempts to parse an angle-bracket autolink at position
+// (CommonMark §6.3: `<https://x.com>`, `<mailto:a@b>`). The display text
+// equals the URL itself; the surrounding `<>` are stripped.
+//
+//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter.
+func tryAutolink(
+	text string, pos int,
+	result *strings.Builder, entities *[]rawEntity,
+) (bool, int) {
+	if text[pos] != '<' {
+		return false, pos
+	}
+
+	rest := text[pos+1:]
+
+	closeIdx := strings.IndexByte(rest, '>')
+	if closeIdx == -1 {
+		return false, pos
+	}
+
+	inner := rest[:closeIdx]
+	if !looksLikeAutolinkURL(inner) {
+		return false, pos
+	}
+
+	start := utf16Len(result.String())
+
+	result.WriteString(inner)
+	*entities = append(*entities, rawEntity{
+		start: start, length: utf16Len(inner),
+		kind: kindAutolink, extra: inner,
+	})
+
+	return true, pos + 1 + closeIdx + 1
+}
+
+// looksLikeAutolinkURL reports whether s is a plausible autolink target.
+// Per CommonMark, an autolink content is a URI (containing `://`) or an
+// email address; we additionally accept the common `mailto:` prefix
+// without insisting on `://`. The check is intentionally loose — the
+// stricter validation happens client-side when the user clicks the link.
+func looksLikeAutolinkURL(content string) bool {
+	if content == "" {
+		return false
+	}
+
+	if strings.ContainsAny(content, " \t\n<>") {
+		return false
+	}
+
+	return strings.Contains(content, "://") || strings.HasPrefix(content, "mailto:")
 }
 
 // tryLink attempts to parse a [text](url) link at position.

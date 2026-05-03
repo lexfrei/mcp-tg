@@ -14,7 +14,7 @@ type MediaSendAlbumParams struct {
 	Paths        []string `json:"paths"                  jsonschema:"Local file paths to send as album"`
 	Caption      *string  `json:"caption,omitempty"      jsonschema:"Optional caption for the album"`
 	TopicID      *int     `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
-	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption formatting: '' plain; 'commonmark' or 'markdown' alias"`
+	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption: '' plain; 'commonmark'/'markdown' subset"`
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }
@@ -84,6 +84,11 @@ func sendAlbum(
 		return nil, telegramErr("failed to resolve peer", err)
 	}
 
+	topicErr := validateTopicID(ctx, client, peer, deref(params.TopicID))
+	if topicErr != nil {
+		return nil, validationErr(topicErr)
+	}
+
 	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
 
 	opts := telegram.SendOpts{
@@ -104,8 +109,10 @@ func sendAlbum(
 // MediaSendAlbumTool returns the MCP tool definition for tg_media_send_album.
 func MediaSendAlbumTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_media_send_album",
-		Description: "Send multiple files as an album to a Telegram chat",
+		Name: "tg_media_send_album",
+		Description: "Send multiple files as an album to a Telegram chat. " +
+			"The optional caption is attached to the FIRST file only — Telegram " +
+			"renders one caption per album, not per item.",
 		Annotations: writeAnnotations(),
 	}
 }

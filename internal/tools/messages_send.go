@@ -14,7 +14,7 @@ type MessagesSendParams struct {
 	Text         string  `json:"text"                   jsonschema:"Message text to send"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
-	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"'' plain; 'commonmark' (**bold**, [x](url)); 'markdown' alias"`
+	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"'' plain; 'commonmark' (CommonMark subset, see README); 'markdown' alias"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
@@ -42,6 +42,12 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
 				telegramErr("failed to resolve peer", err)
+		}
+
+		topicErr := validateTopicID(ctx, client, peer, deref(params.TopicID))
+		if topicErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
+				validationErr(topicErr)
 		}
 
 		msg, err := client.SendMessage(ctx, peer, params.Text, sendOptsFrom(&params))

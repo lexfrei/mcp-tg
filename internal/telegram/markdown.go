@@ -47,6 +47,7 @@ func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	text = sanitizePlaceholders(text)
 
 	plain, blocks := extractCodeBlocks(text)
+	plain, blocks = extractIndentedCodeBlocks(plain, blocks)
 
 	var entities []rawEntity
 
@@ -75,21 +76,29 @@ func utf16Len(str string) int {
 
 // extractCodeBlocks finds fenced code blocks and replaces each with a single
 // placeholder rune. Body and language are stored in order for substitution
-// later, after all other passes finish mutating the text.
+// later, after all other passes finish mutating the text. Both backtick
+// (```) and tilde (~~~) fences are recognised per CommonMark §4.5; the
+// closing fence must use the SAME character as the opening one.
 func extractCodeBlocks(text string) (string, []codeBlock) {
 	var result strings.Builder
 
 	var blocks []codeBlock
 
 	for {
-		idx := strings.Index(text, "```")
+		idx, fence := findOpenFence(text)
 		if idx == -1 {
 			break
 		}
 
-		closeIdx, lang, body := findCodeBlockEnd(text, idx)
+		closeIdx, lang, body := findCodeBlockEnd(text, idx, fence)
 		if closeIdx == -1 {
-			break
+			// Unclosed fence: write everything up through this opener as
+			// literal and resume scanning past it. Without this, a later
+			// well-formed fence of either kind would never be extracted.
+			result.WriteString(text[:idx+fenceLen])
+			text = text[idx+fenceLen:]
+
+			continue
 		}
 
 		result.WriteString(text[:idx])
@@ -103,6 +112,94 @@ func extractCodeBlocks(text string) (string, []codeBlock) {
 	result.WriteString(text)
 
 	return result.String(), blocks
+}
+
+// indentedCodePrefix is the leading whitespace that marks an indented
+// code block per CommonMark §4.4. Tab indentation is intentionally not
+// supported here — fall back to backtick or tilde fences for tabbed code.
+const indentedCodePrefix = "    "
+
+// extractIndentedCodeBlocks pulls out runs of 4-space-indented lines that
+// follow a blank line (or start-of-text) and replaces each run with one
+// preHolder placeholder, exactly like extractCodeBlocks does for fenced
+// blocks. CommonMark §4.4: indented code blocks have no language hint and
+// their leading 4-space prefix is stripped from every line.
+//
+// This pass must run before extractInlineEntities and extractBlockquotes
+// so that quoted lines like ">     code" (4 spaces of leading content
+// AFTER the ">") are not mistaken for indented code.
+func extractIndentedCodeBlocks(text string, blocks []codeBlock) (string, []codeBlock) {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	prevBlank := true
+
+	for idx := 0; idx < len(lines); idx++ {
+		line := lines[idx]
+
+		if !startsIndentedBlock(line, prevBlank) {
+			out = append(out, line)
+			prevBlank = strings.TrimSpace(line) == ""
+
+			continue
+		}
+
+		bodyLines := []string{line[len(indentedCodePrefix):]}
+
+		for idx+1 < len(lines) && strings.HasPrefix(lines[idx+1], indentedCodePrefix) {
+			idx++
+			bodyLines = append(bodyLines, lines[idx][len(indentedCodePrefix):])
+		}
+
+		out = append(out, string(preHolder))
+		blocks = append(blocks, codeBlock{
+			body: strings.Join(bodyLines, "\n"),
+			lang: "",
+		})
+		prevBlank = false
+	}
+
+	return strings.Join(out, "\n"), blocks
+}
+
+// startsIndentedBlock reports whether the line opens a new indented code
+// block — it must have the 4-space prefix, contain non-whitespace beyond
+// it, and follow a blank line (or be the first line of the document).
+func startsIndentedBlock(line string, prevBlank bool) bool {
+	if !prevBlank {
+		return false
+	}
+
+	if !strings.HasPrefix(line, indentedCodePrefix) {
+		return false
+	}
+
+	return strings.TrimSpace(line[len(indentedCodePrefix):]) != ""
+}
+
+// findOpenFence returns the index of the first opening code fence (``` or
+// ~~~) in text, plus the marker string itself. Whichever marker appears
+// first wins; in case of a tie the backtick form is preferred since it is
+// the more common style.
+//
+//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter.
+func findOpenFence(text string) (int, string) {
+	idxBacktick := strings.Index(text, fenceBacktick)
+	idxTilde := strings.Index(text, fenceTilde)
+
+	switch {
+	case idxBacktick == -1 && idxTilde == -1:
+		return -1, ""
+	case idxBacktick == -1:
+		return idxTilde, fenceTilde
+	case idxTilde == -1:
+		return idxBacktick, fenceBacktick
+	case idxBacktick < idxTilde:
+		return idxBacktick, fenceBacktick
+	default:
+		// idxBacktick > idxTilde — equality is impossible because the
+		// two markers cannot start at the same byte.
+		return idxTilde, fenceTilde
+	}
 }
 
 // substituteCodeBlocks walks text, replacing each preHolder rune with the
@@ -166,17 +263,22 @@ func shiftAfter(entities []rawEntity, threshold, delta int) {
 	}
 }
 
-// fenceLen is the length of the ``` fence marker.
-const fenceLen = 3
+// Code-fence markers per CommonMark §4.5.
+const (
+	fenceBacktick = "```"
+	fenceTilde    = "~~~"
+	fenceLen      = 3
+)
 
-// findCodeBlockEnd locates closing ``` and extracts language and body.
+// findCodeBlockEnd locates the closing fence matching the supplied opener
+// and extracts language and body.
 //
 //nolint:gocritic // unnamedResult conflicts with nonamedreturns linter.
 func findCodeBlockEnd(
-	text string, idx int,
+	text string, idx int, fence string,
 ) (int, string, string) {
 	after := text[idx+fenceLen:]
-	closePos := strings.Index(after, "```")
+	closePos := strings.Index(after, fence)
 
 	if closePos == -1 {
 		return -1, "", ""
@@ -234,9 +336,11 @@ func extractBlockquotes(
 	return buildBlockquoteResult(parsed, existing)
 }
 
-// parseQuoteLines classifies each line. Recognised quote forms:
-//   - "> X..."  → quote line with content X, stripLen=2
-//   - ">"        → bare continuation line (empty content), stripLen=1
+// parseQuoteLines classifies each line. Recognised quote forms (CommonMark
+// §5.1: the space after `>` is optional):
+//   - "> X..."  → quote line, stripLen=2 (the marker plus its single space)
+//   - ">X..."   → quote line, stripLen=1 (bare marker, no space)
+//   - ">"        → empty continuation line, stripLen=1
 //
 // Anything else is plain text. The escaped form "\>" is not handled here —
 // the leading backslash prevents the prefix match and the escape is removed
@@ -250,9 +354,9 @@ func parseQuoteLines(lines []string) []blockquoteLine {
 			parsed[idx] = blockquoteLine{
 				text: line[2:], isQuote: true, stripLen: 2,
 			}
-		case line == ">":
+		case strings.HasPrefix(line, ">"):
 			parsed[idx] = blockquoteLine{
-				text: "", isQuote: true, stripLen: 1,
+				text: line[1:], isQuote: true, stripLen: 1,
 			}
 		default:
 			parsed[idx] = blockquoteLine{

@@ -14,7 +14,14 @@ const (
 	ChannelIDOffset int64 = 1000000000000
 )
 
-// ErrPeerNotFound is returned when a peer cannot be resolved.
+// ErrPeerNotFound is returned when peer resolution succeeded at the
+// transport level but the response did not contain a peer record
+// matching the requested type. Reached only from peerFromChat (unknown
+// chat class) and peerFromResolved (no User/Channel record matches the
+// resolved peer ID). NOT reached on the numeric-ID code path — that
+// path returns a peer with AccessHash=0 and the failure surfaces later
+// as MTProto PEER_ID_INVALID, which carries the @username hint via
+// explainMTProtoCode in the tools layer.
 var ErrPeerNotFound = errors.New("peer not found")
 
 // Resolve resolves a string identifier to an InputPeer.

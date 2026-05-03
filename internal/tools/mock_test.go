@@ -44,6 +44,7 @@ type mockClient struct {
 	lastSendOpts     telegram.SendOpts
 	getMessagesCalls int
 	getMessagesIDs   []int
+	groupInfoCalls   int
 }
 
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
@@ -216,6 +217,7 @@ func (m *mockClient) SearchContacts(_ context.Context, query string, _ int) ([]t
 
 func (m *mockClient) GetGroupInfo(_ context.Context, peer telegram.InputPeer) (*telegram.GroupInfo, error) {
 	m.lastPeer = peer
+	m.groupInfoCalls++
 
 	return m.group, m.err
 }

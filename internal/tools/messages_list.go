@@ -20,6 +20,7 @@ type MessagesListParams struct {
 type MessagesListResult struct {
 	Count        int               `json:"count"`
 	Total        int               `json:"total"`
+	HasMore      bool              `json:"hasMore"`
 	Participants []ParticipantItem `json:"participants,omitempty"`
 	Messages     []MessageItem     `json:"messages"`
 	Output       string            `json:"output"`
@@ -93,6 +94,7 @@ func fetchMessages(
 	return MessagesListResult{
 		Count:        len(msgs),
 		Total:        total,
+		HasMore:      hasMorePage(len(msgs), deref(params.Limit)),
 		Participants: participantsFromMessages(msgs),
 		Messages:     messagesToItems(msgs),
 		Output:       formatMessages(msgs),

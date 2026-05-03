@@ -22,6 +22,7 @@ type MessagesSearchGlobalParams struct {
 // MessagesSearchGlobalResult is the output of tg_messages_search_global.
 type MessagesSearchGlobalResult struct {
 	Count    int           `json:"count"`
+	HasMore  bool          `json:"hasMore"`
 	Messages []MessageItem `json:"messages"`
 	Output   string        `json:"output"`
 }
@@ -59,6 +60,7 @@ func NewMessagesSearchGlobalHandler(
 
 		return nil, MessagesSearchGlobalResult{
 			Count:    len(msgs),
+			HasMore:  hasMorePage(len(msgs), limit),
 			Messages: messagesToItems(msgs),
 			Output:   fmt.Sprintf("Found %d message(s)", len(msgs)),
 		}, nil

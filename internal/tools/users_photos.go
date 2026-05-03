@@ -17,9 +17,10 @@ type UsersPhotosParams struct {
 
 // UsersPhotosResult is the output of the tg_users_get_photos tool.
 type UsersPhotosResult struct {
-	Count  int         `json:"count"`
-	Photos []PhotoItem `json:"photos"`
-	Output string      `json:"output"`
+	Count   int         `json:"count"`
+	HasMore bool        `json:"hasMore"`
+	Photos  []PhotoItem `json:"photos"`
+	Output  string      `json:"output"`
 }
 
 // NewUsersPhotosHandler creates a handler for the tg_users_get_photos tool.
@@ -61,9 +62,10 @@ func NewUsersPhotosHandler(client telegram.Client) mcp.ToolHandlerFor[UsersPhoto
 		}
 
 		return nil, UsersPhotosResult{
-			Count:  len(photos),
-			Photos: photosToItems(photos),
-			Output: buf.String(),
+			Count:   len(photos),
+			HasMore: hasMorePage(len(photos), limit),
+			Photos:  photosToItems(photos),
+			Output:  buf.String(),
 		}, nil
 	}
 }

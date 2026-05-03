@@ -18,9 +18,10 @@ type GroupsMembersListParams struct {
 
 // GroupsMembersListResult is the output of tg_groups_members_list.
 type GroupsMembersListResult struct {
-	Count  int        `json:"count"`
-	Users  []UserItem `json:"users"`
-	Output string     `json:"output"`
+	Count   int        `json:"count"`
+	HasMore bool       `json:"hasMore"`
+	Users   []UserItem `json:"users"`
+	Output  string     `json:"output"`
 }
 
 // NewGroupsMembersListHandler creates a handler for tg_groups_members_list.
@@ -83,9 +84,10 @@ func fetchGroupMembers(
 	}
 
 	return nil, GroupsMembersListResult{
-		Count:  len(users),
-		Users:  usersToItems(users),
-		Output: buf.String(),
+		Count:   len(users),
+		HasMore: hasMorePage(len(users), limit),
+		Users:   usersToItems(users),
+		Output:  buf.String(),
 	}, nil
 }
 

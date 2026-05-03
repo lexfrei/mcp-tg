@@ -127,6 +127,14 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 - `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
 
+## Markdown — Known Limitations
+
+The CommonMark subset supported via `parseMode: "commonmark"` covers most everyday formatting, but a handful of CommonMark spec features are intentionally not implemented. Each is captured as a commented-out test in `internal/telegram/markdown_audit_test.go` ready to be unblocked when work begins.
+
+- **Nested blockquotes** (`> > x`). The inner `>` is treated as literal content of the outer blockquote rather than producing a nested level. Telegram renders any depth of `>` as a single quote bar visually, so the practical loss is minor.
+- **Nested emphasis** (`**bold *italic***`). The inner italic is dropped and its asterisks are kept as literal characters. Implementing the full delimiter-run algorithm from CommonMark §6.4 would be a rewrite of the inline parser.
+- **Hard line breaks via two trailing spaces or `\`** (CommonMark §6.7). Telegram has no break entity; a plain `\n` already renders as a line break. Stripping the trailing whitespace would be silent data corruption when the user did not intend a hard break, so the parser passes both forms through unchanged.
+
 ## Resources
 
 - `tg://dialogs` — List of all dialogs (JSON)

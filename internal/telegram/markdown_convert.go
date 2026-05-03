@@ -6,22 +6,54 @@ import (
 	"github.com/gotd/td/tg"
 )
 
-// removeEscapes strips backslash escapes and adjusts entity offsets.
+// removeEscapes strips backslash escapes and adjusts entity offsets. Per
+// CommonMark §6.1, backslash escapes are inert inside code spans — the
+// inner text is taken verbatim, so we skip escape processing for any
+// position inside an inline-code entity.
 func removeEscapes(
 	text string, entities []rawEntity,
 ) (string, []rawEntity) {
 	var result strings.Builder
 
-	mapping := buildCharMapping(text, &result)
+	mapping := buildCharMapping(text, &result, codeEntityRanges(entities))
 
 	adjusted := adjustEntities(entities, mapping)
 
 	return result.String(), adjusted
 }
 
+// codeEntityRanges returns the [start, start+length) ranges of entities
+// whose inner text must be taken verbatim — inline code spans (CommonMark
+// §6.1) and angle-bracket autolinks (§6.3). Pre entities are out of scope
+// here: their bodies live in the `blocks` slice during this pass and are
+// spliced back only by substituteCodeBlocks afterwards.
+func codeEntityRanges(entities []rawEntity) []stripRange {
+	var ranges []stripRange
+
+	for _, ent := range entities {
+		if ent.kind == EntityTypeCode || ent.kind == kindAutolink {
+			ranges = append(ranges, stripRange{start: ent.start, length: ent.length})
+		}
+	}
+
+	return ranges
+}
+
+func isInsideRanges(pos int, ranges []stripRange) bool {
+	for _, r := range ranges {
+		if pos >= r.start && pos < r.start+r.length {
+			return true
+		}
+	}
+
+	return false
+}
+
 // buildCharMapping processes escapes and returns old-to-new offset map.
+// Positions inside skipRanges are treated as literal — backslashes there
+// stay in the output rather than escaping the next character.
 func buildCharMapping(
-	text string, result *strings.Builder,
+	text string, result *strings.Builder, skipRanges []stripRange,
 ) []int {
 	runes := []rune(text)
 	mapping := make([]int, len(runes)+1)
@@ -30,7 +62,7 @@ func buildCharMapping(
 	for idx := 0; idx < len(runes); idx++ {
 		mapping[idx] = newPos
 
-		if runes[idx] == '\\' && idx+1 < len(runes) {
+		if runes[idx] == '\\' && idx+1 < len(runes) && !isInsideRanges(idx, skipRanges) {
 			result.WriteRune(runes[idx+1])
 
 			newPos++
@@ -149,7 +181,7 @@ func convertEntity(ent rawEntity) tg.MessageEntityClass {
 		return &tg.MessageEntitySpoiler{
 			Offset: ent.start, Length: ent.length,
 		}
-	case EntityTypeTextURL:
+	case EntityTypeTextURL, kindAutolink:
 		return &tg.MessageEntityTextURL{
 			Offset: ent.start, Length: ent.length,
 			URL: ent.extra,

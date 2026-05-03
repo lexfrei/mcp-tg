@@ -18,6 +18,7 @@ type DialogsListParams struct {
 // DialogsListResult is the output of the tg_dialogs_list tool.
 type DialogsListResult struct {
 	Count   int          `json:"count"`
+	HasMore bool         `json:"hasMore"`
 	Dialogs []DialogItem `json:"dialogs"`
 	Output  string       `json:"output"`
 }
@@ -59,6 +60,7 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 
 		return nil, DialogsListResult{
 			Count:   len(dialogs),
+			HasMore: hasMorePage(len(dialogs), limit),
 			Dialogs: items,
 			Output:  buf.String(),
 		}, nil

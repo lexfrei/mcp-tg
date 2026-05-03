@@ -63,6 +63,12 @@ var ErrEmojiRequired = errors.New("emoji is required")
 // ErrTopicIDRequired is returned when a topic ID parameter is missing.
 var ErrTopicIDRequired = errors.New("topic ID is required")
 
+// ErrTopicIDOnNonForum is returned when topicId is supplied for a chat
+// that is not a forum-enabled supergroup.
+var ErrTopicIDOnNonForum = errors.New(
+	"topicId is only valid for forum-enabled supergroups; this chat is not a forum",
+)
+
 // ErrTooManyIDs is returned when too many message IDs are provided.
 var ErrTooManyIDs = errors.New("too many IDs (max 100)")
 

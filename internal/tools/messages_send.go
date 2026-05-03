@@ -44,6 +44,12 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 				telegramErr("failed to resolve peer", err)
 		}
 
+		topicErr := validateTopicID(ctx, client, peer, deref(params.TopicID))
+		if topicErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
+				validationErr(topicErr)
+		}
+
 		msg, err := client.SendMessage(ctx, peer, params.Text, sendOptsFrom(&params))
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},

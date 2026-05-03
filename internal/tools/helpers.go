@@ -1,13 +1,44 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
+
+// validateTopicID rejects topicId values that the chat cannot accept.
+// topicID == 0 means "no topic", which is always fine. For non-zero
+// values, the chat must be a forum-enabled supergroup; otherwise the
+// MTProto layer returns a cryptic error after the round-trip and the
+// user has no obvious way to relate it to their input. This pre-flight
+// fails fast with a clear message before any send is attempted.
+//
+// Existence of the topic itself is NOT verified here. ChannelsGetForumTopics
+// is more expensive and the failure mode (TOPIC_ID_INVALID) is already
+// fielded by wrapTelegramError downstream.
+func validateTopicID(
+	ctx context.Context, client telegram.Client, peer telegram.InputPeer, topicID int,
+) error {
+	if topicID == 0 {
+		return nil
+	}
+
+	info, err := client.GetGroupInfo(ctx, peer)
+	if err != nil {
+		return errors.Wrap(err, "fetching group info to validate topicId")
+	}
+
+	if info == nil || !info.IsForum {
+		return ErrTopicIDOnNonForum
+	}
+
+	return nil
+}
 
 // normalizeParseMode lowercases the input so callers can pass
 // "Markdown", "COMMONMARK" etc. without getting a validation error.

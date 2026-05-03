@@ -83,6 +83,11 @@ func uploadAndSendFile(
 		return nil, telegramErr("failed to resolve peer", err)
 	}
 
+	topicErr := validateTopicID(ctx, client, peer, deref(params.TopicID))
+	if topicErr != nil {
+		return nil, validationErr(topicErr)
+	}
+
 	notifyProgress(ctx, req.Session, token, 0, 1, "Uploading file")
 
 	opts := telegram.SendOpts{

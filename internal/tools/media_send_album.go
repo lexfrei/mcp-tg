@@ -84,6 +84,11 @@ func sendAlbum(
 		return nil, telegramErr("failed to resolve peer", err)
 	}
 
+	topicErr := validateTopicID(ctx, client, peer, deref(params.TopicID))
+	if topicErr != nil {
+		return nil, validationErr(topicErr)
+	}
+
 	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
 
 	opts := telegram.SendOpts{

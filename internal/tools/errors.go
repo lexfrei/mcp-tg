@@ -1,7 +1,11 @@
 // Package tools provides MCP tool handlers for Telegram operations.
 package tools
 
-import "github.com/cockroachdb/errors"
+import (
+	"strings"
+
+	"github.com/cockroachdb/errors"
+)
 
 // ErrValidation indicates invalid parameters provided by the caller.
 var ErrValidation = errors.New("validation error")
@@ -98,15 +102,60 @@ func validationErr(err error) error {
 	return errors.Mark(err, ErrValidation)
 }
 
-// telegramErr wraps a message and underlying error as a Telegram request error.
+// telegramErr wraps a message and underlying error as a Telegram request
+// error. Well-known MTProto error codes (REPLY_MESSAGE_ID_INVALID etc.)
+// pick up an extra human-readable layer via wrapTelegramError so callers
+// see why the request failed without parsing the raw rpc-error string.
 func telegramErr(msg string, err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category on top of Wrap which provides context.
-	return errors.Mark(errors.Wrap(err, msg), ErrTelegram)
+	return errors.Mark(errors.Wrap(wrapTelegramError(err), msg), ErrTelegram)
+}
+
+// explainMTProtoCode returns a short human-readable explanation for a
+// well-known MTProto error code, or empty string if the code is not in
+// our translation table. Match is on substring of err.Error() because
+// gotd/td prefixes the code with "rpc error code N:" or similar.
+//
+//nolint:cyclop,gocyclo // long flat switch is the clearest way to express the lookup table
+func explainMTProtoCode(raw string) string {
+	switch {
+	case strings.Contains(raw, "REPLY_MESSAGE_ID_INVALID"):
+		return "the reply target message does not exist in this chat"
+	case strings.Contains(raw, "MESSAGE_ID_INVALID"):
+		return "the referenced message does not exist or is no longer accessible"
+	case strings.Contains(raw, "TOPIC_ID_INVALID"):
+		return "the forum topic does not exist or has been deleted"
+	case strings.Contains(raw, "TOPIC_DELETED"):
+		return "the forum topic has been deleted"
+	case strings.Contains(raw, "PEER_ID_INVALID"):
+		return "the peer is invalid; resolve via @username if you used a numeric ID"
+	case strings.Contains(raw, "USER_BANNED_IN_CHANNEL"):
+		return "this account is banned in the target channel"
+	case strings.Contains(raw, "CHAT_WRITE_FORBIDDEN"):
+		return "this account is not permitted to write in the target chat"
+	case strings.Contains(raw, "MESSAGE_TOO_LONG"):
+		return "the message text exceeds the server's length limit"
+	case strings.Contains(raw, "MEDIA_CAPTION_TOO_LONG"):
+		return "the caption exceeds the server's length limit"
+	case strings.Contains(raw, "SLOWMODE_WAIT"):
+		return "the chat has slow mode enabled and this account must wait before sending"
+	default:
+		return ""
+	}
 }
 
 // wrapTelegramError translates well-known MTProto error codes into
-// human-readable forms while leaving everything else untouched. Stubbed in
-// commit 0; real translation table lands in commit 8.
+// human-readable forms while leaving everything else untouched. The
+// original error is preserved as the cause so callers can still match
+// on the underlying type or code.
 func wrapTelegramError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if explanation := explainMTProtoCode(err.Error()); explanation != "" {
+		return errors.Wrap(err, explanation)
+	}
+
 	return err
 }

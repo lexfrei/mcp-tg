@@ -22,15 +22,16 @@ func removeEscapes(
 	return result.String(), adjusted
 }
 
-// codeEntityRanges returns the [start, start+length) ranges of inline code
-// entities. Pre entities are out of scope here: their bodies live in the
-// `blocks` slice during this pass and are spliced back only by
-// substituteCodeBlocks afterwards.
+// codeEntityRanges returns the [start, start+length) ranges of entities
+// whose inner text must be taken verbatim — inline code spans (CommonMark
+// §6.1) and angle-bracket autolinks (§6.3). Pre entities are out of scope
+// here: their bodies live in the `blocks` slice during this pass and are
+// spliced back only by substituteCodeBlocks afterwards.
 func codeEntityRanges(entities []rawEntity) []stripRange {
 	var ranges []stripRange
 
 	for _, ent := range entities {
-		if ent.kind == EntityTypeCode {
+		if ent.kind == EntityTypeCode || ent.kind == kindAutolink {
 			ranges = append(ranges, stripRange{start: ent.start, length: ent.length})
 		}
 	}
@@ -180,7 +181,7 @@ func convertEntity(ent rawEntity) tg.MessageEntityClass {
 		return &tg.MessageEntitySpoiler{
 			Offset: ent.start, Length: ent.length,
 		}
-	case EntityTypeTextURL:
+	case EntityTypeTextURL, kindAutolink:
 		return &tg.MessageEntityTextURL{
 			Offset: ent.start, Length: ent.length,
 			URL: ent.extra,

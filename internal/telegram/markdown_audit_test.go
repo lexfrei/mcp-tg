@@ -228,6 +228,34 @@ func TestAudit_UnclosedFenceDoesNotSwallowLaterFence(t *testing.T) {
 	assertPreBody(t, text, pres[0], "ok")
 }
 
+// Autolinks must take their content verbatim per CommonMark §6.3 — a
+// backslash inside an autolink URL is a literal character, not an escape.
+// Symmetric to the inline-code rule fixed in TestAudit_BackslashInCodeSpan.
+func TestAudit_BackslashInAutolink(t *testing.T) {
+	text, entities := ParseMarkdown(`<https://example.com/c\d>`)
+
+	const wantPlain = `https://example.com/c\d`
+	if text != wantPlain {
+		t.Fatalf("plain = %q, want %q", text, wantPlain)
+	}
+
+	var link *tg.MessageEntityTextURL
+
+	for _, ent := range entities {
+		if l, ok := ent.(*tg.MessageEntityTextURL); ok {
+			link = l
+		}
+	}
+
+	if link == nil {
+		t.Fatalf("text_url entity missing in %+v", entities)
+	}
+
+	if link.URL != wantPlain {
+		t.Errorf("URL = %q, want %q (backslash kept verbatim)", link.URL, wantPlain)
+	}
+}
+
 // CommonMark §6.7 hard line break with backslash: a `\` immediately before
 // `\n` triggers a hard break. Telegram has no break entity but the `\n`
 // alone renders correctly. Current parser strips the backslash via the

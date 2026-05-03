@@ -90,6 +90,11 @@ func parseInline(text string) (string, []rawEntity) {
 	return result.String(), entities
 }
 
+// kindAutolink marks a text_url entity that came from a `<url>` autolink
+// rather than a `[text](url)` link, so removeEscapes can preserve the
+// inner verbatim text per CommonMark §6.3.
+const kindAutolink = "autolink"
+
 // tryAutolink attempts to parse an angle-bracket autolink at position
 // (CommonMark §6.3: `<https://x.com>`, `<mailto:a@b>`). The display text
 // equals the URL itself; the surrounding `<>` are stripped.
@@ -120,7 +125,7 @@ func tryAutolink(
 	result.WriteString(inner)
 	*entities = append(*entities, rawEntity{
 		start: start, length: utf16Len(inner),
-		kind: EntityTypeTextURL, extra: inner,
+		kind: kindAutolink, extra: inner,
 	})
 
 	return true, pos + 1 + closeIdx + 1

@@ -193,9 +193,11 @@ func findOpenFence(text string) (int, string) {
 		return idxTilde, fenceTilde
 	case idxTilde == -1:
 		return idxBacktick, fenceBacktick
-	case idxBacktick <= idxTilde:
+	case idxBacktick < idxTilde:
 		return idxBacktick, fenceBacktick
 	default:
+		// idxBacktick > idxTilde — equality is impossible because the
+		// two markers cannot start at the same byte.
 		return idxTilde, fenceTilde
 	}
 }

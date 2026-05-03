@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // When peer resolution fails because the user passed a numeric ID for a
@@ -152,5 +153,116 @@ func TestAudit_PaginationHasMore(t *testing.T) {
 
 	if structured2.HasMore {
 		t.Errorf("HasMore = true, want false (returned %d items at limit %d)", structured2.Count, limit)
+	}
+}
+
+// hasMorePage's fallback path: when the caller passes no limit (or 0),
+// the helper must compare against telegram.DefaultLimit. Direct unit
+// test rather than indirect via a tool, so the contract is locked in
+// without depending on any handler shape.
+func TestAudit_HasMorePage_DefaultLimitFallback(t *testing.T) {
+	cases := []struct {
+		count, requested int
+		want             bool
+	}{
+		{count: 100, requested: 0, want: true},  // saturates default
+		{count: 99, requested: 0, want: false},  // one short of default
+		{count: 100, requested: -1, want: true}, // negative also falls back
+		{count: 5, requested: 5, want: true},    // exact-fit at custom limit
+		{count: 4, requested: 5, want: false},   // short of custom limit
+	}
+
+	for _, tc := range cases {
+		got := hasMorePage(tc.count, tc.requested)
+		if got != tc.want {
+			t.Errorf("hasMorePage(%d, %d) = %v, want %v", tc.count, tc.requested, got, tc.want)
+		}
+	}
+}
+
+// groups_list filters from a full dialog page; HasMore must reflect the
+// underlying dialog page (some non-group dialogs may have been skipped),
+// not the filtered groups slice. Pin the design so a future "fix" to
+// `hasMorePage(len(groups), limit)` can't pass review.
+func TestAudit_GroupsListHasMoreUsesUnderlyingDialogPage(t *testing.T) {
+	const limit = 4
+
+	mock := &mockClient{
+		dialogs: []telegram.Dialog{
+			{Title: "user", IsGroup: false},
+			{Title: "group1", IsGroup: true},
+			{Title: "user2", IsGroup: false},
+			{Title: "group2", IsGroup: true},
+		},
+	}
+	handler := NewGroupsListHandler(mock)
+
+	limitVal := limit
+
+	_, structured, err := handler(context.Background(), nil, GroupsListParams{Limit: &limitVal})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.Count != 2 {
+		t.Errorf("filtered Count = %d, want 2", structured.Count)
+	}
+
+	if !structured.HasMore {
+		t.Errorf("HasMore = false; the underlying dialog page saturated limit %d, more groups may follow", limit)
+	}
+}
+
+// emptyToolRequest builds a minimal CallToolRequest sufficient to dive
+// into a handler's body without nil-deref panics on req.Params or
+// req.Session lookups (both nil-safe in the production code).
+func emptyToolRequest() *mcp.CallToolRequest {
+	return &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{}}
+}
+
+// topicId pre-flight must fire on every send tool, not just messages_send.
+// Drift would happen if someone inlined the validation differently in
+// send_file or media_send_album.
+func TestAudit_TopicIDValidatedOnSendFile(t *testing.T) {
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+	}
+	handler := NewMessagesSendFileHandler(mock)
+
+	topicID := 7
+
+	_, _, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
+		Peer:    "@user",
+		Path:    "/tmp/x",
+		TopicID: &topicID,
+	})
+	if err == nil {
+		t.Fatal("expected error for topicId on a user peer in send_file")
+	}
+
+	if !strings.Contains(strings.ToLower(err.Error()), "forum") {
+		t.Errorf("send_file error %q must mention 'forum'", err)
+	}
+}
+
+func TestAudit_TopicIDValidatedOnMediaAlbum(t *testing.T) {
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+	}
+	handler := NewMediaSendAlbumHandler(mock)
+
+	topicID := 7
+
+	_, _, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
+		Peer:    "@user",
+		Paths:   []string{"/tmp/a", "/tmp/b"},
+		TopicID: &topicID,
+	})
+	if err == nil {
+		t.Fatal("expected error for topicId on a user peer in media_album")
+	}
+
+	if !strings.Contains(strings.ToLower(err.Error()), "forum") {
+		t.Errorf("media_album error %q must mention 'forum'", err)
 	}
 }

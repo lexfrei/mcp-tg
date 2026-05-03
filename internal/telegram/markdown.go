@@ -234,9 +234,11 @@ func extractBlockquotes(
 	return buildBlockquoteResult(parsed, existing)
 }
 
-// parseQuoteLines classifies each line. Recognised quote forms:
-//   - "> X..."  → quote line with content X, stripLen=2
-//   - ">"        → bare continuation line (empty content), stripLen=1
+// parseQuoteLines classifies each line. Recognised quote forms (CommonMark
+// §5.1: the space after `>` is optional):
+//   - "> X..."  → quote line, stripLen=2 (the marker plus its single space)
+//   - ">X..."   → quote line, stripLen=1 (bare marker, no space)
+//   - ">"        → empty continuation line, stripLen=1
 //
 // Anything else is plain text. The escaped form "\>" is not handled here —
 // the leading backslash prevents the prefix match and the escape is removed
@@ -250,9 +252,9 @@ func parseQuoteLines(lines []string) []blockquoteLine {
 			parsed[idx] = blockquoteLine{
 				text: line[2:], isQuote: true, stripLen: 2,
 			}
-		case line == ">":
+		case strings.HasPrefix(line, ">"):
 			parsed[idx] = blockquoteLine{
-				text: "", isQuote: true, stripLen: 1,
+				text: line[1:], isQuote: true, stripLen: 1,
 			}
 		default:
 			parsed[idx] = blockquoteLine{

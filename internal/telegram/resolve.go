@@ -14,8 +14,12 @@ const (
 	ChannelIDOffset int64 = 1000000000000
 )
 
-// ErrPeerNotFound is returned when a peer cannot be resolved.
-var ErrPeerNotFound = errors.New("peer not found")
+// ErrPeerNotFound is returned when a peer cannot be resolved. The hint
+// to use @username matters: numeric IDs only resolve when the peer is
+// already in the dialog cache (or the running account has an access
+// hash for it), whereas @usernames go through ContactsResolveUsername
+// and work for any public peer.
+var ErrPeerNotFound = errors.New("peer not found; try @username instead of a numeric ID")
 
 // Resolve resolves a string identifier to an InputPeer.
 // Accepts: numeric ID, @username, bare username, t.me/username URL.

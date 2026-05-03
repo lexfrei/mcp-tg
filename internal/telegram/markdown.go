@@ -75,19 +75,21 @@ func utf16Len(str string) int {
 
 // extractCodeBlocks finds fenced code blocks and replaces each with a single
 // placeholder rune. Body and language are stored in order for substitution
-// later, after all other passes finish mutating the text.
+// later, after all other passes finish mutating the text. Both backtick
+// (```) and tilde (~~~) fences are recognised per CommonMark §4.5; the
+// closing fence must use the SAME character as the opening one.
 func extractCodeBlocks(text string) (string, []codeBlock) {
 	var result strings.Builder
 
 	var blocks []codeBlock
 
 	for {
-		idx := strings.Index(text, "```")
+		idx, fence := findOpenFence(text)
 		if idx == -1 {
 			break
 		}
 
-		closeIdx, lang, body := findCodeBlockEnd(text, idx)
+		closeIdx, lang, body := findCodeBlockEnd(text, idx, fence)
 		if closeIdx == -1 {
 			break
 		}
@@ -103,6 +105,30 @@ func extractCodeBlocks(text string) (string, []codeBlock) {
 	result.WriteString(text)
 
 	return result.String(), blocks
+}
+
+// findOpenFence returns the index of the first opening code fence (``` or
+// ~~~) in text, plus the marker string itself. Whichever marker appears
+// first wins; in case of a tie the backtick form is preferred since it is
+// the more common style.
+//
+//nolint:gocritic // unnamedResult conflicts with nonamedreturns linter.
+func findOpenFence(text string) (int, string) {
+	idxBacktick := strings.Index(text, fenceBacktick)
+	idxTilde := strings.Index(text, fenceTilde)
+
+	switch {
+	case idxBacktick == -1 && idxTilde == -1:
+		return -1, ""
+	case idxBacktick == -1:
+		return idxTilde, fenceTilde
+	case idxTilde == -1:
+		return idxBacktick, fenceBacktick
+	case idxBacktick <= idxTilde:
+		return idxBacktick, fenceBacktick
+	default:
+		return idxTilde, fenceTilde
+	}
 }
 
 // substituteCodeBlocks walks text, replacing each preHolder rune with the
@@ -166,17 +192,22 @@ func shiftAfter(entities []rawEntity, threshold, delta int) {
 	}
 }
 
-// fenceLen is the length of the ``` fence marker.
-const fenceLen = 3
+// Code-fence markers per CommonMark §4.5.
+const (
+	fenceBacktick = "```"
+	fenceTilde    = "~~~"
+	fenceLen      = 3
+)
 
-// findCodeBlockEnd locates closing ``` and extracts language and body.
+// findCodeBlockEnd locates the closing fence matching the supplied opener
+// and extracts language and body.
 //
 //nolint:gocritic // unnamedResult conflicts with nonamedreturns linter.
 func findCodeBlockEnd(
-	text string, idx int,
+	text string, idx int, fence string,
 ) (int, string, string) {
 	after := text[idx+fenceLen:]
-	closePos := strings.Index(after, "```")
+	closePos := strings.Index(after, fence)
 
 	if closePos == -1 {
 		return -1, "", ""

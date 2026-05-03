@@ -116,10 +116,12 @@ The first four tools also accept an optional `resolveReplies` parameter (default
 Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_file`, `media_send_album`) accept `parseMode`:
 
 - `""` (empty / omitted) — plain text, no formatting.
-- `"commonmark"` — CommonMark subset: `**bold**`, `*italic*`, `` `code` ``, ` ```pre``` `, `[text](url)`, `> quote`, `~~strike~~`, `__underline__`, `||spoiler||`. Parsed into `tg.MessageEntity` on the server side.
+- `"commonmark"` — CommonMark subset: `**bold**`, `*italic*`, `` `code` ``, ` ```pre``` `, `~~~pre~~~`, 4-space indented code blocks, `[text](url)`, `<https://autolink>`, `> quote`, `>quote` (no space ok), `~~strike~~`, `__underline__`, `||spoiler||`. Parsed into `tg.MessageEntity` on the server side.
 - `"markdown"` — legacy alias for `commonmark`.
 - `"html"` / `"markdownv2"` — recognised but not yet implemented; return a clear error.
 - Anything else — rejected with the list of allowed values.
+
+Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 
 ### Telegram protocol details
 

@@ -109,8 +109,10 @@ func sendAlbum(
 // MediaSendAlbumTool returns the MCP tool definition for tg_media_send_album.
 func MediaSendAlbumTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_media_send_album",
-		Description: "Send multiple files as an album to a Telegram chat",
+		Name: "tg_media_send_album",
+		Description: "Send multiple files as an album to a Telegram chat. " +
+			"The optional caption is attached to the FIRST file only — Telegram " +
+			"renders one caption per album, not per item.",
 		Annotations: writeAnnotations(),
 	}
 }

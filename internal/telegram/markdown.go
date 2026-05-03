@@ -47,6 +47,7 @@ func ParseMarkdown(text string) (string, []tg.MessageEntityClass) {
 	text = sanitizePlaceholders(text)
 
 	plain, blocks := extractCodeBlocks(text)
+	plain, blocks = extractIndentedCodeBlocks(plain, blocks)
 
 	var entities []rawEntity
 
@@ -105,6 +106,68 @@ func extractCodeBlocks(text string) (string, []codeBlock) {
 	result.WriteString(text)
 
 	return result.String(), blocks
+}
+
+// indentedCodePrefix is the leading whitespace that marks an indented
+// code block per CommonMark §4.4. Tab indentation is intentionally not
+// supported here — fall back to backtick or tilde fences for tabbed code.
+const indentedCodePrefix = "    "
+
+// extractIndentedCodeBlocks pulls out runs of 4-space-indented lines that
+// follow a blank line (or start-of-text) and replaces each run with one
+// preHolder placeholder, exactly like extractCodeBlocks does for fenced
+// blocks. CommonMark §4.4: indented code blocks have no language hint and
+// their leading 4-space prefix is stripped from every line.
+//
+// This pass must run before extractInlineEntities and extractBlockquotes
+// so that quoted lines like ">     code" (4 spaces of leading content
+// AFTER the ">") are not mistaken for indented code.
+func extractIndentedCodeBlocks(text string, blocks []codeBlock) (string, []codeBlock) {
+	lines := strings.Split(text, "\n")
+	out := make([]string, 0, len(lines))
+	prevBlank := true
+
+	for idx := 0; idx < len(lines); idx++ {
+		line := lines[idx]
+
+		if !startsIndentedBlock(line, prevBlank) {
+			out = append(out, line)
+			prevBlank = strings.TrimSpace(line) == ""
+
+			continue
+		}
+
+		bodyLines := []string{line[len(indentedCodePrefix):]}
+
+		for idx+1 < len(lines) && strings.HasPrefix(lines[idx+1], indentedCodePrefix) {
+			idx++
+			bodyLines = append(bodyLines, lines[idx][len(indentedCodePrefix):])
+		}
+
+		out = append(out, string(preHolder))
+		blocks = append(blocks, codeBlock{
+			body: strings.Join(bodyLines, "\n"),
+			lang: "",
+		})
+		prevBlank = false
+	}
+
+	return strings.Join(out, "\n"), blocks
+}
+
+// startsIndentedBlock reports whether the line opens a new indented code
+// block — it must have the 4-space prefix, contain non-whitespace beyond
+// it, and follow a blank line (or be the first line of the document).
+func startsIndentedBlock(line string, prevBlank bool) bool {
+	if !prevBlank {
+		return false
+	}
+
+	if !strings.HasPrefix(line, indentedCodePrefix) {
+		return false
+	}
+
+	return strings.TrimSpace(line[len(indentedCodePrefix):]) != ""
 }
 
 // findOpenFence returns the index of the first opening code fence (``` or

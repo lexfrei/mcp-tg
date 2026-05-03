@@ -97,3 +97,10 @@ func telegramErr(msg string, err error) error {
 	//nolint:wrapcheck // Mark adds a sentinel category on top of Wrap which provides context.
 	return errors.Mark(errors.Wrap(err, msg), ErrTelegram)
 }
+
+// wrapTelegramError translates well-known MTProto error codes into
+// human-readable forms while leaving everything else untouched. Stubbed in
+// commit 0; real translation table lands in commit 8.
+func wrapTelegramError(err error) error {
+	return err
+}

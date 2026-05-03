@@ -11,14 +11,17 @@ package telegram
 //   - TestAudit_IndentedCodeBlock
 //   - TestAudit_AngleBracketAutolink
 //
-// Six tests pin existing CORRECT behaviour to guard against regressions:
+// Five tests pin existing CORRECT behaviour to guard against regressions:
 //
 //   - TestAudit_LazyContinuationStable
 //   - TestAudit_WordInternalUnderscoreStable
 //   - TestAudit_ATXHeaderPassthroughStable
 //   - TestAudit_SetextHeaderPassthroughStable
 //   - TestAudit_BackslashHardBreakStable
-//   - (one more if extracted later)
+//
+// Plus one regression-pin against the v0.12 review findings:
+//
+//   - TestAudit_UnclosedFenceDoesNotSwallowLaterFence
 //
 // Three audit findings are deliberately NOT fixed in this PR. They are
 // captured below as commented-out test blocks describing the expected
@@ -202,6 +205,27 @@ func TestAudit_SetextHeaderPassthroughStable(t *testing.T) {
 	if len(entities) != 0 {
 		t.Errorf("expected 0 entities for setext header, got %d", len(entities))
 	}
+}
+
+// An unclosed fence at the start of input must NOT swallow a later
+// well-formed fence — the parser should advance past the failed open
+// and continue scanning. Reviewer regression: prior to the v0.12 fix,
+// `findOpenFence` saw the first '```', findCodeBlockEnd returned -1, and
+// the loop broke entirely, leaving any subsequent valid fence unmatched.
+func TestAudit_UnclosedFenceDoesNotSwallowLaterFence(t *testing.T) {
+	source := "``` no close\n\n~~~go\nok\n~~~"
+	text, entities := ParseMarkdown(source)
+
+	pres := findAllPre(entities)
+	if len(pres) != 1 {
+		t.Fatalf("expected 1 pre entity from the closed tilde block, got %d in %+v", len(pres), entities)
+	}
+
+	if pres[0].Language != "go" {
+		t.Errorf("Language = %q, want %q", pres[0].Language, "go")
+	}
+
+	assertPreBody(t, text, pres[0], "ok")
 }
 
 // CommonMark §6.7 hard line break with backslash: a `\` immediately before

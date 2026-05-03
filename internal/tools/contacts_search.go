@@ -17,9 +17,10 @@ type ContactsSearchParams struct {
 
 // ContactsSearchResult is the output of the tg_contacts_search tool.
 type ContactsSearchResult struct {
-	Count  int        `json:"count"`
-	Users  []UserItem `json:"users"`
-	Output string     `json:"output"`
+	Count   int        `json:"count"`
+	HasMore bool       `json:"hasMore"`
+	Users   []UserItem `json:"users"`
+	Output  string     `json:"output"`
 }
 
 // NewContactsSearchHandler creates a handler for the tg_contacts_search tool.
@@ -55,9 +56,10 @@ func NewContactsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Contact
 		}
 
 		return nil, ContactsSearchResult{
-			Count:  len(users),
-			Users:  usersToItems(users),
-			Output: buf.String(),
+			Count:   len(users),
+			HasMore: hasMorePage(len(users), limit),
+			Users:   usersToItems(users),
+			Output:  buf.String(),
 		}, nil
 	}
 }

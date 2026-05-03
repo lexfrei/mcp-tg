@@ -13,7 +13,7 @@ type MessagesEditParams struct {
 	Peer      string  `json:"peer"                jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int     `json:"messageId"           jsonschema:"ID of the message to edit"`
 	Text      string  `json:"text"                jsonschema:"New message text"`
-	ParseMode *string `json:"parseMode,omitempty" jsonschema:"'' plain; 'commonmark' (**bold**, [x](url)); 'markdown' alias"`
+	ParseMode *string `json:"parseMode,omitempty" jsonschema:"'' plain; 'commonmark' (CommonMark subset, see README); 'markdown' alias"`
 }
 
 // MessagesEditResult is the output of the tg_messages_edit tool.

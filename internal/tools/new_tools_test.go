@@ -1171,6 +1171,7 @@ func TestMessagesSendHandler_WithTopicID(t *testing.T) {
 	topicID := 42
 	mock := &mockClient{
 		message: &telegram.Message{ID: 1},
+		peer:    telegram.InputPeer{Type: telegram.PeerChannel, ID: 1, AccessHash: 1},
 		group:   &telegram.GroupInfo{IsForum: true, IsSupergroup: true, Title: "Forum"},
 	}
 	handler := NewMessagesSendHandler(mock)

@@ -16,9 +16,10 @@ type GroupsListParams struct {
 
 // GroupsListResult is the output of the tg_groups_list tool.
 type GroupsListResult struct {
-	Count  int          `json:"count"`
-	Groups []DialogItem `json:"groups"`
-	Output string       `json:"output"`
+	Count   int          `json:"count"`
+	HasMore bool         `json:"hasMore"`
+	Groups  []DialogItem `json:"groups"`
+	Output  string       `json:"output"`
 }
 
 // NewGroupsListHandler creates a handler for the tg_groups_list tool.
@@ -58,9 +59,13 @@ func NewGroupsListHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsListP
 		}
 
 		return nil, GroupsListResult{
-			Count:  len(groups),
-			Groups: groups,
-			Output: buf.String(),
+			Count: len(groups),
+			// hasMore is computed from the underlying dialog page size,
+			// not the filtered groups count: a full dialog page may
+			// contain more groups beyond it.
+			HasMore: hasMorePage(len(dialogs), limit),
+			Groups:  groups,
+			Output:  buf.String(),
 		}, nil
 	}
 }

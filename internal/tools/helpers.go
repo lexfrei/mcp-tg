@@ -18,6 +18,11 @@ import (
 // user has no obvious way to relate it to their input. This pre-flight
 // fails fast with a clear message before any send is attempted.
 //
+// PeerUser (DMs) and PeerChat (legacy basic groups) cannot be forums,
+// so we short-circuit without a round-trip. Calling GetGroupInfo on a
+// PeerUser would hit MessagesGetFullChat with a user ID and produce a
+// nonsense error that buries the actual constraint.
+//
 // Existence of the topic itself is NOT verified here. ChannelsGetForumTopics
 // is more expensive and the failure mode (TOPIC_ID_INVALID) is already
 // fielded by wrapTelegramError downstream.
@@ -26,6 +31,10 @@ func validateTopicID(
 ) error {
 	if topicID == 0 {
 		return nil
+	}
+
+	if peer.Type != telegram.PeerChannel {
+		return ErrTopicIDOnNonForum
 	}
 
 	info, err := client.GetGroupInfo(ctx, peer)
@@ -66,19 +75,14 @@ func validateLimit(limit int) error {
 	return nil
 }
 
-// defaultPaginationLimit mirrors telegram.defaultLimit — the page size the
-// underlying client uses when the caller does not explicitly request one.
-// Kept in sync via the test TestDefaultPaginationLimit_MatchesTelegram.
-const defaultPaginationLimit = 100
-
 // hasMorePage returns true when the returned count saturates the page,
 // signalling the caller that another page may be available. The
 // requestedLimit may be zero (caller did not specify), in which case the
-// server-default page size is assumed.
+// server-default page size is assumed via telegram.DefaultLimit.
 func hasMorePage(count, requestedLimit int) bool {
 	effective := requestedLimit
 	if effective <= 0 {
-		effective = defaultPaginationLimit
+		effective = telegram.DefaultLimit
 	}
 
 	return count >= effective

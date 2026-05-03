@@ -16,9 +16,10 @@ type ContactsListBlockedParams struct {
 
 // ContactsListBlockedResult is the output of tg_contacts_list_blocked.
 type ContactsListBlockedResult struct {
-	Count  int        `json:"count"`
-	Users  []UserItem `json:"users"`
-	Output string     `json:"output"`
+	Count   int        `json:"count"`
+	HasMore bool       `json:"hasMore"`
+	Users   []UserItem `json:"users"`
+	Output  string     `json:"output"`
 }
 
 // NewContactsListBlockedHandler creates a handler for tg_contacts_list_blocked.
@@ -56,9 +57,10 @@ func NewContactsListBlockedHandler(
 		}
 
 		return nil, ContactsListBlockedResult{
-			Count:  len(users),
-			Users:  usersToItems(users),
-			Output: buf.String(),
+			Count:   len(users),
+			HasMore: hasMorePage(len(users), limit),
+			Users:   usersToItems(users),
+			Output:  buf.String(),
 		}, nil
 	}
 }

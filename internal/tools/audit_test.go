@@ -15,13 +15,20 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
-// ErrPeerNotFound's message must hint that @username is the preferred
-// format. A bare "peer not found" leaves the caller guessing whether they
-// passed a wrong ID, a wrong username, or neither.
+// When peer resolution fails because the user passed a numeric ID for a
+// peer the account doesn't have an access hash for, the failure surfaces
+// as PEER_ID_INVALID from MTProto. The wrapped error must hint at
+// @username so the caller has a concrete next step. (ErrPeerNotFound
+// itself stays neutral — it's reached on different code paths where the
+// @username hint would be wrong.)
 func TestAudit_PeerNotFoundHintsUsername(t *testing.T) {
-	got := telegram.ErrPeerNotFound.Error()
+	got := explainMTProtoCode("rpc error code 400: PEER_ID_INVALID")
+	if got == "" {
+		t.Fatal("PEER_ID_INVALID has no human-readable explanation")
+	}
+
 	if !strings.Contains(got, "@username") {
-		t.Errorf("ErrPeerNotFound = %q, want hint about @username", got)
+		t.Errorf("PEER_ID_INVALID explanation = %q, want hint about @username", got)
 	}
 }
 
@@ -51,6 +58,37 @@ func TestAudit_TopicIDOnNonForumChat(t *testing.T) {
 
 	if !strings.Contains(strings.ToLower(err.Error()), "forum") {
 		t.Errorf("error %q must mention 'forum' so the user understands the constraint", err)
+	}
+}
+
+// topicId on a DM (PeerUser) must short-circuit without calling
+// GetGroupInfo at all — that wrapper falls through to MessagesGetFullChat
+// with a user ID, which produces a nonsense MTProto error that buries the
+// actual constraint. mockClient.groupInfoCalls makes the no-call check
+// observable.
+func TestAudit_TopicIDOnUserPeerSkipsGroupInfo(t *testing.T) {
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+	}
+	handler := NewMessagesSendHandler(mock)
+
+	topicID := 7
+
+	_, _, err := handler(context.Background(), nil, MessagesSendParams{
+		Peer:    "@user",
+		Text:    "hello",
+		TopicID: &topicID,
+	})
+	if err == nil {
+		t.Fatal("expected error for topicId on a user peer")
+	}
+
+	if !strings.Contains(strings.ToLower(err.Error()), "forum") {
+		t.Errorf("error %q must mention 'forum'", err)
+	}
+
+	if mock.groupInfoCalls != 0 {
+		t.Errorf("GetGroupInfo called %d times for a PeerUser; expected 0", mock.groupInfoCalls)
 	}
 }
 

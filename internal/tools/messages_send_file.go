@@ -14,7 +14,7 @@ type MessagesSendFileParams struct {
 	Path         string  `json:"path"                   jsonschema:"Local file path to send"`
 	Caption      *string `json:"caption,omitempty"      jsonschema:"Optional caption for the file"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
-	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Caption formatting: '' plain; 'commonmark' or 'markdown' alias"`
+	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Caption format: '' plain; 'commonmark'/'markdown' (subset, see README)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }

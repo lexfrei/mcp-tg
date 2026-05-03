@@ -92,7 +92,13 @@ func extractCodeBlocks(text string) (string, []codeBlock) {
 
 		closeIdx, lang, body := findCodeBlockEnd(text, idx, fence)
 		if closeIdx == -1 {
-			break
+			// Unclosed fence: write everything up through this opener as
+			// literal and resume scanning past it. Without this, a later
+			// well-formed fence of either kind would never be extracted.
+			result.WriteString(text[:idx+fenceLen])
+			text = text[idx+fenceLen:]
+
+			continue
 		}
 
 		result.WriteString(text[:idx])

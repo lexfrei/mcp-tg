@@ -14,7 +14,7 @@ type MediaSendAlbumParams struct {
 	Paths        []string `json:"paths"                  jsonschema:"Local file paths to send as album"`
 	Caption      *string  `json:"caption,omitempty"      jsonschema:"Optional caption for the album"`
 	TopicID      *int     `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
-	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption formatting: '' plain; 'commonmark' or 'markdown' alias"`
+	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption: '' plain; 'commonmark'/'markdown' subset"`
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 }

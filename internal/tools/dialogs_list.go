@@ -60,6 +60,7 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 
 		return nil, DialogsListResult{
 			Count:   len(dialogs),
+			HasMore: hasMorePage(len(dialogs), limit),
 			Dialogs: items,
 			Output:  buf.String(),
 		}, nil

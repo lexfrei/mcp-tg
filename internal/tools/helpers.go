@@ -66,6 +66,24 @@ func validateLimit(limit int) error {
 	return nil
 }
 
+// defaultPaginationLimit mirrors telegram.defaultLimit — the page size the
+// underlying client uses when the caller does not explicitly request one.
+// Kept in sync via the test TestDefaultPaginationLimit_MatchesTelegram.
+const defaultPaginationLimit = 100
+
+// hasMorePage returns true when the returned count saturates the page,
+// signalling the caller that another page may be available. The
+// requestedLimit may be zero (caller did not specify), in which case the
+// server-default page size is assumed.
+func hasMorePage(count, requestedLimit int) bool {
+	effective := requestedLimit
+	if effective <= 0 {
+		effective = defaultPaginationLimit
+	}
+
+	return count >= effective
+}
+
 const maxIDsPerRequest = 100
 
 // validateIDCount returns an error if too many IDs are provided.

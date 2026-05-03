@@ -19,6 +19,7 @@ type MessagesSearchParams struct {
 // MessagesSearchResult is the output of the tg_messages_search tool.
 type MessagesSearchResult struct {
 	Count        int               `json:"count"`
+	HasMore      bool              `json:"hasMore"`
 	Participants []ParticipantItem `json:"participants,omitempty"`
 	Messages     []MessageItem     `json:"messages"`
 	Output       string            `json:"output"`
@@ -88,6 +89,7 @@ func executeSearch(
 
 	return MessagesSearchResult{
 		Count:        len(msgs),
+		HasMore:      hasMorePage(len(msgs), deref(params.Limit)),
 		Participants: participantsFromMessages(msgs),
 		Messages:     messagesToItems(msgs),
 		Output:       formatMessages(msgs),

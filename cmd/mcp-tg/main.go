@@ -298,7 +298,14 @@ func registerTools(server *mcp.Server, client tgclient.Client, registry tools.Bo
 	tools.AddTool(server, registry, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
 }
 
-func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
+// newHTTPHandler builds the HTTP handler chain for the MCP server with
+// explicit cross-origin protection.
+//
+// MCP SDK v1.6 stopped enabling cross-origin protection by default when
+// StreamableHTTPOptions is nil. Wrap the handler explicitly so a browser
+// page on the same host cannot drive the HTTP transport via CSRF. DNS
+// rebinding protection stays on by default in the SDK itself.
+func newHTTPHandler(server *mcp.Server) http.Handler {
 	handler := mcp.NewStreamableHTTPHandler(
 		func(_ *http.Request) *mcp.Server {
 			return server
@@ -306,9 +313,13 @@ func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
 		nil,
 	)
 
+	return http.NewCrossOriginProtection().Handler(handler)
+}
+
+func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
 	httpServer := &http.Server{
 		Addr:              addr,
-		Handler:           handler,
+		Handler:           newHTTPHandler(server),
 		ReadHeaderTimeout: readHeaderTimeout,
 		IdleTimeout:       keepAliveInterval * 2,
 	}

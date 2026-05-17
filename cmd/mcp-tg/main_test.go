@@ -1,6 +1,9 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/testutil"
@@ -46,5 +49,40 @@ func TestRegisterTools(t *testing.T) {
 				t.Errorf("expected %q in %s bool fields, got %v", field, name, got)
 			}
 		}
+	}
+}
+
+// TestNewHTTPHandler_RejectsCrossOriginPOST pins the cross-origin protection
+// applied to the streamable HTTP handler. MCP SDK v1.6 dropped the default
+// protection when StreamableHTTPOptions is nil, so this test fails fast if a
+// future refactor accidentally removes the explicit wrapping again.
+func TestNewHTTPHandler_RejectsCrossOriginPOST(t *testing.T) {
+	server := mcp.NewServer(
+		&mcp.Implementation{Name: "mcp-tg", Version: "test"},
+		nil,
+	)
+
+	testServer := httptest.NewServer(newHTTPHandler(server))
+	defer testServer.Close()
+
+	req, reqErr := http.NewRequestWithContext(
+		t.Context(), http.MethodPost, testServer.URL, strings.NewReader(`{}`),
+	)
+	if reqErr != nil {
+		t.Fatalf("build request: %v", reqErr)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Sec-Fetch-Site", "cross-site")
+
+	resp, doErr := http.DefaultClient.Do(req)
+	if doErr != nil {
+		t.Fatalf("do request: %v", doErr)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("cross-site POST: status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 }

@@ -26,9 +26,9 @@
       "groupSlug": "github-actions"
     },
     {
-      "description": "Automerge patch updates for Go modules",
+      "description": "Automerge patch and minor updates for Go modules; major stays manual for breaking-change review",
       "matchManagers": ["gomod"],
-      "matchUpdateTypes": ["patch"],
+      "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
     },
     {
@@ -37,10 +37,12 @@
       "automerge": true
     },
     {
-      "description": "Pin and update Go version in Containerfile",
+      "description": "Pin and update Go version in Containerfile; automerge patch and minor only",
       "matchManagers": ["dockerfile"],
       "matchPackageNames": ["docker.io/library/golang"],
-      "versioning": "docker"
+      "versioning": "docker",
+      "matchUpdateTypes": ["patch", "minor"],
+      "automerge": true
     },
     {
       "description": "Bump Go version in go.mod to latest minor",

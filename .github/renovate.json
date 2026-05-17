@@ -37,10 +37,15 @@
       "automerge": true
     },
     {
-      "description": "Pin and update Go version in Containerfile; automerge patch and minor only",
+      "description": "Pin Go version in Containerfile using docker versioning",
       "matchManagers": ["dockerfile"],
       "matchPackageNames": ["docker.io/library/golang"],
-      "versioning": "docker",
+      "versioning": "docker"
+    },
+    {
+      "description": "Automerge patch and minor Go updates in Containerfile; major stays manual",
+      "matchManagers": ["dockerfile"],
+      "matchPackageNames": ["docker.io/library/golang"],
       "matchUpdateTypes": ["patch", "minor"],
       "automerge": true
     },

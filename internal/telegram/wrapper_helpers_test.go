@@ -343,6 +343,31 @@ func TestBuildChatRefs_ChannelAndChat(t *testing.T) {
 	}
 }
 
+func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
+	// SendMessage/EditMessage/ForwardMessages return values flow through
+	// messageFromUpdate; the single-message path must apply the same
+	// name/username resolution as the history-read path so callers don't
+	// see a half-populated Message just because the response shape was
+	// tg.Updates instead of tg.MessagesMessages.
+	raw := &tg.Message{ID: 7, Date: 100, FromID: &tg.PeerUser{UserID: 42}}
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateNewMessage{Message: raw}},
+		Users: []tg.UserClass{
+			&tg.User{ID: 42, FirstName: "Alice", LastName: "A", Username: "alice"},
+		},
+	}
+
+	got := messageFromUpdate(updates)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if got.FromName != "Alice A" || got.FromUsername != "alice" {
+		t.Errorf("got FromName=%q FromUsername=%q, want Alice A/alice — enrichment did not run on the single-message-update path",
+			got.FromName, got.FromUsername)
+	}
+}
+
 func TestFillSenderRef_FillsUsername(t *testing.T) {
 	msg := &Message{FromID: 42}
 	users := map[int64]peerRef{42: {Name: "Carol", Username: "carol"}}

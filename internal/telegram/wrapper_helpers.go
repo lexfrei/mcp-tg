@@ -785,15 +785,18 @@ func messageFromUpdate(result tg.UpdatesClass) *Message {
 			Date: upd.Date,
 		}
 	case *tg.Updates:
-		return firstMessageFromUpdates(upd.Updates)
+		users := buildUserRefs(upd.Users)
+		chats := buildChatRefs(upd.Chats)
+
+		return firstMessageFromUpdates(upd.Updates, users, chats)
 	}
 
 	return nil
 }
 
-func firstMessageFromUpdates(updates []tg.UpdateClass) *Message {
+func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	for _, update := range updates {
-		if msg := extractMessageFromUpdate(update); msg != nil {
+		if msg := extractMessageFromUpdate(update, users, chats); msg != nil {
 			return msg
 		}
 	}
@@ -801,25 +804,25 @@ func firstMessageFromUpdates(updates []tg.UpdateClass) *Message {
 	return nil
 }
 
-func extractMessageFromUpdate(update tg.UpdateClass) *Message {
+func extractMessageFromUpdate(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	switch upd := update.(type) {
 	case *tg.UpdateNewMessage:
 		if msg, ok := upd.Message.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
+			enriched := enrichUpdateMessage(msg, users, chats)
 
-			return &converted
+			return &enriched
 		}
 	case *tg.UpdateNewChannelMessage:
 		if msg, ok := upd.Message.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
+			enriched := enrichUpdateMessage(msg, users, chats)
 
-			return &converted
+			return &enriched
 		}
 	case *tg.UpdateNewScheduledMessage:
 		if msg, ok := upd.Message.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
+			enriched := enrichUpdateMessage(msg, users, chats)
 
-			return &converted
+			return &enriched
 		}
 	}
 

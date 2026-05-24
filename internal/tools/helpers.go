@@ -248,10 +248,10 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 		return ""
 	}
 
-	// Use the shared peerUser / peerGroup / peerChannel / unknownValue
-	// constants so the text labels stay locked to the JSON labels
-	// emitted by participantTypeLabel and messageToItem. Renaming any
-	// of these constants now propagates to both surfaces.
+	// Use the shared peerUser / peerGroup / peerChannel /
+	// unknownPeerType constants so the text labels stay locked to the
+	// JSON labels emitted by participantTypeLabel and messageToItem.
+	// Renaming any of these constants now propagates to both surfaces.
 	switch peer.Type {
 	case telegram.PeerUser:
 		return fmt.Sprintf("%s:%d", peerUser, peer.ID)

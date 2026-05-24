@@ -21,10 +21,17 @@ type InputPeer struct {
 }
 
 // Message represents a simplified Telegram message.
+//
+// FromType disambiguates which peer space FromID belongs to —
+// PeerUser for regular senders, PeerChannel when a channel admin
+// posts under the channel's own identity (the "post as channel"
+// flow in supergroups). Without it the formatter would label every
+// non-user sender as user:N.
 type Message struct {
 	ID           int          `json:"id"`
 	PeerID       InputPeer    `json:"peerId"`
 	FromID       int64        `json:"fromId"`
+	FromType     PeerType     `json:"fromType,omitempty"`
 	FromName     string       `json:"fromName,omitempty"`
 	FromUsername string       `json:"fromUsername,omitempty"`
 	TopicID      int          `json:"topicId,omitempty"`

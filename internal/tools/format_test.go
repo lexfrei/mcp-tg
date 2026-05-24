@@ -35,6 +35,24 @@ func TestFormatMessage_TextOnly(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_ChannelOnBehalfOfSender(t *testing.T) {
+	msg := &telegram.Message{
+		ID:       7,
+		Date:     1700000000,
+		FromID:   5005003001,
+		FromType: telegram.PeerChannel,
+		FromName: "Cozystack Blog",
+		Text:     "official post",
+	}
+
+	got := formatMessage(msg)
+	wantLine := "from: Cozystack Blog [channel:5005003001]"
+
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("formatMessage() must label channel-on-behalf-of sender with channel:, got:\n%s", got)
+	}
+}
+
 func TestFormatMessage_WithSenderUsername(t *testing.T) {
 	msg := &telegram.Message{
 		ID:           7,

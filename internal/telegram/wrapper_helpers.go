@@ -629,11 +629,15 @@ func convertMessages(
 // fillSenderRef resolves sender name and username from user/chat maps.
 // In DMs, FromID==0 means the peer (not owner), so we fall back to the
 // peerID for both ID and name.
+//
+// Empty fields in the resolved peerRef do NOT overwrite a value that
+// ConvertMessage may have already populated — this keeps any future
+// UserClass variant returning an empty display name from silently
+// wiping a populated sender name.
 func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peerID int64) {
 	if msg.FromID != 0 {
 		if ref, ok := lookupRef(msg.FromID, users, chats); ok {
-			msg.FromName = ref.Name
-			msg.FromUsername = ref.Username
+			applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
 		}
 
 		return
@@ -641,15 +645,25 @@ func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peerID int64) {
 
 	if ref, ok := lookupRef(peerID, users, chats); ok {
 		msg.FromID = peerID
-		msg.FromName = ref.Name
-		msg.FromUsername = ref.Username
+		applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
+	}
+}
+
+func applyPeerRef(name, username *string, ref peerRef) {
+	if ref.Name != "" {
+		*name = ref.Name
+	}
+
+	if ref.Username != "" {
+		*username = ref.Username
 	}
 }
 
 // fillForwardRefs resolves PeerRef.Name and PeerRef.Username on
 // msg.Forward.From using the response's Users/Chats arrays. Privacy-
 // hidden forwards (From == nil, only FromName set) are passed through
-// unchanged.
+// unchanged. Empty fields in the resolved peerRef do not overwrite a
+// value already populated by ConvertMessage.
 func fillForwardRefs(msg *Message, users, chats map[int64]peerRef) {
 	if msg.Forward == nil || msg.Forward.From == nil {
 		return
@@ -660,15 +674,17 @@ func fillForwardRefs(msg *Message, users, chats map[int64]peerRef) {
 		return
 	}
 
-	msg.Forward.From.Name = ref.Name
-	msg.Forward.From.Username = ref.Username
+	applyPeerRef(&msg.Forward.From.Name, &msg.Forward.From.Username, ref)
 }
 
-// fillReplyToRef resolves FromName/FromUsername on a cross-chat reply
-// (when ReplyTo.FromPeerID points to a different peer than the message
-// host). Same-chat replies leave the fields empty because the parent
-// author is already reachable via msg.FromID resolution at the call
-// site that needs it.
+// fillReplyToRef resolves FromName/FromUsername on the reply parent
+// when ReplyTo.FromPeerID is present. The Telegram client populates
+// FromPeerID for cross-chat quote-replies and may also populate it for
+// in-chat quote-replies; either way the resolved name lands in the
+// advisory FromName/FromUsername slots. Same-chat replies without a
+// FromPeerID skip resolution because the parent author is reachable
+// via msg.FromID at the call site that needs it. Empty resolved
+// fields do not overwrite values already populated upstream.
 func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
 	if msg.ReplyTo == nil || msg.ReplyTo.FromPeerID == nil {
 		return
@@ -679,8 +695,7 @@ func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
 		return
 	}
 
-	msg.ReplyTo.FromName = ref.Name
-	msg.ReplyTo.FromUsername = ref.Username
+	applyPeerRef(&msg.ReplyTo.FromName, &msg.ReplyTo.FromUsername, ref)
 }
 
 func lookupRef(id int64, users, chats map[int64]peerRef) (peerRef, bool) {

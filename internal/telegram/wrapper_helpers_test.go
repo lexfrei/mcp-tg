@@ -365,6 +365,17 @@ func TestFillSenderRef_DMFallbackToPeer(t *testing.T) {
 	}
 }
 
+func TestFillSenderRef_EmptyLookupDoesNotOverwrite(t *testing.T) {
+	msg := &Message{FromID: 42, FromName: "Preset", FromUsername: "preset"}
+	users := map[int64]peerRef{42: {}} // entry exists but is empty
+
+	fillSenderRef(msg, users, nil, 0)
+
+	if msg.FromName != "Preset" || msg.FromUsername != "preset" {
+		t.Errorf("empty lookup overwrote Preset/preset → %q/%q", msg.FromName, msg.FromUsername)
+	}
+}
+
 func TestFillForwardRefs_ResolvesUser(t *testing.T) {
 	msg := &Message{
 		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerUser, ID: 777}}},

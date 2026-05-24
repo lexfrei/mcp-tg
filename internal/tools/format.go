@@ -68,7 +68,7 @@ func formatMessage(msg *telegram.Message) string {
 
 func writeSenderLine(buf *strings.Builder, msg *telegram.Message) {
 	ref := formatPeerRef(msg.FromName, msg.FromUsername, telegram.InputPeer{
-		Type: telegram.PeerUser,
+		Type: msg.FromType,
 		ID:   msg.FromID,
 	})
 

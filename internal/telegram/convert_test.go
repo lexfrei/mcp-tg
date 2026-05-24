@@ -464,6 +464,34 @@ func TestConvertMessage_GeneralTopic(t *testing.T) {
 	}
 }
 
+func TestConvertMessage_FromTypeChannelOnBehalfOf(t *testing.T) {
+	raw := &tg.Message{
+		ID:     7,
+		Date:   100,
+		FromID: &tg.PeerChannel{ChannelID: 5005003001},
+	}
+
+	got := ConvertMessage(raw)
+
+	if got.FromType != PeerChannel {
+		t.Errorf("FromType = %d, want PeerChannel (channel-on-behalf-of post)", got.FromType)
+	}
+
+	if got.FromID != 5005003001 {
+		t.Errorf("FromID = %d, want 5005003001", got.FromID)
+	}
+}
+
+func TestConvertMessage_FromTypeUser_Default(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 100, FromID: &tg.PeerUser{UserID: 99}}
+
+	got := ConvertMessage(raw)
+
+	if got.FromType != PeerUser {
+		t.Errorf("FromType = %d, want PeerUser", got.FromType)
+	}
+}
+
 func TestConvertMessage_WithoutForward(t *testing.T) {
 	raw := &tg.Message{ID: 1, Date: 100}
 

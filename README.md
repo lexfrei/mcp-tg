@@ -162,7 +162,7 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 
 **`accessHash` is omitted from every serialized `InputPeer` shape when zero** — that includes `messages[].peerId`, `messages[].replyTo.fromPeerId`, and `messages[].forward.from.peer`. The omission is deliberate: a zero hash looks like a valid one to MTProto but raises `PEER_ID_INVALID` when passed back. For follow-up tool calls against a peer whose `accessHash` field is missing, resolve it through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
 
-`tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers.
+`tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers. Its `participants` entries (sender peers AND any forward-author peers) carry the bare ID without an `accessHash` even more often than other tools, because the response set is unconstrained by the caller's resolved-peer cache. Resolve such peers via `@username` (if present) or `tg_dialogs_list` before passing them back into MTProto.
 
 ## Markdown — Known Limitations
 

@@ -200,7 +200,16 @@ const peerRefHidden = "[hidden]"
 // Callers pass the display name, optional @username and the InputPeer
 // that identifies the peer. A zero InputPeer (Type == PeerUser && ID == 0)
 // is treated as "no peer identity available".
+//
+// Display name and username are passed through collapseLineBreaks so an
+// adversarial peer name like "Alice\nfrom: Mallory" cannot inject fake
+// key:value lines into the multi-line text output. The JSON surface
+// keeps the original strings verbatim — sanitization is purely a
+// presentation-layer defense against prompt-injection through the
+// human-readable output that LLMs typically consume.
 func formatPeerRef(name, username string, peer telegram.InputPeer) string {
+	name = collapseLineBreaks(name)
+	username = collapseLineBreaks(username)
 	label := peerLabel(peer, username)
 
 	if name != "" && label != "" {
@@ -220,7 +229,9 @@ func formatPeerRef(name, username string, peer telegram.InputPeer) string {
 
 // peerLabel returns the bracket-contents portion of formatPeerRef.
 // Returns "" when the peer is empty AND no username is provided so the
-// caller can fall back to "[hidden]".
+// caller can fall back to "[hidden]". Callers must pre-sanitize the
+// username for line-break injection if the value comes from
+// adversarial input; formatPeerRef does this for its callers.
 //
 // The kind labels — user / group / channel — match the strings used by
 // ParticipantItem.Type and MessageItem.FromType, so a caller can grep

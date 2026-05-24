@@ -633,10 +633,12 @@ func convertMessages(
 // host renders as channel:N, not user:N.
 //
 // Empty fields in the resolved peerRef do NOT overwrite any value
-// populated upstream. ConvertMessage doesn't set FromName/FromUsername
-// today, so the guard is defensive — it makes a future UserClass
-// variant that returns an empty display name through buildUserRefs
-// non-destructive instead of silently wiping a preset.
+// already populated on msg. applyPeerRef is shared with the merge
+// paths in buildSenderLookup and participantsFromMessages, where
+// preserving a non-empty earlier value over a later empty one is the
+// load-bearing rule for last-non-empty-wins semantics; keeping the
+// same shape here means a future buildUserRefs that emits an empty
+// name through a new UserClass variant can't silently wipe a preset.
 func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peer InputPeer) {
 	if msg.FromID != 0 {
 		fromPeer := InputPeer{Type: msg.FromType, ID: msg.FromID}
@@ -712,8 +714,17 @@ func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
 // can collide, so a type-blind union lookup would let a same-ID user
 // stamp its name onto a channel-shaped PeerRef (and vice versa).
 // Knowing the kind at the call site lets us go straight to the right
-// half. PeerChat shares the chats map with PeerChannel (basic groups
-// and channels both live in Chats[]).
+// half. PeerChat shares the chats map with PeerChannel (gotd packs
+// basic groups, supergroups, and broadcast channels all into Chats[]
+// — same numeric ID across these three is vanishingly rare because
+// gotd populates them from disjoint MTProto constructors, but if it
+// happened the {Type, ID} dedup in participantsFromMessages would
+// still keep them distinct in the JSON).
+//
+// The default branch returns (peerRef{}, false), so a future PeerType
+// extension would silently lose name resolution for that kind. If you
+// add a new PeerType, extend the switch here too — the missing branch
+// is otherwise discoverable only by noticing names stop populating.
 func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, bool) {
 	switch peer.Type {
 	case PeerUser:

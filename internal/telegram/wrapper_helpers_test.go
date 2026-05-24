@@ -395,6 +395,25 @@ func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 	}
 }
 
+func TestEnrichUpdateMessage_FromIDZeroStaysZero(t *testing.T) {
+	// enrichUpdateMessage passes InputPeer{} for the host peer because
+	// UpdateNewMessage doesn't carry one. If fillSenderRef misread that
+	// empty peer as 'present', a FromID==0 message would get promoted
+	// to peer.ID==0 — a no-op in practice but a silent invariant bug.
+	raw := &tg.Message{ID: 1, Date: 100} // FromID nil → 0 after ConvertMessage
+	users := map[int64]peerRef{0: {Name: "should not match"}}
+
+	got := enrichUpdateMessage(raw, users, nil)
+
+	if got.FromID != 0 {
+		t.Errorf("FromID = %d, want 0 — enrichUpdateMessage must not promote when host peer is empty", got.FromID)
+	}
+
+	if got.FromName != "" {
+		t.Errorf("FromName = %q, want empty — must not pick up the {0: ...} sentinel entry", got.FromName)
+	}
+}
+
 func TestFillSenderRef_FillsUsername(t *testing.T) {
 	msg := &Message{FromID: 42}
 	users := map[int64]peerRef{42: {Name: "Carol", Username: "carol"}}

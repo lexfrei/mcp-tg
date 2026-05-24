@@ -29,7 +29,7 @@ internal/telegram/           Telegram abstraction layer
 internal/tools/              MCP tool handlers (75 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
-  helpers.go                 Shared helpers (deref, formatPeer, formatUserName)
+  helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
   format.go                  Output formatting (timestamps, messages, dialogs)
   roots.go                   File path validation against client roots
   progress.go                Progress notification helper

@@ -32,6 +32,38 @@ func (m *chatMessagesMock) GetHistory(
 	return m.messages, len(m.messages), nil
 }
 
+// TestChatMessagesTemplateMIMETypeMatchesHandler pins the agreement
+// between the template-declared MIMEType (used by MCP clients to
+// decide how to render the resource) and the actual MIMEType the
+// handler emits. A mismatch would silently mis-render the resource —
+// the template previously claimed 'application/json' while the
+// handler returned 'text/plain'.
+func TestChatMessagesTemplateMIMETypeMatchesHandler(t *testing.T) {
+	template := chatMessagesTemplate()
+
+	mock := &chatMessagesMock{
+		resolved: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		messages: []telegram.Message{{ID: 1, Date: 1700000000, Text: "hi"}},
+	}
+	handler := chatMessagesHandler(mock)
+
+	result, err := handler(context.Background(), &mcp.ReadResourceRequest{
+		Params: &mcp.ReadResourceParams{URI: "tg://chat/durov/messages"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(result.Contents) != 1 {
+		t.Fatalf("got %d content blocks, want 1", len(result.Contents))
+	}
+
+	if template.MIMEType != result.Contents[0].MIMEType {
+		t.Errorf("template MIMEType=%q vs handler MIMEType=%q — must agree so MCP clients render the resource correctly",
+			template.MIMEType, result.Contents[0].MIMEType)
+	}
+}
+
 func TestChatMessagesHandler_UsesUnifiedMultiLineFormat(t *testing.T) {
 	mock := &chatMessagesMock{
 		resolved: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},

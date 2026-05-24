@@ -15,6 +15,7 @@ import (
 const (
 	defaultMessageLimit = 50
 	mimeJSON            = "application/json"
+	mimeText            = "text/plain"
 )
 
 // Register adds all Telegram resources and templates to the MCP server.
@@ -57,7 +58,7 @@ func chatMessagesTemplate() *mcp.ResourceTemplate {
 		URITemplate: "tg://chat/{peer}/messages",
 		Name:        "chat_messages",
 		Description: "Recent messages from a Telegram chat",
-		MIMEType:    mimeJSON,
+		MIMEType:    mimeText,
 	}
 }
 
@@ -150,7 +151,7 @@ func chatMessagesHandler(client telegram.Client) mcp.ResourceHandler {
 
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{
-				{URI: req.Params.URI, MIMEType: "text/plain", Text: tools.FormatMessageList(msgs)},
+				{URI: req.Params.URI, MIMEType: mimeText, Text: tools.FormatMessageList(msgs)},
 			},
 		}, nil
 	}

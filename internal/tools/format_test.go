@@ -252,6 +252,27 @@ func TestFormatMessage_QuoteWithEmbeddedNewlineStaysOnOneLine(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_QuoteWithCRLFCollapsedToSpaces(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 10, Date: 1700000000,
+		Text: "reply",
+		ReplyTo: &telegram.ReplyToInfo{
+			MessageID: 5,
+			QuoteText: "line 1\r\nline 2\rline 3",
+		},
+	}
+
+	got := formatMessage(msg)
+
+	if strings.ContainsAny(got, "\r") {
+		t.Errorf("CR must be collapsed in the rendered quote line, got:\n%q", got)
+	}
+
+	if !strings.Contains(got, "quote: «line 1 line 2 line 3»") {
+		t.Errorf("CRLF/CR not collapsed to spaces, got:\n%s", got)
+	}
+}
+
 func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
 	otherPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
 	msg := &telegram.Message{

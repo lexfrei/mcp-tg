@@ -355,15 +355,17 @@ func TestResolveReplyParents_Truncates(t *testing.T) {
 
 func TestBuildSenderLookup_LastNonEmptyWins(t *testing.T) {
 	msgs := []telegram.Message{
-		{ID: 1, FromID: 42, FromName: "Old Name", FromUsername: "old"},
-		{ID: 2, FromID: 42, FromName: "New Name", FromUsername: "new"},
+		{ID: 1, FromID: 42, FromType: telegram.PeerUser, FromName: "Old Name", FromUsername: "old"},
+		{ID: 2, FromID: 42, FromType: telegram.PeerUser, FromName: "New Name", FromUsername: "new"},
 	}
 
 	lookup := buildSenderLookup(msgs, nil)
 
-	got, ok := lookup[42]
+	key := senderKey{Type: telegram.PeerUser, ID: 42}
+	got, ok := lookup[key]
+
 	if !ok {
-		t.Fatal("lookup[42] missing")
+		t.Fatal("lookup[{user, 42}] missing")
 	}
 
 	if got.name != "New Name" {
@@ -378,15 +380,15 @@ func TestBuildSenderLookup_LastNonEmptyWins(t *testing.T) {
 
 func TestBuildSenderLookup_EmptyDoesNotOverwriteNonEmpty(t *testing.T) {
 	msgs := []telegram.Message{
-		{ID: 1, FromID: 42, FromName: "Real Name", FromUsername: "real"},
-		{ID: 2, FromID: 42}, // empty FromName/FromUsername
+		{ID: 1, FromID: 42, FromType: telegram.PeerUser, FromName: "Real Name", FromUsername: "real"},
+		{ID: 2, FromID: 42, FromType: telegram.PeerUser}, // empty FromName/FromUsername
 	}
 
 	lookup := buildSenderLookup(msgs, nil)
 
-	got := lookup[42]
+	got := lookup[senderKey{Type: telegram.PeerUser, ID: 42}]
 	if got.name != "Real Name" || got.username != "real" {
-		t.Errorf("lookup[42] = %+v, want preserved {Real Name, real} — empty later entry must not erase",
+		t.Errorf("lookup = %+v, want preserved {Real Name, real} — empty later entry must not erase",
 			got)
 	}
 }
@@ -396,7 +398,29 @@ func TestBuildSenderLookup_SkipsZeroFromID(t *testing.T) {
 
 	lookup := buildSenderLookup(msgs, nil)
 
-	if _, ok := lookup[0]; ok {
-		t.Errorf("lookup[0] populated for FromID=0 entry; want excluded to avoid cross-attribution")
+	if _, ok := lookup[senderKey{ID: 0}]; ok {
+		t.Errorf("lookup populated for FromID=0 entry; want excluded to avoid cross-attribution")
+	}
+}
+
+func TestBuildSenderLookup_TypeCollisionDoesNotCrossAttribute(t *testing.T) {
+	// A user with ID 500 and a channel-posting-as-channel with ID 500
+	// must not stomp each other's names — same hazard the
+	// participantsFromMessages dedup already defends against.
+	msgs := []telegram.Message{
+		{ID: 1, FromID: 500, FromType: telegram.PeerUser, FromName: "Alice User", FromUsername: "alice"},
+		{ID: 2, FromID: 500, FromType: telegram.PeerChannel, FromName: "Coincident Channel"},
+	}
+
+	lookup := buildSenderLookup(msgs, nil)
+
+	userEntry := lookup[senderKey{Type: telegram.PeerUser, ID: 500}]
+	if userEntry.name != "Alice User" || userEntry.username != "alice" {
+		t.Errorf("user entry = %+v, want {Alice User, alice}", userEntry)
+	}
+
+	channelEntry := lookup[senderKey{Type: telegram.PeerChannel, ID: 500}]
+	if channelEntry.name != "Coincident Channel" {
+		t.Errorf("channel entry = %+v, want {Coincident Channel, _}", channelEntry)
 	}
 }

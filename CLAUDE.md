@@ -72,6 +72,7 @@ internal/testutil/           NoopClient for registration tests
 ### Peer resolution
 
 All tools accept `peer` as string. Supported formats:
+
 - `@username`
 - `username` (bare)
 - `https://t.me/username`
@@ -115,7 +116,7 @@ Reading tools populate `MessageItem.forward` from `tg.MessageFwdHeader` so calle
 - `forward.fromName` — display name leaked through when `from` is nil (privacy-hidden forward).
 - `forward.date`, `forward.channelPost`, `forward.postAuthor` — original timestamp, ID of the source channel post, and the channel's signed-author byline.
 
-Sender, forward-from origin and cross-chat reply target all render via `formatPeerRef(name, username, peer)` in text output: `Display Name [@username]` / `[user:N]` / `[channel:N]` / `[chat:N]` / `[hidden]`. Username resolution piggybacks on the `Users[]`/`Chats[]` arrays MTProto already returns in `MessagesMessagesClass`, so no extra API round-trip.
+Sender, forward-from origin and cross-chat reply target all render via `formatPeerRef(name, username, peer)` in text output: `Display Name [@username]` / `[user:N]` / `[channel:N]` / `[group:N]` / `[hidden]`. The `group:` label covers `PeerChat` (legacy basic groups) and matches the JSON `participants[].type` + `MessageItem.fromType` values exactly — same string in both surfaces. Username resolution piggybacks on the `Users[]`/`Chats[]` arrays MTProto already returns in `MessagesMessagesClass`, so no extra API round-trip.
 
 ### Multi-line text output
 
@@ -146,6 +147,7 @@ Known CommonMark gaps documented in README's "Markdown — Known Limitations": n
 ## Linter
 
 Strict config in `.golangci.yml`:
+
 - funlen: 50 lines / 40 statements
 - gocyclo/cyclop: 10
 - dupl: 100

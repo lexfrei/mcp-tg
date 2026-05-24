@@ -105,6 +105,14 @@ func writeForwardLine(buf *strings.Builder, fwd *telegram.ForwardInfo) {
 	fmt.Fprintf(buf, "forwarded from: %s\n", ref)
 }
 
+// isChannelForward picks the channel-shaped output line for any forward
+// that carries a non-zero ChannelPost — even when From is nil (the
+// anonymous channel-post case where the source identity is stripped
+// but the post number survives) or, in well-formed MTProto, never set
+// to a user with a ChannelPost. The ChannelPost number is the
+// actionable bit for reconstructing a deep-link back to the original;
+// preserving it is worth more than re-deriving the peer kind from
+// From when the two could in theory disagree.
 func isChannelForward(fwd *telegram.ForwardInfo) bool {
 	if fwd.From != nil && fwd.From.Peer.Type == telegram.PeerChannel {
 		return true
@@ -153,13 +161,19 @@ func writeReplyLines(buf *strings.Builder, reply *telegram.ReplyToInfo) {
 	}
 
 	if reply.QuoteText != "" {
-		// Collapse embedded newlines so the quote stays on a single
-		// 'quote:' line and doesn't masquerade as a top-level metadata
-		// key or text body. The full multi-line quote remains
-		// available verbatim in the JSON replyTo.quoteText field.
-		quote := strings.ReplaceAll(reply.QuoteText, "\n", " ")
-		fmt.Fprintf(buf, "quote: «%s»\n", quote)
+		fmt.Fprintf(buf, "quote: «%s»\n", collapseLineBreaks(reply.QuoteText))
 	}
+}
+
+// collapseLineBreaks replaces embedded LF, CR, and CRLF in a single
+// string with a space, so multi-line content can be rendered on one
+// key:value line of the multi-line output format without masquerading
+// as a top-level metadata key or text body. CRLF is replaced first so
+// no stray '\r' remains after a Windows-origin paste. The original
+// string is unaffected — full multi-line content stays available in
+// the JSON field that backs the rendered line.
+func collapseLineBreaks(s string) string {
+	return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
 }
 
 // formatMessages joins message blocks separated by a blank line.

@@ -156,11 +156,11 @@ func lookupParent(
 	return nil
 }
 
-func buildReplyToMessage(parent *telegram.Message, refByID map[int64]senderRef) *ReplyToMessage {
+func buildReplyToMessage(parent *telegram.Message, refByID map[senderKey]senderRef) *ReplyToMessage {
 	name, username := parent.FromName, parent.FromUsername
 
 	if parent.FromID != 0 {
-		ref := refByID[parent.FromID]
+		ref := refByID[senderKey{Type: parent.FromType, ID: parent.FromID}]
 		if name == "" {
 			name = ref.name
 		}
@@ -177,6 +177,11 @@ func buildReplyToMessage(parent *telegram.Message, refByID map[int64]senderRef) 
 	}
 }
 
+type senderKey struct {
+	Type telegram.PeerType
+	ID   int64
+}
+
 type senderRef struct {
 	name     string
 	username string
@@ -190,8 +195,12 @@ type senderRef struct {
 // FromID==0 entries are excluded: zero means "no identifiable sender"
 // (channel posts without signature, anonymous admins), and bucketing
 // them together would cross-attribute names between unrelated senders.
-func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]senderRef {
-	lookup := make(map[int64]senderRef, len(msgs)+len(fetched))
+//
+// The key is keyed on {FromType, FromID} rather than bare FromID — same
+// reason participantsFromMessages does: a user with ID 500 and a channel
+// posting under its own identity with ID 500 must not stomp each other.
+func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[senderKey]senderRef {
+	lookup := make(map[senderKey]senderRef, len(msgs)+len(fetched))
 
 	// last-wins-among-non-empty: a later non-empty value overrides an
 	// earlier one (mirrors how the previous buildNameLookup gated on
@@ -199,12 +208,14 @@ func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Messag
 	// reflects the most recent display name seen in the batch instead
 	// of being frozen to whichever message landed first in iteration
 	// order.
-	mergeRef := func(peerID int64, name, username string) {
+	mergeRef := func(peerType telegram.PeerType, peerID int64, name, username string) {
 		if peerID == 0 {
 			return
 		}
 
-		ref := lookup[peerID]
+		key := senderKey{Type: peerType, ID: peerID}
+		ref := lookup[key]
+
 		if name != "" {
 			ref.name = name
 		}
@@ -213,16 +224,16 @@ func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Messag
 			ref.username = username
 		}
 
-		lookup[peerID] = ref
+		lookup[key] = ref
 	}
 
 	for idx := range msgs {
-		mergeRef(msgs[idx].FromID, msgs[idx].FromName, msgs[idx].FromUsername)
+		mergeRef(msgs[idx].FromType, msgs[idx].FromID, msgs[idx].FromName, msgs[idx].FromUsername)
 	}
 
 	for _, parent := range fetched {
 		if parent != nil {
-			mergeRef(parent.FromID, parent.FromName, parent.FromUsername)
+			mergeRef(parent.FromType, parent.FromID, parent.FromName, parent.FromUsername)
 		}
 	}
 

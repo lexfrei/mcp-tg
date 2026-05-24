@@ -209,6 +209,7 @@ func TestPeerRefItemFieldShape(t *testing.T) {
 func TestMessageItemFieldShape(t *testing.T) {
 	assertJSONTags(t, reflect.TypeOf(MessageItem{}), map[string]string{
 		"ID":             "id",
+		"PeerID":         "peerId",
 		"Date":           "date",
 		"Text":           "text",
 		"FromID":         "fromId",
@@ -222,6 +223,22 @@ func TestMessageItemFieldShape(t *testing.T) {
 		"ReplyToMessage": "replyToMessage,omitempty",
 		"Forward":        "forward,omitempty",
 	})
+}
+
+// TestMessageToItem_PeerIDPopulated pins that messageToItem copies
+// msg.PeerID into item.PeerID — critical for tg_messages_search_global
+// where results span arbitrary host peers and the caller has no other
+// way to learn which chat a message belongs to.
+func TestMessageToItem_PeerIDPopulated(t *testing.T) {
+	host := telegram.InputPeer{Type: telegram.PeerChannel, ID: 1234567890}
+	msg := &telegram.Message{ID: 7, PeerID: host, Date: 1700000000, Text: "hi"}
+
+	item := messageToItem(msg)
+
+	if item.PeerID != host {
+		t.Errorf("item.PeerID = %+v, want %+v — host peer must surface in MessageItem JSON",
+			item.PeerID, host)
+	}
 }
 
 // TestDialogItemFieldShape pins the JSON tags on DialogItem so the

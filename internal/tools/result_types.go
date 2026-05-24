@@ -58,6 +58,7 @@ func dialogPeerType(dlg *telegram.Dialog) string {
 // otherwise look indistinguishable from regular user senders.
 type MessageItem struct {
 	ID             int                   `json:"id"`
+	PeerID         telegram.InputPeer    `json:"peerId"`
 	Date           int                   `json:"date"`
 	Text           string                `json:"text"`
 	FromID         int64                 `json:"fromId"`
@@ -217,6 +218,7 @@ type PhotoItem struct {
 func messageToItem(msg *telegram.Message) MessageItem {
 	item := MessageItem{
 		ID:           msg.ID,
+		PeerID:       msg.PeerID,
 		Date:         msg.Date,
 		Text:         msg.Text,
 		FromID:       msg.FromID,

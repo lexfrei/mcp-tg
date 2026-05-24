@@ -526,6 +526,29 @@ func TestConvertMessage_WithForward_HiddenName(t *testing.T) {
 	}
 }
 
+func TestConvertMessage_WithForward_FromIDAndFromNameBoth(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 200}
+
+	fwd := tg.MessageFwdHeader{Date: 100}
+	fwd.SetFromID(&tg.PeerUser{UserID: 555})
+	fwd.SetFromName("Visible Name")
+	raw.SetFwdFrom(fwd)
+
+	got := ConvertMessage(raw)
+
+	if got.Forward == nil {
+		t.Fatal("Forward = nil, want populated ForwardInfo")
+	}
+
+	if got.Forward.From == nil || got.Forward.From.Peer.ID != 555 {
+		t.Errorf("Forward.From = %+v, want PeerUser ID 555", got.Forward.From)
+	}
+
+	if got.Forward.FromName != "Visible Name" {
+		t.Errorf("Forward.FromName = %q, want preserved alongside From", got.Forward.FromName)
+	}
+}
+
 func TestConvertMessage_WithForward_FromChannel(t *testing.T) {
 	raw := &tg.Message{ID: 1, Date: 200}
 

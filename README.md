@@ -131,7 +131,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a blank line.
 
-```
+```text
 [<id>] <ISO-timestamp>
 from: Display Name [@username]
 forwarded from: Display Name [@username] at <ISO-timestamp>

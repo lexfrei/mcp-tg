@@ -476,6 +476,49 @@ func TestMessagesSearchGlobalHandler_Happy(t *testing.T) {
 	}
 }
 
+// TestMessagesSearchGlobalHandler_PeerIDPropagated pins the
+// PeerID-per-message contract that the README documents as the only
+// way callers of global search learn which chat a result came from.
+// A regression in messageToItem dropping msg.PeerID would silently
+// break cross-peer attribution; this test catches it.
+func TestMessagesSearchGlobalHandler_PeerIDPropagated(t *testing.T) {
+	mock := &mockClient{
+		messages: []telegram.Message{
+			{
+				ID:     20,
+				PeerID: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1006503122},
+				Text:   "from channel",
+			},
+			{
+				ID:     21,
+				PeerID: telegram.InputPeer{Type: telegram.PeerUser, ID: 42},
+				Text:   "from user DM",
+			},
+		},
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(
+		context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "hello"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(res.Messages) != 2 {
+		t.Fatalf("got %d messages, want 2", len(res.Messages))
+	}
+
+	if res.Messages[0].PeerID.Type != telegram.PeerChannel || res.Messages[0].PeerID.ID != 1006503122 {
+		t.Errorf("messages[0].PeerID = %+v, want channel:1006503122", res.Messages[0].PeerID)
+	}
+
+	if res.Messages[1].PeerID.Type != telegram.PeerUser || res.Messages[1].PeerID.ID != 42 {
+		t.Errorf("messages[1].PeerID = %+v, want user:42", res.Messages[1].PeerID)
+	}
+}
+
 // TestMessagesSearchGlobalResult_NoParticipantsField pins that the
 // MessagesSearchGlobalResult JSON shape has no Participants field.
 // Global search spans arbitrary peers with unreliable access-hash

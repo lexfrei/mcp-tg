@@ -264,6 +264,47 @@ func TestMessageToItem_PeerIDPopulated(t *testing.T) {
 	}
 }
 
+// TestMessageItem_JSONOmitsZeroPeerID is the behavioural counterpart
+// to the tag-string pin in TestMessageItemFieldShape: it marshals a
+// MessageItem with a zero PeerID and verifies the encoder actually
+// omits the field. A misparsed or silently-ignored 'omitzero' tag
+// would leak 'peerId:{type:0,id:0}' into JSON; the tag test alone
+// would not catch that.
+func TestMessageItem_JSONOmitsZeroPeerID(t *testing.T) {
+	item := MessageItem{ID: 1, Date: 1700000000, Text: "hi"} // PeerID = zero
+
+	raw, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	got := string(raw)
+
+	if strings.Contains(got, `"peerId"`) {
+		t.Errorf("zero PeerID must be omitted from JSON (omitzero), but found 'peerId' in:\n%s", got)
+	}
+}
+
+func TestMessageItem_JSONIncludesNonZeroPeerID(t *testing.T) {
+	item := MessageItem{
+		ID:     1,
+		PeerID: telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},
+		Date:   1700000000,
+		Text:   "hi",
+	}
+
+	raw, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	got := string(raw)
+
+	if !strings.Contains(got, `"peerId"`) {
+		t.Errorf("non-zero PeerID must be included in JSON, but missing 'peerId' in:\n%s", got)
+	}
+}
+
 // TestDialogItemFieldShape pins the JSON tags on DialogItem so the
 // added Username field stays under its canonical tag.
 func TestDialogItemFieldShape(t *testing.T) {

@@ -6,6 +6,32 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
+func TestMessageToItem_FromTypeChannel(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 7, Date: 1700000000,
+		FromID:   500,
+		FromType: telegram.PeerChannel,
+		FromName: "Cozystack Blog",
+		Text:     "anonymous post",
+	}
+
+	item := messageToItem(msg)
+
+	if item.FromType != peerChannel {
+		t.Errorf("item.FromType = %q, want %q — channel-shaped sender must surface in JSON",
+			item.FromType, peerChannel)
+	}
+}
+
+func TestMessageToItem_FromTypeOmittedForUnknownSender(t *testing.T) {
+	msg := &telegram.Message{ID: 7, Date: 1700000000} // FromID == 0
+	item := messageToItem(msg)
+
+	if item.FromType != "" {
+		t.Errorf("item.FromType = %q, want empty when FromID==0", item.FromType)
+	}
+}
+
 func TestParticipantsFromMessages_SenderWithUsername(t *testing.T) {
 	msgs := []telegram.Message{
 		{ID: 1, FromID: 10, FromType: telegram.PeerUser, FromName: "Alice", FromUsername: "alice"},

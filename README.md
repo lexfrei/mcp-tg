@@ -148,10 +148,10 @@ Lines are emitted only when their underlying field is populated. Every peer refe
 
 - `Display Name [@username]` — public username available
 - `Display Name [user:N]` / `[channel:N]` / `[chat:N]` — username not exposed, only ID
-- `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected (typical for forwards where the original author enabled forward-privacy)
+- `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected; surfaces on `forwarded from:` and `reply to: ... in` lines (typical when the original author enabled forward-privacy). The `from:` sender line is omitted entirely when both name and ID are absent, since the message host already identifies the chat.
 - `[user:N]` / `[hidden]` — degenerate forms when display name is also missing
 
-JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`), `fromUsername` and `fromType` (`0`=user / `1`=chat / `2`=channel) on each message. Original authors of forwarded messages are also included in the `participants` dictionary, which carries `type` (`"user"` / `"channel"` / `"group"`) alongside the bare ID so a user and a channel sharing the same numeric ID survive deduplication as distinct entries.
+JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`), `fromUsername` and `fromType` (`"user"` / `"group"` / `"channel"` — `group` covers both legacy basic groups and is reserved for the same slot in participants) on each message. Original authors of forwarded messages are also included in the `participants` array, which carries the same `type` string alongside the bare ID so a user and a channel sharing the same numeric ID survive deduplication as distinct entries.
 
 Deep-links to the original message can be constructed from `forward.channelPost` and `forward.from`:
 

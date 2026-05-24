@@ -37,11 +37,18 @@ func dialogPeerType(dlg *telegram.Dialog) string {
 }
 
 // MessageItem is a structured message entry for JSON results.
+//
+// FromType disambiguates the FromID peer kind ("user" / "chat" /
+// "channel") so a caller can pick the right deep-link form without
+// guessing — channel-on-behalf-of posts and anonymous channel posts
+// would otherwise look indistinguishable from regular user senders
+// in the JSON.
 type MessageItem struct {
 	ID             int                   `json:"id"`
 	Date           int                   `json:"date"`
 	Text           string                `json:"text"`
 	FromID         int64                 `json:"fromId"`
+	FromType       string                `json:"fromType,omitempty"`
 	FromName       string                `json:"fromName,omitempty"`
 	FromUsername   string                `json:"fromUsername,omitempty"`
 	TopicID        int                   `json:"topicId,omitempty"`
@@ -169,7 +176,7 @@ type PhotoItem struct {
 }
 
 func messageToItem(msg *telegram.Message) MessageItem {
-	return MessageItem{
+	item := MessageItem{
 		ID:           msg.ID,
 		Date:         msg.Date,
 		Text:         msg.Text,
@@ -182,6 +189,15 @@ func messageToItem(msg *telegram.Message) MessageItem {
 		ReplyTo:      msg.ReplyTo,
 		Forward:      msg.Forward,
 	}
+
+	// Only emit fromType when we actually have a sender to label —
+	// FromID==0 means "no identifiable sender" and the type would
+	// be a spurious "user" from the PeerType zero value.
+	if msg.FromID != 0 {
+		item.FromType = participantTypeLabel(msg.FromType)
+	}
+
+	return item
 }
 
 func messagesToItems(msgs []telegram.Message) []MessageItem {

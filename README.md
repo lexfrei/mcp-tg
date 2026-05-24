@@ -1,6 +1,6 @@
 # mcp-tg
 
-MCP server for Telegram Client API (MTProto). Provides 58 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
+MCP server for Telegram Client API (MTProto). Provides 75 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
 
 Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **user account** client, not a bot.
 
@@ -8,7 +8,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 | Feature | Status |
 | --- | --- |
-| Tools | 58 tools with annotations (read-only / idempotent / write / destructive) |
+| Tools | 75 tools with annotations (read-only / idempotent / write / destructive) |
 | Resources | 4 (dialogs, profile, chat info, chat messages) |
 | Prompts | 3 (reply, summarize, search and reply) |
 | Completions | Peer argument autocompletion from dialogs |
@@ -27,7 +27,9 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
 
-## Tools (59)
+## Tools (75 registered; 59 listed below)
+
+The categorised list below documents 59 of the 75 registered tools — the remaining 16 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
 
 ### Messages (11)
 
@@ -152,6 +154,9 @@ Lines are emitted only when their underlying field is populated. A message body 
 - `Display Name [user:N]` / `[channel:N]` / `[group:N]` — username not exposed, only ID (labels match `participants[].type` and `fromType` exactly)
 - `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected; surfaces on `forwarded from:` and `reply to: ... in` lines (typical when the original author enabled forward-privacy). The `from:` sender line is omitted entirely when both name and ID are absent, since the message host already identifies the chat.
 - `[user:N]` / `[hidden]` — degenerate forms when display name is also missing
+- `[unknown:N]` — defensive fallback when a `PeerType` value is outside the three documented kinds; surfaces only if a future MTProto schema bump introduces a fourth peer kind and the response carries it before this client adds a branch
+
+When `forward.from` is present, `name` and `username` may still be empty if the response's `Users[]`/`Chats[]` arrays did not include the resolved peer — text output then falls back to the bare `[user:N]` / `[channel:N]` form, and JSON exposes `{peer: {type, id}}` without `name`/`username`. Use the peer ID to look the entity up via `tg_users_get` or `tg_dialogs_search` when names are needed.
 
 JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`), `fromUsername` and `fromType` (`"user"` / `"group"` / `"channel"`). The mapping is: `"user"` for regular senders, `"group"` for legacy basic groups only, `"channel"` for both broadcast channels AND supergroups (MTProto represents both as `PeerChannel`). Original authors of forwarded messages are also included in the `participants` array, which carries that `type` string alongside the bare ID so a user and a channel sharing the same numeric ID survive deduplication as distinct entries.
 

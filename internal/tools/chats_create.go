@@ -48,9 +48,9 @@ func NewChatsCreateHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsCreat
 				telegramErr("failed to create chat", err)
 		}
 
-		chatType := "group"
+		chatType := peerGroup
 		if isChannel {
-			chatType = "channel"
+			chatType = peerChannel
 		}
 
 		title := params.Title

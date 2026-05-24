@@ -453,9 +453,9 @@ func TestMessagesSearchGlobalHandler_ReplyTo_Propagated(t *testing.T) {
 	}
 
 	// Global search intentionally returns only a summary line as
-	// output; individual ↩ markers are not emitted. Pin that, so a
-	// future change to output format has to touch this test.
-	if strings.Contains(res.Output, "↩") {
-		t.Errorf("Output must not contain reply markers for global search, got %q", res.Output)
+	// output; per-message reply lines are not emitted. Pin that, so
+	// a future change to output format has to touch this test.
+	if strings.Contains(res.Output, "reply to:") {
+		t.Errorf("Output must not contain per-message reply lines for global search, got %q", res.Output)
 	}
 }

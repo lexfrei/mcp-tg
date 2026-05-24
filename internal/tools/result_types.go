@@ -56,9 +56,24 @@ func dialogPeerType(dlg *telegram.Dialog) string {
 // lets a caller pick the right deep-link form instead of guessing —
 // channel-on-behalf-of posts and anonymous channel posts would
 // otherwise look indistinguishable from regular user senders.
+// PeerID identifies the host peer (chat / channel / user) that
+// contains the message. Carried in every MessageItem so a consumer
+// of tg_messages_search_global — where results span arbitrary
+// peers — can attribute each result to its source without an extra
+// resolution call. The embedded InputPeer's AccessHash is omitted
+// when zero (a zero hash looks valid to MTProto but raises
+// PEER_ID_INVALID on round-trip; see the InputPeer godoc).
+//
+// PeerID uses json:"peerId,omitzero" — when the upstream MTProto
+// response carried no peer (e.g. tg.UpdateShortSentMessage from
+// SendMessage, which only returns ID + Date), the field disappears
+// from JSON rather than serializing a fake {type:0, id:0} that
+// downstream code might misread as a real PeerUser ID 0. omitempty
+// has no effect on nested structs in Go's encoding/json; omitzero
+// (Go 1.24+) is what actually omits an all-zero InputPeer.
 type MessageItem struct {
 	ID             int                   `json:"id"`
-	PeerID         telegram.InputPeer    `json:"peerId"`
+	PeerID         telegram.InputPeer    `json:"peerId,omitzero"`
 	Date           int                   `json:"date"`
 	Text           string                `json:"text"`
 	FromID         int64                 `json:"fromId"`

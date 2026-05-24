@@ -209,7 +209,7 @@ func TestPeerRefItemFieldShape(t *testing.T) {
 func TestMessageItemFieldShape(t *testing.T) {
 	assertJSONTags(t, reflect.TypeOf(MessageItem{}), map[string]string{
 		"ID":             "id",
-		"PeerID":         "peerId",
+		"PeerID":         "peerId,omitzero",
 		"Date":           "date",
 		"Text":           "text",
 		"FromID":         "fromId",
@@ -222,6 +222,29 @@ func TestMessageItemFieldShape(t *testing.T) {
 		"ReplyTo":        "replyTo,omitempty",
 		"ReplyToMessage": "replyToMessage,omitempty",
 		"Forward":        "forward,omitempty",
+	})
+}
+
+// TestReplyToMessageFieldShape pins the nested ReplyToMessage shape
+// so a rename of FromName/FromUsername/Text silently changing the
+// resolveReplies pipeline's JSON contract gets caught.
+func TestReplyToMessageFieldShape(t *testing.T) {
+	assertJSONTags(t, reflect.TypeOf(ReplyToMessage{}), map[string]string{
+		"FromName":     "fromName,omitempty",
+		"FromUsername": "fromUsername,omitempty",
+		"Text":         "text,omitempty",
+	})
+}
+
+// TestUserItemFieldShape pins UserItem (used by users_get,
+// contacts_search, contacts_list_blocked, groups_members_list,
+// chats_admins, users_get_common_chats via different result types).
+func TestUserItemFieldShape(t *testing.T) {
+	assertJSONTags(t, reflect.TypeOf(UserItem{}), map[string]string{
+		"ID":        "id",
+		"FirstName": "firstName",
+		"LastName":  "lastName,omitempty",
+		"Username":  "username,omitempty",
 	})
 }
 

@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/cockroachdb/errors v1.13.0
 	github.com/gotd/td v0.144.0
-	github.com/modelcontextprotocol/go-sdk v1.6.0
+	github.com/modelcontextprotocol/go-sdk v1.6.1
 	golang.org/x/sync v0.20.0
 )
 

@@ -4,11 +4,11 @@ package resources
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
+	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -148,15 +148,9 @@ func chatMessagesHandler(client telegram.Client) mcp.ResourceHandler {
 			return nil, errors.Wrap(err, "getting messages")
 		}
 
-		var buf strings.Builder
-
-		for idx := range msgs {
-			fmt.Fprintf(&buf, "[%d] %s\n", msgs[idx].ID, msgs[idx].Text)
-		}
-
 		return &mcp.ReadResourceResult{
 			Contents: []*mcp.ResourceContents{
-				{URI: req.Params.URI, MIMEType: "text/plain", Text: buf.String()},
+				{URI: req.Params.URI, MIMEType: "text/plain", Text: tools.FormatMessageList(msgs)},
 			},
 		}, nil
 	}

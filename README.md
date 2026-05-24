@@ -129,6 +129,24 @@ The categorised list below documents 59 of the 75 registered tools — the remai
 
 - `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
 
+## Peer Identifier Format
+
+Every tool that surfaces a peer (sender, forward author, reply target, dialog, group/channel info, contact, user, reaction) uses the **same identifier shape in both text output and JSON**:
+
+- Text form: `Display Name [@username]` / `[user:N]` / `[channel:N]` / `[group:N]` / `[hidden]` / `[unknown:N]`
+- JSON form: every peer-bearing entry carries `{id, type, name, username}` where `type` is one of `"user"` / `"channel"` / `"group"` / `"unknown"`
+
+The `"group"` label covers only legacy basic groups (MTProto `PeerChat`). Supergroups and broadcast channels both label as `"channel"` because gotd represents both as `PeerChannel`. A consumer can pivot between text and JSON surfaces by pattern-matching on the same literal `kind:N` form (`group:42` appears identically in `[group:42]` text output and `participants[].type="group"` + `id=42` JSON).
+
+This applies uniformly across:
+
+- `tg_messages_*` — sender, forwarded-from origin, cross-chat reply target, participants
+- `tg_dialogs_*` — dialog title + username
+- `tg_users_*`, `tg_contacts_*` — user display name + @handle
+- `tg_groups_info` / `tg_groups_list` / `tg_groups_members_list` / `tg_chats_admins` — group/channel titles, member display names
+- `tg_messages_get_reactions` — reactor display name + @handle
+- `tg://chat/{peer}/messages` resource — same multi-line block format as `tg_messages_*`
+
 ## Message Output Format
 
 **Breaking change in this release.** The human-readable `output` field returned by read tools is no longer a one-line-per-message string with a `[ID ↩parent] ts sender: text` shape. Each message is now a multi-line block, and blocks are separated by a `---` line. The `↩<parent>` marker and the `[<media>]` inline prefix are gone — reply targets land on a dedicated `reply to:` line and media type on a dedicated `media:` line. Any consumer that parsed the previous format must be updated.

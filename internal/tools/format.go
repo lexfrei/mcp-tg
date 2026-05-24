@@ -191,6 +191,14 @@ func collapseLineBreaks(s string) string {
 // literal separator instead of guessing.
 const blockSeparator = "\n---\n"
 
+// FormatMessageList renders a slice of domain messages in the same
+// multi-line block format the tool surface uses. Exported so other
+// packages (resources) can produce identical output without
+// duplicating the layout rules.
+func FormatMessageList(msgs []telegram.Message) string {
+	return formatMessages(msgs)
+}
+
 // formatMessages joins message blocks separated by a '---' line so a
 // message body containing its own blank lines stays unambiguous.
 func formatMessages(msgs []telegram.Message) string {

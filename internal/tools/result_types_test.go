@@ -159,6 +159,40 @@ func TestParticipantsFromMessages_SkipsPrivacyHiddenForwardAuthor(t *testing.T) 
 	}
 }
 
+func TestParticipantsFromMessages_LatestNameWinsForRename(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 1, FromID: 42, FromType: telegram.PeerUser, FromName: "Old Name", FromUsername: "olduser"},
+		{
+			ID: 2, FromID: 42, FromType: telegram.PeerUser,
+			FromName: "New Name", FromUsername: "newuser",
+		},
+	}
+
+	parts := participantsFromMessages(msgs)
+
+	if len(parts) != 1 {
+		t.Fatalf("got %d participants, want 1 (dedup)", len(parts))
+	}
+
+	if parts[0].Name != "New Name" || parts[0].Username != "newuser" {
+		t.Errorf("participant = %+v, want {New Name, newuser} — must mirror buildSenderLookup's last-non-empty-wins",
+			parts[0])
+	}
+}
+
+func TestParticipantsFromMessages_EmptyLaterValueDoesNotOverwrite(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 1, FromID: 42, FromType: telegram.PeerUser, FromName: "Real Name", FromUsername: "real"},
+		{ID: 2, FromID: 42, FromType: telegram.PeerUser}, // empty
+	}
+
+	parts := participantsFromMessages(msgs)
+
+	if parts[0].Name != "Real Name" || parts[0].Username != "real" {
+		t.Errorf("empty later entry erased preset Name/Username → %+v", parts[0])
+	}
+}
+
 func TestParticipantsFromMessages_SkipsZeroFromID(t *testing.T) {
 	msgs := []telegram.Message{
 		{ID: 1, FromID: 0, FromName: "Anon Channel Post"},

@@ -153,7 +153,12 @@ func writeReplyLines(buf *strings.Builder, reply *telegram.ReplyToInfo) {
 	}
 
 	if reply.QuoteText != "" {
-		fmt.Fprintf(buf, "quote: «%s»\n", reply.QuoteText)
+		// Collapse embedded newlines so the quote stays on a single
+		// 'quote:' line and doesn't masquerade as a top-level metadata
+		// key or text body. The full multi-line quote remains
+		// available verbatim in the JSON replyTo.quoteText field.
+		quote := strings.ReplaceAll(reply.QuoteText, "\n", " ")
+		fmt.Fprintf(buf, "quote: «%s»\n", quote)
 	}
 }
 

@@ -243,6 +243,9 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 	case telegram.PeerChannel:
 		return fmt.Sprintf("channel:%d", peer.ID)
 	default:
-		return fmt.Sprintf("user:%d", peer.ID)
+		// Don't masquerade a future PeerType as 'user:' — surface the
+		// fact that we don't know the kind so the reader doesn't
+		// trust the wrong deep-link form.
+		return fmt.Sprintf("unknown:%d", peer.ID)
 	}
 }

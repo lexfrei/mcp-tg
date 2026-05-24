@@ -317,3 +317,15 @@ func TestPeerLabel_BasicGroupChat(t *testing.T) {
 		t.Errorf("peerLabel = %q, want %q — matches participant.type and fromType label", got, want)
 	}
 }
+
+func TestPeerLabel_UnknownTypeSurfacesAsUnknown(t *testing.T) {
+	// PeerType is the Go iota enum; a future API extension or a
+	// directly-constructed struct could carry an out-of-range value.
+	// The default branch must NOT silently relabel it as "user:N".
+	got := peerLabel(telegram.InputPeer{Type: telegram.PeerType(99), ID: 42}, "")
+	want := "unknown:42"
+
+	if got != want {
+		t.Errorf("peerLabel for unknown PeerType = %q, want %q — must not masquerade as user:", got, want)
+	}
+}

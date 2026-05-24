@@ -229,6 +229,29 @@ func TestFormatMessage_ForwardedHiddenPrivacy(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_QuoteWithEmbeddedNewlineStaysOnOneLine(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 10, Date: 1700000000,
+		Text: "reply body",
+		ReplyTo: &telegram.ReplyToInfo{
+			MessageID: 5,
+			QuoteText: "line 1\nline 2\nline 3",
+		},
+	}
+
+	got := formatMessage(msg)
+
+	if strings.Contains(got, "line 1\nline 2") {
+		t.Errorf("quote: line must collapse embedded newlines so each line stays one key:value pair, got:\n%s",
+			got)
+	}
+
+	wantLine := "quote: «line 1 line 2 line 3»"
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("missing collapsed quote line %q in:\n%s", wantLine, got)
+	}
+}
+
 func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
 	otherPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
 	msg := &telegram.Message{

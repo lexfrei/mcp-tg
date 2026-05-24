@@ -103,7 +103,12 @@ func participantTypeLabel(peerType telegram.PeerType) string {
 }
 
 func participantsFromMessages(msgs []telegram.Message) []ParticipantItem {
-	seen := make(map[participantKey]bool)
+	// Insertion order is preserved while later non-empty fields
+	// upgrade earlier entries (last-non-empty-wins) — same semantics
+	// as buildSenderLookup, so a renamed peer reflects its most
+	// recent display name regardless of which appearance the caller
+	// happens to scan first.
+	index := make(map[participantKey]int)
 
 	var parts []ParticipantItem
 
@@ -115,11 +120,19 @@ func participantsFromMessages(msgs []telegram.Message) []ParticipantItem {
 		label := participantTypeLabel(peerType)
 		key := participantKey{Type: label, ID: peerID}
 
-		if seen[key] {
+		if pos, ok := index[key]; ok {
+			if name != "" {
+				parts[pos].Name = name
+			}
+
+			if username != "" {
+				parts[pos].Username = username
+			}
+
 			return
 		}
 
-		seen[key] = true
+		index[key] = len(parts)
 
 		parts = append(parts, ParticipantItem{
 			ID: peerID, Type: label, Name: name, Username: username,

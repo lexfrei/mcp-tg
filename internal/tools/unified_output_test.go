@@ -157,29 +157,134 @@ func TestReactionUserItem_JSONShape(t *testing.T) {
 	}
 }
 
-// TestPeerRefItemFieldShape pins the JSON tags on the canonical
-// peer-ref shape so a rename of ParticipantItem fields cannot
-// silently change every consumer's expected schema.
-func TestPeerRefItemFieldShape(t *testing.T) {
-	typ := reflect.TypeOf(PeerRefItem{})
-
-	wantTags := map[string]string{
-		"ID":       "id",
-		"Type":     "type",
-		"Name":     "name",
-		"Username": "username,omitempty",
-	}
+// assertJSONTags is the shared helper used by every JSON-shape pin
+// test. It walks the field-name → expected-tag map and complains on
+// any field that is missing or carries a different json tag. Centralised
+// so a future field-tag policy change (e.g. always-omitempty rule)
+// updates the asserter, not every test.
+func assertJSONTags(t *testing.T, typ reflect.Type, wantTags map[string]string) {
+	t.Helper()
 
 	for name, want := range wantTags {
 		field, ok := typ.FieldByName(name)
 		if !ok {
-			t.Errorf("PeerRefItem missing field %q", name)
+			t.Errorf("%s missing field %q", typ.Name(), name)
 
 			continue
 		}
 
 		if got := field.Tag.Get("json"); got != want {
-			t.Errorf("PeerRefItem.%s json tag = %q, want %q", name, got, want)
+			t.Errorf("%s.%s json tag = %q, want %q", typ.Name(), name, got, want)
+		}
+	}
+}
+
+// assertLegacyFieldAbsent pins that an old-style field name does NOT
+// reappear in a struct after a rename — symmetric protection against
+// accidental reintroduction during refactoring.
+func assertLegacyFieldAbsent(t *testing.T, typ reflect.Type, legacyName string) {
+	t.Helper()
+
+	if _, exists := typ.FieldByName(legacyName); exists {
+		t.Errorf("%s reintroduced legacy field %q — was renamed in the unification sweep",
+			typ.Name(), legacyName)
+	}
+}
+
+// TestPeerRefItemFieldShape pins the JSON tags on the canonical
+// peer-ref shape so a rename of ParticipantItem fields cannot
+// silently change every consumer's expected schema.
+func TestPeerRefItemFieldShape(t *testing.T) {
+	assertJSONTags(t, reflect.TypeOf(PeerRefItem{}), map[string]string{
+		"ID":       "id",
+		"Type":     "type",
+		"Name":     "name",
+		"Username": "username,omitempty",
+	})
+}
+
+// TestMessageItemFieldShape pins the JSON tags on MessageItem so the
+// new FromType / FromUsername / Forward fields cannot be renamed
+// silently.
+func TestMessageItemFieldShape(t *testing.T) {
+	assertJSONTags(t, reflect.TypeOf(MessageItem{}), map[string]string{
+		"ID":             "id",
+		"Date":           "date",
+		"Text":           "text",
+		"FromID":         "fromId",
+		"FromType":       "fromType,omitempty",
+		"FromName":       "fromName,omitempty",
+		"FromUsername":   "fromUsername,omitempty",
+		"TopicID":        "topicId,omitempty",
+		"MediaType":      "mediaType,omitempty",
+		"Entities":       "entities,omitempty",
+		"ReplyTo":        "replyTo,omitempty",
+		"ReplyToMessage": "replyToMessage,omitempty",
+		"Forward":        "forward,omitempty",
+	})
+}
+
+// TestDialogItemFieldShape pins the JSON tags on DialogItem so the
+// added Username field stays under its canonical tag.
+func TestDialogItemFieldShape(t *testing.T) {
+	assertJSONTags(t, reflect.TypeOf(DialogItem{}), map[string]string{
+		"Peer":        "peer",
+		"Title":       "title",
+		"Username":    "username,omitempty",
+		"Type":        "type",
+		"UnreadCount": "unreadCount,omitempty",
+	})
+}
+
+// TestContactStatusItemFieldShape pins ContactStatusItem's renamed
+// Name/Username fields and verifies the legacy UserName field did
+// not get reintroduced alongside them.
+func TestContactStatusItemFieldShape(t *testing.T) {
+	typ := reflect.TypeOf(ContactStatusItem{})
+
+	assertJSONTags(t, typ, map[string]string{
+		"UserID":   "userId",
+		"Name":     "name,omitempty",
+		"Username": "username,omitempty",
+		"Status":   "status",
+		"LastSeen": "lastSeen,omitempty",
+	})
+	assertLegacyFieldAbsent(t, typ, "UserName")
+}
+
+// TestReactionUserItemFieldShape pins the rename ReactionUserItem
+// underwent — separate Name + Username, legacy UserName field gone.
+func TestReactionUserItemFieldShape(t *testing.T) {
+	typ := reflect.TypeOf(ReactionUserItem{})
+
+	assertJSONTags(t, typ, map[string]string{
+		"UserID":   "userId",
+		"Name":     "name,omitempty",
+		"Username": "username,omitempty",
+		"Emoji":    "emoji",
+	})
+	assertLegacyFieldAbsent(t, typ, "UserName")
+}
+
+// TestPeerKindConstantValues pins the wire-string values of the
+// kind labels. Tools across the surface (peerLabel, dialogPeerType,
+// participantTypeLabel, chats_create, etc.) all source from these
+// constants — a value drift like peerChannel = "broadcast" would
+// silently change every JSON consumer's expected "type" enum.
+func TestPeerKindConstantValues(t *testing.T) {
+	cases := map[string]struct {
+		got, want string
+	}{
+		"peerUser":        {peerUser, "user"},
+		"peerGroup":       {peerGroup, "group"},
+		"peerChannel":     {peerChannel, "channel"},
+		"unknownPeerType": {unknownPeerType, "unknown"},
+	}
+
+	for name, c := range cases {
+		if c.got != c.want {
+			t.Errorf("%s = %q, want %q — constant value drift would change every JSON consumer",
+				name, c.got, c.want)
 		}
 	}
 }

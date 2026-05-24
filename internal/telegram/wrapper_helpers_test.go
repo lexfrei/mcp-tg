@@ -442,7 +442,7 @@ func TestFillSenderRef_DMFallbackToPeer(t *testing.T) {
 
 func TestFillSenderRef_AnonymousChannelPostCarriesChannelType(t *testing.T) {
 	msg := &Message{FromID: 0}
-	chats := map[int64]peerRef{500: {Name: "Cozystack Blog"}}
+	chats := map[int64]peerRef{500: {Name: "Example Channel"}}
 
 	fillSenderRef(msg, nil, chats, InputPeer{Type: PeerChannel, ID: 500})
 
@@ -511,21 +511,21 @@ func TestFillForwardRefs_ResolvesChannelTitle(t *testing.T) {
 	msg := &Message{
 		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerChannel, ID: 100}}},
 	}
-	chats := map[int64]peerRef{100: {Name: "Cozystack Blog", Username: "cozystack_blog"}}
+	chats := map[int64]peerRef{100: {Name: "Example Channel", Username: "examplechan"}}
 
 	fillForwardRefs(msg, nil, chats)
 
-	if msg.Forward.From.Name != "Cozystack Blog" || msg.Forward.From.Username != "cozystack_blog" {
-		t.Errorf("Forward.From = %+v, want Cozystack Blog/cozystack_blog", msg.Forward.From)
+	if msg.Forward.From.Name != "Example Channel" || msg.Forward.From.Username != "examplechan" {
+		t.Errorf("Forward.From = %+v, want Example Channel/examplechan", msg.Forward.From)
 	}
 }
 
 func TestFillForwardRefs_HiddenName_NoResolve(t *testing.T) {
-	msg := &Message{Forward: &ForwardInfo{FromName: "Kaidxen"}}
+	msg := &Message{Forward: &ForwardInfo{FromName: "Privacy Hidden Author"}}
 
 	fillForwardRefs(msg, nil, nil)
 
-	if msg.Forward.FromName != "Kaidxen" {
+	if msg.Forward.FromName != "Privacy Hidden Author" {
 		t.Errorf("Forward.FromName = %q, want preserved", msg.Forward.FromName)
 	}
 

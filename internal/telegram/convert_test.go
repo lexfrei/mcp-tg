@@ -536,7 +536,7 @@ func TestConvertMessage_WithForward_HiddenName(t *testing.T) {
 	raw := &tg.Message{ID: 1, Date: 200}
 
 	fwd := tg.MessageFwdHeader{Date: 100}
-	fwd.SetFromName("Kaidxen")
+	fwd.SetFromName("Privacy Hidden Author")
 	raw.SetFwdFrom(fwd)
 
 	got := ConvertMessage(raw)
@@ -549,8 +549,8 @@ func TestConvertMessage_WithForward_HiddenName(t *testing.T) {
 		t.Errorf("Forward.From = %+v, want nil when only FromName is set", got.Forward.From)
 	}
 
-	if got.Forward.FromName != "Kaidxen" {
-		t.Errorf("Forward.FromName = %q, want %q", got.Forward.FromName, "Kaidxen")
+	if got.Forward.FromName != "Privacy Hidden Author" {
+		t.Errorf("Forward.FromName = %q, want %q", got.Forward.FromName, "Privacy Hidden Author")
 	}
 }
 
@@ -583,7 +583,7 @@ func TestConvertMessage_WithForward_FromChannel(t *testing.T) {
 	fwd := tg.MessageFwdHeader{Date: 100}
 	fwd.SetFromID(&tg.PeerChannel{ChannelID: 1006503122})
 	fwd.SetChannelPost(4567)
-	fwd.SetPostAuthor("Kvaps")
+	fwd.SetPostAuthor("Channel Signature")
 	raw.SetFwdFrom(fwd)
 
 	got := ConvertMessage(raw)
@@ -604,7 +604,7 @@ func TestConvertMessage_WithForward_FromChannel(t *testing.T) {
 		t.Errorf("Forward.ChannelPost = %d, want 4567", got.Forward.ChannelPost)
 	}
 
-	if got.Forward.PostAuthor != "Kvaps" {
-		t.Errorf("Forward.PostAuthor = %q, want %q", got.Forward.PostAuthor, "Kvaps")
+	if got.Forward.PostAuthor != "Channel Signature" {
+		t.Errorf("Forward.PostAuthor = %q, want %q", got.Forward.PostAuthor, "Channel Signature")
 	}
 }

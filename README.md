@@ -27,9 +27,9 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
 
-## Tools (75 registered; 59 listed below)
+## Tools (75 registered; 64 listed below)
 
-The categorised list below documents 59 of the 75 registered tools — the remaining 16 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
+The categorised list below documents 64 of the 75 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
 
 ### Messages (11)
 
@@ -149,7 +149,12 @@ This applies uniformly across:
 
 ## Message Output Format
 
-**Breaking change in this release.** The human-readable `output` field returned by read tools is no longer a one-line-per-message string with a `[ID ↩parent] ts sender: text` shape. Each message is now a multi-line block, and blocks are separated by a `---` line. The `↩<parent>` marker and the `[<media>]` inline prefix are gone — reply targets land on a dedicated `reply to:` line and media type on a dedicated `media:` line. Any consumer that parsed the previous format must be updated.
+**Breaking changes in this release.** Both text and JSON outputs change shape.
+
+- **Text** — `output` is no longer a one-line-per-message string with a `[ID ↩parent] ts sender: text` shape. Each message is now a multi-line block separated by a `---` line. The `↩<parent>` marker and the `[<media>]` inline prefix are gone — reply targets land on a dedicated `reply to:` line and media type on a dedicated `media:` line. Dialog rows in `tg_dialogs_*` switch from `[type] Title` to the unified `Title [@username/user:N/...]` identifier shape.
+- **JSON** — `MessageItem` gains `fromType`, `fromUsername`, and `forward`. `DialogItem` gains `username`. `ParticipantItem` gains `type` and `username`. `ReactionUserItem.userName` is removed in favour of separate `name` and `username` fields. `ContactStatusItem` gains the same `name`/`username` slots (currently empty pending a follow-up upstream lookup). `InputPeer.accessHash` becomes `omitempty` — a zero value (the common case for peers from forwarded-message headers or numeric IDs) now disappears from JSON rather than serializing as `"accessHash":0`.
+
+Any consumer that parsed the previous formats must be updated.
 
 Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a literal `---` line so a message body containing its own blank lines stays unambiguous.
 
@@ -166,7 +171,7 @@ text:
 <message body, multi-line preserved>
 ```
 
-Lines are emitted only when their underlying field is populated. A message body that contains a literal `---` line on its own (rare — typically a Markdown horizontal rule) collides with the block separator, so parse-back from `output` is not strictly round-trip safe; the JSON `messages` array is the authoritative shape. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
+Lines are emitted only when their underlying field is populated. A message body that contains a literal `---` line on its own (rare — typically a Markdown horizontal rule) collides with the block separator, so parse-back from `output` is not strictly round-trip safe. The same caveat applies to **adversarial content**: peer names and usernames are sanitized to stop newline-injection from forging fake `from:` / `reply to:` lines, but the body itself is rendered verbatim. A user can craft a body containing `\n---\n[999] ts\nfrom: Admin\ntext:\nfake` and the rendered output will look like two messages. The JSON `messages` array is the authoritative shape — body verbatim preservation is a deliberate UX choice for code blocks and quoted text, not a security property. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
 
 - `Display Name [@username]` — public username available; the numeric ID is dropped from the text form for brevity (it's still in the JSON `messages[].fromId`, `forward.from.peer.id`, etc.)
 - `Display Name [user:N]` / `[channel:N]` / `[group:N]` — username not exposed, only ID (labels match `participants[].type` and `fromType` exactly)

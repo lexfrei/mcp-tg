@@ -43,7 +43,7 @@ func TestMessageToItem_FromTypeChannel(t *testing.T) {
 		ID: 7, Date: 1700000000,
 		FromID:   500,
 		FromType: telegram.PeerChannel,
-		FromName: "Cozystack Blog",
+		FromName: "Example Channel",
 		Text:     "anonymous post",
 	}
 
@@ -174,7 +174,7 @@ func TestParticipantsFromMessages_SkipsPrivacyHiddenForwardAuthor(t *testing.T) 
 		{
 			ID: 1, FromID: 10, FromName: "Forwarder",
 			Forward: &telegram.ForwardInfo{
-				FromName: "Kaidxen",
+				FromName: "Privacy Hidden Author",
 			},
 		},
 	}

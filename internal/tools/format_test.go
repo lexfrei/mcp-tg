@@ -138,12 +138,12 @@ func TestFormatMessage_ChannelOnBehalfOfSender(t *testing.T) {
 		Date:     1700000000,
 		FromID:   5005003001,
 		FromType: telegram.PeerChannel,
-		FromName: "Cozystack Blog",
+		FromName: "Example Channel",
 		Text:     "official post",
 	}
 
 	got := formatMessage(msg)
-	wantLine := "from: Cozystack Blog [channel:5005003001]"
+	wantLine := "from: Example Channel [channel:5005003001]"
 
 	if !strings.Contains(got, wantLine) {
 		t.Errorf("formatMessage() must label channel-on-behalf-of sender with channel:, got:\n%s", got)
@@ -248,11 +248,11 @@ func TestFormatMessage_ForwardedFromChannel_WithPostAuthor(t *testing.T) {
 		Forward: &telegram.ForwardInfo{
 			Date:        1700000000,
 			ChannelPost: 4567,
-			PostAuthor:  "Kvaps",
+			PostAuthor:  "Channel Signature",
 			From: &telegram.PeerRef{
 				Peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},
-				Name:     "Cozystack Blog",
-				Username: "cozystack_blog",
+				Name:     "Example Channel",
+				Username: "examplechan",
 			},
 		},
 	}
@@ -261,7 +261,7 @@ func TestFormatMessage_ForwardedFromChannel_WithPostAuthor(t *testing.T) {
 	want := strings.Join([]string{
 		"[7] 2023-11-14T22:16:40Z",
 		"from: Forwarder [user:1]",
-		`forwarded from channel: Cozystack Blog [@cozystack_blog] #4567 by "Kvaps" at 2023-11-14T22:13:20Z`,
+		`forwarded from channel: Example Channel [@examplechan] #4567 by "Channel Signature" at 2023-11-14T22:13:20Z`,
 		"text:",
 		"body",
 	}, "\n")
@@ -316,12 +316,12 @@ func TestFormatMessage_ForwardedHiddenPrivacy(t *testing.T) {
 		Text: "body",
 		Forward: &telegram.ForwardInfo{
 			Date:     1700000000,
-			FromName: "Kaidxen",
+			FromName: "Privacy Hidden Author",
 		},
 	}
 
 	got := formatMessage(msg)
-	wantLine := "forwarded from: Kaidxen [hidden] at 2023-11-14T22:13:20Z"
+	wantLine := "forwarded from: Privacy Hidden Author [hidden] at 2023-11-14T22:13:20Z"
 
 	if !strings.Contains(got, wantLine) {
 		t.Errorf("formatMessage() missing %q in:\n%s", wantLine, got)

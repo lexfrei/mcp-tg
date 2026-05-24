@@ -51,9 +51,6 @@ func NewDialogsGetInfoHandler(client telegram.Client) mcp.ToolHandlerFor[Dialogs
 		var out strings.Builder
 
 		out.WriteString(ref)
-		out.WriteString(" [")
-		out.WriteString(info.Type)
-		out.WriteString("]")
 
 		if info.About != "" {
 			out.WriteString(": ")

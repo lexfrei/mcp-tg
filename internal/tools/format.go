@@ -224,9 +224,7 @@ func formatDialog(dlg *telegram.Dialog) string {
 		return unknownValue
 	}
 
-	peerType := dialogPeerKind(dlg)
-	ref := formatPeerRef(dlg.Title, dlg.Username,
-		telegram.InputPeer{Type: peerType, ID: dlg.Peer.ID})
+	ref := formatPeerRef(dlg.Title, dlg.Username, dlg.Peer)
 
 	unread := ""
 	if dlg.UnreadCount > 0 {
@@ -234,15 +232,4 @@ func formatDialog(dlg *telegram.Dialog) string {
 	}
 
 	return ref + unread
-}
-
-// dialogPeerKind resolves a Dialog into a PeerType honoring the
-// IsGroup hint (a *tg.Chat dialog in a supergroup context will be
-// flagged as IsGroup while Peer.Type stays PeerChat).
-func dialogPeerKind(dlg *telegram.Dialog) telegram.PeerType {
-	if dlg.IsGroup && dlg.Peer.Type == telegram.PeerChat {
-		return telegram.PeerChat
-	}
-
-	return dlg.Peer.Type
 }

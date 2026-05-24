@@ -266,9 +266,9 @@ func TestFormatPeerRef_IDOnlyUser(t *testing.T) {
 }
 
 func TestFormatPeerRef_ChannelLabel(t *testing.T) {
-	got := formatPeerRef("Cozystack Blog", "cozystack_blog",
+	got := formatPeerRef("Example Channel", "examplechan",
 		telegram.InputPeer{Type: telegram.PeerChannel, ID: 500})
-	want := "Cozystack Blog [@cozystack_blog]"
+	want := "Example Channel [@examplechan]"
 
 	if got != want {
 		t.Errorf("formatPeerRef = %q, want %q", got, want)
@@ -285,8 +285,8 @@ func TestFormatPeerRef_PrivateChannelID(t *testing.T) {
 }
 
 func TestFormatPeerRef_HiddenPrivacy(t *testing.T) {
-	got := formatPeerRef("Kaidxen", "", telegram.InputPeer{})
-	want := "Kaidxen [hidden]"
+	got := formatPeerRef("Privacy Hidden Author", "", telegram.InputPeer{})
+	want := "Privacy Hidden Author [hidden]"
 
 	if got != want {
 		t.Errorf("formatPeerRef = %q, want %q", got, want)

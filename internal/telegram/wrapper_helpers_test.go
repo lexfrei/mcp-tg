@@ -396,6 +396,29 @@ func TestFillSenderRef_EmptyLookupDoesNotOverwrite(t *testing.T) {
 	}
 }
 
+func TestFillForwardRefs_CollidingIDsResolvesByType(t *testing.T) {
+	// Same numeric ID 500 in both Users[] and Chats[]; the forward
+	// targets a channel and must NOT pick up the user's name.
+	msg := &Message{
+		Forward: &ForwardInfo{From: &PeerRef{
+			Peer: InputPeer{Type: PeerChannel, ID: 500},
+		}},
+	}
+	users := map[int64]peerRef{500: {Name: "Wrong User", Username: "wrong"}}
+	chats := map[int64]peerRef{500: {Name: "Correct Channel", Username: "correct"}}
+
+	fillForwardRefs(msg, users, chats)
+
+	if msg.Forward.From.Name != "Correct Channel" {
+		t.Errorf("Forward.From.Name = %q, want %q — type-blind lookup let the user shadow the channel",
+			msg.Forward.From.Name, "Correct Channel")
+	}
+
+	if msg.Forward.From.Username != "correct" {
+		t.Errorf("Forward.From.Username = %q, want %q", msg.Forward.From.Username, "correct")
+	}
+}
+
 func TestFillForwardRefs_ResolvesUser(t *testing.T) {
 	msg := &Message{
 		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerUser, ID: 777}}},

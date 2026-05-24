@@ -38,11 +38,12 @@ func dialogPeerType(dlg *telegram.Dialog) string {
 
 // MessageItem is a structured message entry for JSON results.
 //
-// FromType disambiguates the FromID peer kind ("user" / "chat" /
-// "channel") so a caller can pick the right deep-link form without
-// guessing — channel-on-behalf-of posts and anonymous channel posts
-// would otherwise look indistinguishable from regular user senders
-// in the JSON.
+// FromType disambiguates the FromID peer kind ("user" / "group" /
+// "channel"; "group" is the label for both legacy basic chats and
+// supergroups when they surface as a sender peer) so a caller can
+// pick the right deep-link form without guessing — channel-on-behalf-
+// of posts and anonymous channel posts would otherwise look
+// indistinguishable from regular user senders in the JSON.
 type MessageItem struct {
 	ID             int                   `json:"id"`
 	Date           int                   `json:"date"`
@@ -71,11 +72,11 @@ type ReplyToMessage struct {
 // ParticipantItem identifies every peer that appears as a sender or as
 // the original author of a forwarded message in a returned batch.
 //
-// Type ("user" / "chat" / "channel") disambiguates the ID space:
+// Type ("user" / "group" / "channel") disambiguates the ID space:
 // without it a user with ID N and a channel with ID N would collide
-// in the seen-set and silently merge into one entry. Type also lets
-// the caller pick the right Telegram link form ("@username" /
-// "user:N" / "channel:N") when re-rendering.
+// in the seen-set and silently merge into one entry. The same Type
+// label appears on MessageItem.FromType so the caller can correlate
+// a sender with its participant entry.
 type ParticipantItem struct {
 	ID       int64  `json:"id"`
 	Type     string `json:"type"`

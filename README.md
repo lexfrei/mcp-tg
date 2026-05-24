@@ -147,7 +147,7 @@ text:
 Lines are emitted only when their underlying field is populated. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
 
 - `Display Name [@username]` — public username available
-- `Display Name [user:N]` / `[channel:N]` / `[chat:N]` — username not exposed, only ID
+- `Display Name [user:N]` / `[channel:N]` / `[group:N]` — username not exposed, only ID (labels match `participants[].type` and `fromType` exactly)
 - `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected; surfaces on `forwarded from:` and `reply to: ... in` lines (typical when the original author enabled forward-privacy). The `from:` sender line is omitted entirely when both name and ID are absent, since the message host already identifies the chat.
 - `[user:N]` / `[hidden]` — degenerate forms when display name is also missing
 

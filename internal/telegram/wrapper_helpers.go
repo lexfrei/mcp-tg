@@ -638,7 +638,8 @@ func convertMessages(
 // wiping a populated sender name.
 func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peer InputPeer) {
 	if msg.FromID != 0 {
-		if ref, ok := lookupRef(msg.FromID, users, chats); ok {
+		fromPeer := InputPeer{Type: msg.FromType, ID: msg.FromID}
+		if ref, ok := lookupRefByPeer(fromPeer, users, chats); ok {
 			applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
 		}
 
@@ -649,7 +650,7 @@ func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peer InputPeer)
 		return
 	}
 
-	if ref, ok := lookupRef(peer.ID, users, chats); ok {
+	if ref, ok := lookupRefByPeer(peer, users, chats); ok {
 		msg.FromID = peer.ID
 		msg.FromType = peer.Type
 		applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
@@ -676,7 +677,7 @@ func fillForwardRefs(msg *Message, users, chats map[int64]peerRef) {
 		return
 	}
 
-	ref, ok := lookupRef(msg.Forward.From.Peer.ID, users, chats)
+	ref, ok := lookupRefByPeer(msg.Forward.From.Peer, users, chats)
 	if !ok {
 		return
 	}
@@ -697,7 +698,7 @@ func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
 		return
 	}
 
-	ref, ok := lookupRef(msg.ReplyTo.FromPeerID.ID, users, chats)
+	ref, ok := lookupRefByPeer(*msg.ReplyTo.FromPeerID, users, chats)
 	if !ok {
 		return
 	}
@@ -705,16 +706,26 @@ func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
 	applyPeerRef(&msg.ReplyTo.FromName, &msg.ReplyTo.FromUsername, ref)
 }
 
-func lookupRef(id int64, users, chats map[int64]peerRef) (peerRef, bool) {
-	if ref, ok := users[id]; ok {
-		return ref, true
-	}
+// lookupRefByPeer routes to the correct map based on the peer kind.
+// User IDs and channel IDs technically share an int64 namespace and
+// can collide, so a type-blind union lookup would let a same-ID user
+// stamp its name onto a channel-shaped PeerRef (and vice versa).
+// Knowing the kind at the call site lets us go straight to the right
+// half. PeerChat shares the chats map with PeerChannel (basic groups
+// and channels both live in Chats[]).
+func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, bool) {
+	switch peer.Type {
+	case PeerUser:
+		ref, ok := users[peer.ID]
 
-	if ref, ok := chats[id]; ok {
-		return ref, true
-	}
+		return ref, ok
+	case PeerChat, PeerChannel:
+		ref, ok := chats[peer.ID]
 
-	return peerRef{}, false
+		return ref, ok
+	default:
+		return peerRef{}, false
+	}
 }
 
 func messagesFromUpdates(result tg.UpdatesClass) []Message {

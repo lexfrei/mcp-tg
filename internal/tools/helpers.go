@@ -221,6 +221,11 @@ func formatPeerRef(name, username string, peer telegram.InputPeer) string {
 // peerLabel returns the bracket-contents portion of formatPeerRef.
 // Returns "" when the peer is empty AND no username is provided so the
 // caller can fall back to "[hidden]".
+//
+// The kind labels — user / group / channel — match the strings used by
+// ParticipantItem.Type and MessageItem.FromType, so a caller can grep
+// either surface for the same identifier ("group:42" appears in both
+// text and JSON).
 func peerLabel(peer telegram.InputPeer, username string) string {
 	if username != "" {
 		return "@" + username
@@ -234,7 +239,7 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 	case telegram.PeerUser:
 		return fmt.Sprintf("user:%d", peer.ID)
 	case telegram.PeerChat:
-		return fmt.Sprintf("chat:%d", peer.ID)
+		return fmt.Sprintf("group:%d", peer.ID)
 	case telegram.PeerChannel:
 		return fmt.Sprintf("channel:%d", peer.ID)
 	default:

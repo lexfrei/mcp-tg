@@ -311,9 +311,9 @@ func TestFormatPeerRef_LabelOnly(t *testing.T) {
 
 func TestPeerLabel_BasicGroupChat(t *testing.T) {
 	got := peerLabel(telegram.InputPeer{Type: telegram.PeerChat, ID: 77}, "")
-	want := "chat:77"
+	want := "group:77"
 
 	if got != want {
-		t.Errorf("peerLabel = %q, want %q", got, want)
+		t.Errorf("peerLabel = %q, want %q — matches participant.type and fromType label", got, want)
 	}
 }

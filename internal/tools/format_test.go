@@ -35,6 +35,22 @@ func TestFormatMessage_TextOnly(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_SenderHiddenButNamed(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 7, Date: 1700000000,
+		FromName: "Anonymized Author",
+		Text:     "body",
+	}
+
+	got := formatMessage(msg)
+	wantLine := "from: Anonymized Author [hidden]"
+
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("formatMessage should emit a [hidden] sender line when only FromName is set, got:\n%s",
+			got)
+	}
+}
+
 func TestFormatMessage_ChannelOnBehalfOfSender(t *testing.T) {
 	msg := &telegram.Message{
 		ID:       7,

@@ -533,38 +533,67 @@ func dialogsFromSearch(result *tg.ContactsFound) []Dialog {
 	return dialogs
 }
 
+// peerRef is the internal name+username pair used to enrich messages
+// with display names and usernames resolved from the MTProto response's
+// Users/Chats arrays.
+type peerRef struct {
+	Name     string
+	Username string
+}
+
 //nolint:gocritic // unnamedResult: names add no clarity for extraction.
 func extractMessages(
 	result tg.MessagesMessagesClass, peerID int64,
 ) ([]Message, int) {
 	switch res := result.(type) {
 	case *tg.MessagesMessages:
-		names := buildUserNames(res.Users)
+		users := buildUserRefs(res.Users)
+		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, names, peerID), len(res.Messages)
+		return convertMessages(res.Messages, users, chats, peerID), len(res.Messages)
 	case *tg.MessagesMessagesSlice:
-		names := buildUserNames(res.Users)
+		users := buildUserRefs(res.Users)
+		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, names, peerID), res.Count
+		return convertMessages(res.Messages, users, chats, peerID), res.Count
 	case *tg.MessagesChannelMessages:
-		names := buildUserNames(res.Users)
+		users := buildUserRefs(res.Users)
+		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, names, peerID), res.Count
+		return convertMessages(res.Messages, users, chats, peerID), res.Count
 	default:
 		return nil, 0
 	}
 }
 
-func buildUserNames(users []tg.UserClass) map[int64]string {
-	names := make(map[int64]string, len(users))
+func buildUserRefs(users []tg.UserClass) map[int64]peerRef {
+	refs := make(map[int64]peerRef, len(users))
 
 	for _, usr := range users {
 		if typed, ok := usr.(*tg.User); ok {
-			names[typed.ID] = userDisplayName(typed)
+			refs[typed.ID] = peerRef{
+				Name:     userDisplayName(typed),
+				Username: typed.Username,
+			}
 		}
 	}
 
-	return names
+	return refs
+}
+
+func buildChatRefs(chats []tg.ChatClass) map[int64]peerRef {
+	refs := make(map[int64]peerRef, len(chats))
+
+	for _, ch := range chats {
+		switch typed := ch.(type) {
+		case *tg.Channel:
+			refs[typed.ID] = peerRef{Name: typed.Title, Username: typed.Username}
+		case *tg.Chat:
+			refs[typed.ID] = peerRef{Name: typed.Title}
+		}
+	}
+
+	return refs
 }
 
 func userDisplayName(usr *tg.User) string {
@@ -577,34 +606,93 @@ func userDisplayName(usr *tg.User) string {
 }
 
 func convertMessages(
-	raw []tg.MessageClass, names map[int64]string, peerID int64,
+	raw []tg.MessageClass, users, chats map[int64]peerRef, peerID int64,
 ) []Message {
 	msgs := make([]Message, 0, len(raw))
 
 	for _, m := range raw {
-		if msg, ok := m.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
-			fillFromName(&converted, names, peerID)
-			msgs = append(msgs, converted)
+		msg, ok := m.(*tg.Message)
+		if !ok {
+			continue
 		}
+
+		converted := ConvertMessage(msg)
+		fillSenderRef(&converted, users, chats, peerID)
+		fillForwardRefs(&converted, users, chats)
+		fillReplyToRef(&converted, users, chats)
+		msgs = append(msgs, converted)
 	}
 
 	return msgs
 }
 
-// fillFromName resolves sender name from user map.
-// In DMs, FromID==0 means the peer (not owner).
-func fillFromName(msg *Message, names map[int64]string, peerID int64) {
+// fillSenderRef resolves sender name and username from user/chat maps.
+// In DMs, FromID==0 means the peer (not owner), so we fall back to the
+// peerID for both ID and name.
+func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peerID int64) {
 	if msg.FromID != 0 {
-		msg.FromName = names[msg.FromID]
+		if ref, ok := lookupRef(msg.FromID, users, chats); ok {
+			msg.FromName = ref.Name
+			msg.FromUsername = ref.Username
+		}
 
 		return
 	}
 
-	if name, ok := names[peerID]; ok {
+	if ref, ok := lookupRef(peerID, users, chats); ok {
 		msg.FromID = peerID
-		msg.FromName = name
+		msg.FromName = ref.Name
+		msg.FromUsername = ref.Username
 	}
+}
+
+// fillForwardRefs resolves PeerRef.Name and PeerRef.Username on
+// msg.Forward.From using the response's Users/Chats arrays. Privacy-
+// hidden forwards (From == nil, only FromName set) are passed through
+// unchanged.
+func fillForwardRefs(msg *Message, users, chats map[int64]peerRef) {
+	if msg.Forward == nil || msg.Forward.From == nil {
+		return
+	}
+
+	ref, ok := lookupRef(msg.Forward.From.Peer.ID, users, chats)
+	if !ok {
+		return
+	}
+
+	msg.Forward.From.Name = ref.Name
+	msg.Forward.From.Username = ref.Username
+}
+
+// fillReplyToRef resolves FromName/FromUsername on a cross-chat reply
+// (when ReplyTo.FromPeerID points to a different peer than the message
+// host). Same-chat replies leave the fields empty because the parent
+// author is already reachable via msg.FromID resolution at the call
+// site that needs it.
+func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
+	if msg.ReplyTo == nil || msg.ReplyTo.FromPeerID == nil {
+		return
+	}
+
+	ref, ok := lookupRef(msg.ReplyTo.FromPeerID.ID, users, chats)
+	if !ok {
+		return
+	}
+
+	msg.ReplyTo.FromName = ref.Name
+	msg.ReplyTo.FromUsername = ref.Username
+}
+
+func lookupRef(id int64, users, chats map[int64]peerRef) (peerRef, bool) {
+	if ref, ok := users[id]; ok {
+		return ref, true
+	}
+
+	if ref, ok := chats[id]; ok {
+		return ref, true
+	}
+
+	return peerRef{}, false
 }
 
 func messagesFromUpdates(result tg.UpdatesClass) []Message {
@@ -617,29 +705,35 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 		return nil
 	}
 
-	names := buildUserNames(upd.Users)
+	users := buildUserRefs(upd.Users)
+	chats := buildChatRefs(upd.Chats)
 
 	var msgs []Message
 
 	for _, update := range upd.Updates {
 		if newMsg, ok := update.(*tg.UpdateNewMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				converted := ConvertMessage(msg)
-				converted.FromName = names[converted.FromID]
-				msgs = append(msgs, converted)
+				msgs = append(msgs, enrichUpdateMessage(msg, users, chats))
 			}
 		}
 
 		if newMsg, ok := update.(*tg.UpdateNewChannelMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				converted := ConvertMessage(msg)
-				converted.FromName = names[converted.FromID]
-				msgs = append(msgs, converted)
+				msgs = append(msgs, enrichUpdateMessage(msg, users, chats))
 			}
 		}
 	}
 
 	return msgs
+}
+
+func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Message {
+	converted := ConvertMessage(raw)
+	fillSenderRef(&converted, users, chats, 0)
+	fillForwardRefs(&converted, users, chats)
+	fillReplyToRef(&converted, users, chats)
+
+	return converted
 }
 
 func messageFromUpdate(result tg.UpdatesClass) *Message {

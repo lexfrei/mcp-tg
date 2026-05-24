@@ -294,3 +294,139 @@ func TestChannelType_Supergroup(t *testing.T) {
 		t.Errorf("channelType(supergroup) = %q, want %q", got, wantSupergroup)
 	}
 }
+
+func TestBuildUserRefs_PopulatesNameAndUsername(t *testing.T) {
+	users := []tg.UserClass{
+		&tg.User{ID: 10, FirstName: "Alice", LastName: "A", Username: "alice"},
+		&tg.User{ID: 20, FirstName: "Bob"},
+		&tg.UserEmpty{ID: 30},
+	}
+
+	refs := buildUserRefs(users)
+
+	if refs[10].Name != "Alice A" {
+		t.Errorf("refs[10].Name = %q, want %q", refs[10].Name, "Alice A")
+	}
+
+	if refs[10].Username != "alice" {
+		t.Errorf("refs[10].Username = %q, want %q", refs[10].Username, "alice")
+	}
+
+	if refs[20].Username != "" {
+		t.Errorf("refs[20].Username = %q, want empty", refs[20].Username)
+	}
+
+	if _, ok := refs[30]; ok {
+		t.Errorf("refs[30] populated for UserEmpty, want absent")
+	}
+}
+
+func TestBuildChatRefs_ChannelAndChat(t *testing.T) {
+	chats := []tg.ChatClass{
+		&tg.Channel{ID: 100, Title: "Public Channel", Username: "pub"},
+		&tg.Channel{ID: 200, Title: "Private Channel"},
+		&tg.Chat{ID: 300, Title: "Basic Group"},
+	}
+
+	refs := buildChatRefs(chats)
+
+	if refs[100].Name != "Public Channel" || refs[100].Username != "pub" {
+		t.Errorf("refs[100] = %+v, want {Public Channel, pub}", refs[100])
+	}
+
+	if refs[200].Username != "" {
+		t.Errorf("refs[200].Username = %q, want empty for private channel", refs[200].Username)
+	}
+
+	if refs[300].Name != "Basic Group" {
+		t.Errorf("refs[300].Name = %q, want %q", refs[300].Name, "Basic Group")
+	}
+}
+
+func TestFillSenderRef_FillsUsername(t *testing.T) {
+	msg := &Message{FromID: 42}
+	users := map[int64]peerRef{42: {Name: "Carol", Username: "carol"}}
+
+	fillSenderRef(msg, users, nil, 0)
+
+	if msg.FromName != "Carol" || msg.FromUsername != "carol" {
+		t.Errorf("FromName=%q FromUsername=%q, want Carol/carol", msg.FromName, msg.FromUsername)
+	}
+}
+
+func TestFillSenderRef_DMFallbackToPeer(t *testing.T) {
+	msg := &Message{FromID: 0}
+	users := map[int64]peerRef{55: {Name: "DM Partner"}}
+
+	fillSenderRef(msg, users, nil, 55)
+
+	if msg.FromID != 55 || msg.FromName != "DM Partner" {
+		t.Errorf("FromID=%d FromName=%q, want 55/DM Partner", msg.FromID, msg.FromName)
+	}
+}
+
+func TestFillForwardRefs_ResolvesUser(t *testing.T) {
+	msg := &Message{
+		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerUser, ID: 777}}},
+	}
+	users := map[int64]peerRef{777: {Name: "Original Author", Username: "orig"}}
+
+	fillForwardRefs(msg, users, nil)
+
+	if msg.Forward.From.Name != "Original Author" {
+		t.Errorf("Forward.From.Name = %q, want %q", msg.Forward.From.Name, "Original Author")
+	}
+
+	if msg.Forward.From.Username != "orig" {
+		t.Errorf("Forward.From.Username = %q, want %q", msg.Forward.From.Username, "orig")
+	}
+}
+
+func TestFillForwardRefs_ResolvesChannelTitle(t *testing.T) {
+	msg := &Message{
+		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerChannel, ID: 100}}},
+	}
+	chats := map[int64]peerRef{100: {Name: "Cozystack Blog", Username: "cozystack_blog"}}
+
+	fillForwardRefs(msg, nil, chats)
+
+	if msg.Forward.From.Name != "Cozystack Blog" || msg.Forward.From.Username != "cozystack_blog" {
+		t.Errorf("Forward.From = %+v, want Cozystack Blog/cozystack_blog", msg.Forward.From)
+	}
+}
+
+func TestFillForwardRefs_HiddenName_NoResolve(t *testing.T) {
+	msg := &Message{Forward: &ForwardInfo{FromName: "Kaidxen"}}
+
+	fillForwardRefs(msg, nil, nil)
+
+	if msg.Forward.FromName != "Kaidxen" {
+		t.Errorf("Forward.FromName = %q, want preserved", msg.Forward.FromName)
+	}
+
+	if msg.Forward.From != nil {
+		t.Errorf("Forward.From = %+v, want nil for privacy-hidden", msg.Forward.From)
+	}
+}
+
+func TestFillReplyToRef_CrossChat(t *testing.T) {
+	other := InputPeer{Type: PeerUser, ID: 999}
+	msg := &Message{ReplyTo: &ReplyToInfo{MessageID: 1, FromPeerID: &other}}
+	users := map[int64]peerRef{999: {Name: "Other User", Username: "other"}}
+
+	fillReplyToRef(msg, users, nil)
+
+	if msg.ReplyTo.FromName != "Other User" || msg.ReplyTo.FromUsername != "other" {
+		t.Errorf("ReplyTo = %+v, want Other User/other", msg.ReplyTo)
+	}
+}
+
+func TestFillReplyToRef_SameChat_NoResolve(t *testing.T) {
+	msg := &Message{ReplyTo: &ReplyToInfo{MessageID: 1}}
+
+	fillReplyToRef(msg, nil, nil)
+
+	if msg.ReplyTo.FromName != "" {
+		t.Errorf("ReplyTo.FromName populated for same-chat reply, want empty")
+	}
+}

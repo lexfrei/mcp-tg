@@ -112,7 +112,7 @@ func formatContextMessages(msgs []telegram.Message, targetID int) string {
 		blocks = append(blocks, block)
 	}
 
-	return strings.Join(blocks, "\n\n") + "\n"
+	return strings.Join(blocks, blockSeparator) + "\n"
 }
 
 // MessagesContextTool returns the MCP tool definition for tg_messages_context.

@@ -18,7 +18,7 @@ func TestFormatTimestamp(t *testing.T) {
 
 func TestFormatTimestamp_Zero(t *testing.T) {
 	got := formatTimestamp(0)
-	want := unknownValue
+	want := unknownTimestamp
 
 	if got != want {
 		t.Errorf("formatTimestamp(0) = %q, want %q", got, want)
@@ -301,7 +301,7 @@ func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
 	}
 }
 
-func TestFormatMessages_BlankLineBetweenBlocks(t *testing.T) {
+func TestFormatMessages_SeparatorBetweenBlocks(t *testing.T) {
 	msgs := []telegram.Message{
 		{ID: 1, Date: 1700000000, Text: "first"},
 		{ID: 2, Date: 1700000000, Text: "second"},
@@ -309,8 +309,29 @@ func TestFormatMessages_BlankLineBetweenBlocks(t *testing.T) {
 
 	got := formatMessages(msgs)
 
-	if !strings.Contains(got, "first\n\n[2]") {
-		t.Errorf("formatMessages should separate blocks with a blank line, got:\n%s", got)
+	if !strings.Contains(got, "first\n---\n[2]") {
+		t.Errorf("formatMessages should separate blocks with a '---' line, got:\n%s", got)
+	}
+}
+
+func TestFormatMessages_BodyWithBlankLinesStaysUnambiguous(t *testing.T) {
+	// Telegram chats routinely contain paragraph breaks (\n\n) inside
+	// message bodies. A blank-line block separator would have made
+	// 'line two' below indistinguishable from a new block before [2].
+	msgs := []telegram.Message{
+		{ID: 1, Date: 1700000000, Text: "line one\n\nline two"},
+		{ID: 2, Date: 1700000000, Text: "second"},
+	}
+
+	got := formatMessages(msgs)
+
+	if !strings.Contains(got, "line two\n---\n[2]") {
+		t.Errorf("block separator must distinguish bodies with embedded blank lines, got:\n%s", got)
+	}
+
+	// Sanity: the body content survives verbatim.
+	if !strings.Contains(got, "line one\n\nline two") {
+		t.Errorf("body verbatim preservation broken, got:\n%s", got)
 	}
 }
 

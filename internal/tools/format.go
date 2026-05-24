@@ -8,19 +8,26 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
+// unknownValue is the catch-all label used when a renderer is handed a
+// nil pointer or otherwise cannot produce a meaningful display string.
+// Three distinct semantics share the same literal — keep them as
+// separate constants so a future grep against either matches the right
+// call sites without collateral hits.
 const (
-	unknownValue   = "unknown"
-	peerUser       = "user"
-	peerChannel    = "channel"
-	peerGroup      = "group"
-	actionPinned   = "Pinned"
-	actionUnpinned = "Unpinned"
+	unknownValue     = "unknown" // generic fallback for nil receivers
+	unknownTimestamp = "unknown" // formatTimestamp(0) — absent or unset Date
+	unknownPeerType  = "unknown" // PeerType outside the three known kinds
+	peerUser         = "user"
+	peerChannel      = "channel"
+	peerGroup        = "group"
+	actionPinned     = "Pinned"
+	actionUnpinned   = "Unpinned"
 )
 
 // formatTimestamp converts a Unix timestamp to a human-readable string.
 func formatTimestamp(unix int) string {
 	if unix == 0 {
-		return unknownValue
+		return unknownTimestamp
 	}
 
 	return time.Unix(int64(unix), 0).UTC().Format(time.RFC3339)
@@ -176,7 +183,15 @@ func collapseLineBreaks(s string) string {
 	return strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ").Replace(s)
 }
 
-// formatMessages joins message blocks separated by a blank line.
+// blockSeparator delimits message blocks in the multi-line output. The
+// '---' line is unambiguous: empty lines INSIDE a body (Telegram chats
+// routinely contain paragraph breaks) can no longer be mistaken for the
+// boundary between two messages. A reader (human or LLM) parses on the
+// literal separator instead of guessing.
+const blockSeparator = "\n---\n"
+
+// formatMessages joins message blocks separated by a '---' line so a
+// message body containing its own blank lines stays unambiguous.
 func formatMessages(msgs []telegram.Message) string {
 	if len(msgs) == 0 {
 		return ""
@@ -187,7 +202,7 @@ func formatMessages(msgs []telegram.Message) string {
 		blocks = append(blocks, formatMessage(&msgs[idx]))
 	}
 
-	return strings.Join(blocks, "\n\n") + "\n"
+	return strings.Join(blocks, blockSeparator) + "\n"
 }
 
 // formatDialog returns a single-line summary of a dialog.

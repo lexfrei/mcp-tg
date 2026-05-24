@@ -225,7 +225,9 @@ func formatPeerRef(name, username string, peer telegram.InputPeer) string {
 // The kind labels — user / group / channel — match the strings used by
 // ParticipantItem.Type and MessageItem.FromType, so a caller can grep
 // either surface for the same identifier ("group:42" appears in both
-// text and JSON).
+// text and JSON). "channel:N" covers both broadcast channels and
+// supergroups (gotd represents both as PeerChannel); "group:N" is
+// only legacy basic groups.
 func peerLabel(peer telegram.InputPeer, username string) string {
 	if username != "" {
 		return "@" + username
@@ -250,6 +252,6 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 		// Don't masquerade a future PeerType as 'user:' — surface the
 		// fact that we don't know the kind so the reader doesn't
 		// trust the wrong deep-link form.
-		return fmt.Sprintf("%s:%d", unknownValue, peer.ID)
+		return fmt.Sprintf("%s:%d", unknownPeerType, peer.ID)
 	}
 }

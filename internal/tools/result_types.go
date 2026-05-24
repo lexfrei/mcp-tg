@@ -32,18 +32,20 @@ func dialogPeerType(dlg *telegram.Dialog) string {
 	case telegram.PeerChannel:
 		return peerChannel
 	default:
-		return unknownValue
+		return unknownPeerType
 	}
 }
 
 // MessageItem is a structured message entry for JSON results.
 //
 // FromType disambiguates the FromID peer kind ("user" / "group" /
-// "channel"; "group" is the label for both legacy basic chats and
-// supergroups when they surface as a sender peer) so a caller can
-// pick the right deep-link form without guessing — channel-on-behalf-
-// of posts and anonymous channel posts would otherwise look
-// indistinguishable from regular user senders in the JSON.
+// "channel"). The mapping mirrors MTProto's PeerClass: PeerUser →
+// "user", PeerChat → "group" (legacy basic groups only), PeerChannel
+// → "channel" (which covers both broadcast channels AND supergroups
+// — gotd represents supergroups as PeerChannel). Knowing the kind
+// lets a caller pick the right deep-link form instead of guessing —
+// channel-on-behalf-of posts and anonymous channel posts would
+// otherwise look indistinguishable from regular user senders.
 type MessageItem struct {
 	ID             int                   `json:"id"`
 	Date           int                   `json:"date"`
@@ -72,11 +74,12 @@ type ReplyToMessage struct {
 // ParticipantItem identifies every peer that appears as a sender or as
 // the original author of a forwarded message in a returned batch.
 //
-// Type ("user" / "group" / "channel") disambiguates the ID space:
-// without it a user with ID N and a channel with ID N would collide
-// in the seen-set and silently merge into one entry. The same Type
-// label appears on MessageItem.FromType so the caller can correlate
-// a sender with its participant entry.
+// Type follows the same mapping as MessageItem.FromType ("user" /
+// "group" / "channel"; "channel" covers both broadcast channels and
+// supergroups, "group" is only legacy basic groups). The Type field
+// also disambiguates the ID space — without it a user with ID N and
+// a channel with ID N would collide in the seen-set and silently
+// merge into one entry.
 type ParticipantItem struct {
 	ID       int64  `json:"id"`
 	Type     string `json:"type"`
@@ -102,7 +105,7 @@ func participantTypeLabel(peerType telegram.PeerType) string {
 		// peer kind explicitly so a future PeerType extension doesn't
 		// silently misclassify itself as a regular user in JSON while
 		// the text output (via peerLabel) shows 'unknown:N'.
-		return unknownValue
+		return unknownPeerType
 	}
 }
 

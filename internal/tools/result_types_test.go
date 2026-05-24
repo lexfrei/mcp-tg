@@ -9,9 +9,32 @@ import (
 func TestParticipantTypeLabel_UnknownSurfacesAsUnknown(t *testing.T) {
 	got := participantTypeLabel(telegram.PeerType(99))
 
-	if got != unknownValue {
+	if got != unknownPeerType {
 		t.Errorf("participantTypeLabel(unknown) = %q, want %q — must mirror peerLabel's default to keep text and JSON consistent",
-			got, unknownValue)
+			got, unknownPeerType)
+	}
+}
+
+func TestParticipantsFromMessages_SupergroupSenderLabelsAsChannel(t *testing.T) {
+	// gotd represents supergroups as PeerChannel — verify the
+	// participants entry uses "channel" (not "group") for a supergroup
+	// sender, so the docstring claim stays honest.
+	msgs := []telegram.Message{
+		{
+			ID: 1, FromID: 1234567890, FromType: telegram.PeerChannel,
+			FromName: "Cozystack Discussion",
+		},
+	}
+
+	parts := participantsFromMessages(msgs)
+
+	if len(parts) != 1 {
+		t.Fatalf("got %d participants, want 1", len(parts))
+	}
+
+	if parts[0].Type != peerChannel {
+		t.Errorf("supergroup sender type = %q, want %q — gotd folds supergroups into PeerChannel",
+			parts[0].Type, peerChannel)
 	}
 }
 

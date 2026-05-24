@@ -156,6 +156,26 @@ func TestFormatMessage_ForwardedFromChannel_WithPostAuthor(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_ForwardedAnonymousChannelPost_KeepsPostID(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 7, Date: 1700000200,
+		FromID: 1, FromName: "Forwarder",
+		Text: "body",
+		Forward: &telegram.ForwardInfo{
+			Date:        1700000000,
+			ChannelPost: 4567,
+		},
+	}
+
+	got := formatMessage(msg)
+	wantLine := "forwarded from channel: [hidden] #4567 at 2023-11-14T22:13:20Z"
+
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("formatMessage() must keep the channel post number even when From is nil, missing %q in:\n%s",
+			wantLine, got)
+	}
+}
+
 func TestFormatMessage_ForwardedHiddenPrivacy(t *testing.T) {
 	msg := &telegram.Message{
 		ID: 7, Date: 1700000200,

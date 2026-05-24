@@ -193,17 +193,23 @@ type senderRef struct {
 func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]senderRef {
 	lookup := make(map[int64]senderRef, len(msgs)+len(fetched))
 
+	// last-wins-among-non-empty: a later non-empty value overrides an
+	// earlier one (mirrors how the previous buildNameLookup gated on
+	// `FromName != ""` and then assigned). This way a renamed user
+	// reflects the most recent display name seen in the batch instead
+	// of being frozen to whichever message landed first in iteration
+	// order.
 	mergeRef := func(peerID int64, name, username string) {
 		if peerID == 0 {
 			return
 		}
 
 		ref := lookup[peerID]
-		if ref.name == "" {
+		if name != "" {
 			ref.name = name
 		}
 
-		if ref.username == "" {
+		if username != "" {
 			ref.username = username
 		}
 

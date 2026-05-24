@@ -352,3 +352,51 @@ func TestResolveReplyParents_Truncates(t *testing.T) {
 		t.Errorf("truncated length = %d runes, want %d", len(runes), replyParentTextLimit+1)
 	}
 }
+
+func TestBuildSenderLookup_LastNonEmptyWins(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 1, FromID: 42, FromName: "Old Name", FromUsername: "old"},
+		{ID: 2, FromID: 42, FromName: "New Name", FromUsername: "new"},
+	}
+
+	lookup := buildSenderLookup(msgs, nil)
+
+	got, ok := lookup[42]
+	if !ok {
+		t.Fatal("lookup[42] missing")
+	}
+
+	if got.name != "New Name" {
+		t.Errorf("name = %q, want %q — a later non-empty value must override the earlier one",
+			got.name, "New Name")
+	}
+
+	if got.username != "new" {
+		t.Errorf("username = %q, want %q", got.username, "new")
+	}
+}
+
+func TestBuildSenderLookup_EmptyDoesNotOverwriteNonEmpty(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 1, FromID: 42, FromName: "Real Name", FromUsername: "real"},
+		{ID: 2, FromID: 42}, // empty FromName/FromUsername
+	}
+
+	lookup := buildSenderLookup(msgs, nil)
+
+	got := lookup[42]
+	if got.name != "Real Name" || got.username != "real" {
+		t.Errorf("lookup[42] = %+v, want preserved {Real Name, real} — empty later entry must not erase",
+			got)
+	}
+}
+
+func TestBuildSenderLookup_SkipsZeroFromID(t *testing.T) {
+	msgs := []telegram.Message{{ID: 1, FromID: 0, FromName: "Anon"}}
+
+	lookup := buildSenderLookup(msgs, nil)
+
+	if _, ok := lookup[0]; ok {
+		t.Errorf("lookup[0] populated for FromID=0 entry; want excluded to avoid cross-attribution")
+	}
+}

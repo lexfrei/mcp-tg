@@ -86,7 +86,11 @@ func writeForwardLine(buf *strings.Builder, fwd *telegram.ForwardInfo) {
 
 	ref := forwardSourceRef(fwd)
 
-	if fwd.From != nil && fwd.From.Peer.Type == telegram.PeerChannel {
+	// Channel-shaped if we know the source is a channel OR if we have
+	// a ChannelPost number (anonymous channel posts can arrive with
+	// From == nil but ChannelPost != 0; dropping that to the generic
+	// user-forward branch would lose the post number entirely).
+	if isChannelForward(fwd) {
 		writeChannelForwardLine(buf, fwd, ref)
 
 		return
@@ -99,6 +103,14 @@ func writeForwardLine(buf *strings.Builder, fwd *telegram.ForwardInfo) {
 	}
 
 	fmt.Fprintf(buf, "forwarded from: %s\n", ref)
+}
+
+func isChannelForward(fwd *telegram.ForwardInfo) bool {
+	if fwd.From != nil && fwd.From.Peer.Type == telegram.PeerChannel {
+		return true
+	}
+
+	return fwd.ChannelPost != 0
 }
 
 func writeChannelForwardLine(buf *strings.Builder, fwd *telegram.ForwardInfo, ref string) {

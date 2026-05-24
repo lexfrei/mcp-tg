@@ -186,3 +186,58 @@ func formatUserName(user *telegram.User) string {
 
 	return name
 }
+
+const peerRefHidden = "[hidden]"
+
+// formatPeerRef returns a single human-readable identifier that
+// unambiguously names a peer in message metadata. Output shapes:
+//
+//	"Display Name [@username]" — public username available
+//	"Display Name [user:N]" / "[channel:N]" / "[chat:N]" — id-only
+//	"Display Name [hidden]" — name present but no resolvable id (privacy-hidden forwards)
+//	"[user:N]" / "[hidden]" — degenerate forms when display name missing
+//
+// Callers pass the display name, optional @username and the InputPeer
+// that identifies the peer. A zero InputPeer (Type == PeerUser && ID == 0)
+// is treated as "no peer identity available".
+func formatPeerRef(name, username string, peer telegram.InputPeer) string {
+	label := peerLabel(peer, username)
+
+	if name != "" && label != "" {
+		return fmt.Sprintf("%s [%s]", name, label)
+	}
+
+	if name != "" {
+		return name + " " + peerRefHidden
+	}
+
+	if label != "" {
+		return fmt.Sprintf("[%s]", label)
+	}
+
+	return peerRefHidden
+}
+
+// peerLabel returns the bracket-contents portion of formatPeerRef.
+// Returns "" when the peer is empty AND no username is provided so the
+// caller can fall back to "[hidden]".
+func peerLabel(peer telegram.InputPeer, username string) string {
+	if username != "" {
+		return "@" + username
+	}
+
+	if peer.ID == 0 {
+		return ""
+	}
+
+	switch peer.Type {
+	case telegram.PeerUser:
+		return fmt.Sprintf("user:%d", peer.ID)
+	case telegram.PeerChat:
+		return fmt.Sprintf("chat:%d", peer.ID)
+	case telegram.PeerChannel:
+		return fmt.Sprintf("channel:%d", peer.ID)
+	default:
+		return fmt.Sprintf("user:%d", peer.ID)
+	}
+}

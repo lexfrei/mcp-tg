@@ -244,3 +244,76 @@ func TestTruncateText_NegativeMax(t *testing.T) {
 		t.Errorf("truncateText with negative max = %q, want empty", got)
 	}
 }
+
+func TestFormatPeerRef_WithUsername(t *testing.T) {
+	got := formatPeerRef("Alice", "alice", telegram.InputPeer{Type: telegram.PeerUser, ID: 10})
+	want := "Alice [@alice]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_IDOnlyUser(t *testing.T) {
+	got := formatPeerRef("Bob", "", telegram.InputPeer{Type: telegram.PeerUser, ID: 99})
+	want := "Bob [user:99]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_ChannelLabel(t *testing.T) {
+	got := formatPeerRef("Cozystack Blog", "cozystack_blog",
+		telegram.InputPeer{Type: telegram.PeerChannel, ID: 500})
+	want := "Cozystack Blog [@cozystack_blog]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_PrivateChannelID(t *testing.T) {
+	got := formatPeerRef("Private", "", telegram.InputPeer{Type: telegram.PeerChannel, ID: 500})
+	want := "Private [channel:500]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_HiddenPrivacy(t *testing.T) {
+	got := formatPeerRef("Kaidxen", "", telegram.InputPeer{})
+	want := "Kaidxen [hidden]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_AllUnknown(t *testing.T) {
+	got := formatPeerRef("", "", telegram.InputPeer{})
+	want := "[hidden]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_LabelOnly(t *testing.T) {
+	got := formatPeerRef("", "alice", telegram.InputPeer{Type: telegram.PeerUser, ID: 10})
+	want := "[@alice]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestPeerLabel_BasicGroupChat(t *testing.T) {
+	got := peerLabel(telegram.InputPeer{Type: telegram.PeerChat, ID: 77}, "")
+	want := "chat:77"
+
+	if got != want {
+		t.Errorf("peerLabel = %q, want %q", got, want)
+	}
+}

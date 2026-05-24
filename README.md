@@ -127,6 +127,39 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 - `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
 
+## Message Output Format
+
+Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a blank line.
+
+```
+[<id>] <ISO-timestamp>
+from: Display Name [@username]
+forwarded from: Display Name [@username] at <ISO-timestamp>
+forwarded from channel: Title [@username] #<post> by "<author>" at <ISO-timestamp>
+reply to: <parentId>
+reply to: <parentId> in Display Name [@username]
+quote: «<quoted fragment>»
+media: <type>
+text:
+<message body, multi-line preserved>
+```
+
+Lines are emitted only when their underlying field is populated. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
+
+- `Display Name [@username]` — public username available
+- `Display Name [user:N]` / `[channel:N]` / `[chat:N]` — username not exposed, only ID
+- `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected (typical for forwards where the original author enabled forward-privacy)
+- `[user:N]` / `[hidden]` — degenerate forms when display name is also missing
+
+JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`) and `fromUsername` on each message. Original authors of forwarded messages are also included in the `participants` dictionary, so a single tool call hands the caller a complete attribution map.
+
+Deep-links to the original message can be constructed from `forward.channelPost` and `forward.from`:
+
+- Public channel: `https://t.me/<username>/<channelPost>`
+- Private channel: `https://t.me/c/<from.peer.id>/<channelPost>`
+
+`tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers.
+
 ## Markdown — Known Limitations
 
 The CommonMark subset supported via `parseMode: "commonmark"` covers most everyday formatting, but a handful of CommonMark spec features are intentionally not implemented. Each is captured as a commented-out test in `internal/telegram/markdown_audit_test.go` ready to be unblocked when work begins.

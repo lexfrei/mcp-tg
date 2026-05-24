@@ -2,6 +2,13 @@
 package telegram
 
 // PeerType identifies the kind of Telegram peer.
+//
+// The zero value is PeerUser by historical accident — when an InputPeer
+// is constructed from an unknown/nil tg.PeerClass the returned value is
+// `{Type: PeerUser, ID: 0}`. Callers must NOT treat `{PeerUser, 0}` as
+// a real user; ID == 0 is the absent-sentinel for the whole shape,
+// regardless of Type. Code that needs to distinguish "unknown peer
+// kind" from "real user with ID 0" should gate on ID first.
 type PeerType int
 
 const (
@@ -14,10 +21,15 @@ const (
 )
 
 // InputPeer identifies a Telegram chat participant or channel.
+//
+// AccessHash is serialized only when non-zero so callers don't mistake
+// an unknown hash (the common case when a peer is constructed from a
+// forwarded message header or a numeric ID) for a valid one — passing
+// AccessHash=0 back to MTProto raises PEER_ID_INVALID or similar.
 type InputPeer struct {
 	Type       PeerType `json:"type"`
 	ID         int64    `json:"id"`
-	AccessHash int64    `json:"accessHash"`
+	AccessHash int64    `json:"accessHash,omitempty"`
 }
 
 // Message represents a simplified Telegram message.

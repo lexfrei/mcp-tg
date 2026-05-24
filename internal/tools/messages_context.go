@@ -102,7 +102,11 @@ func formatContextMessages(msgs []telegram.Message, targetID int) string {
 	for idx := range msgs {
 		block := formatMessage(&msgs[idx])
 		if msgs[idx].ID == targetID {
-			block = "> " + block
+			// Prefix every line of the target block so the marker
+			// stays anchored across the multi-line layout; a single
+			// "> " on the header line gets visually lost once the
+			// text: body is more than a couple of lines.
+			block = "> " + strings.ReplaceAll(block, "\n", "\n> ")
 		}
 
 		blocks = append(blocks, block)

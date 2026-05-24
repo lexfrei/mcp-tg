@@ -61,34 +61,72 @@ type ReplyToMessage struct {
 	Text         string `json:"text,omitempty"`
 }
 
-// ParticipantItem maps a user ID to display name and @username for
-// message attribution.
+// ParticipantItem identifies every peer that appears as a sender or as
+// the original author of a forwarded message in a returned batch.
+//
+// Type ("user" / "chat" / "channel") disambiguates the ID space:
+// without it a user with ID N and a channel with ID N would collide
+// in the seen-set and silently merge into one entry. Type also lets
+// the caller pick the right Telegram link form ("@username" /
+// "user:N" / "channel:N") when re-rendering.
 type ParticipantItem struct {
 	ID       int64  `json:"id"`
+	Type     string `json:"type"`
 	Name     string `json:"name"`
 	Username string `json:"username,omitempty"`
 }
 
+type participantKey struct {
+	Type string
+	ID   int64
+}
+
+func participantTypeLabel(peerType telegram.PeerType) string {
+	switch peerType {
+	case telegram.PeerUser:
+		return peerUser
+	case telegram.PeerChat:
+		return peerGroup
+	case telegram.PeerChannel:
+		return peerChannel
+	default:
+		return peerUser
+	}
+}
+
 func participantsFromMessages(msgs []telegram.Message) []ParticipantItem {
-	seen := make(map[int64]bool)
+	seen := make(map[participantKey]bool)
 
 	var parts []ParticipantItem
 
-	add := func(peerID int64, name, username string) {
-		if peerID == 0 || seen[peerID] {
+	add := func(peerID int64, peerType telegram.PeerType, name, username string) {
+		if peerID == 0 {
 			return
 		}
 
-		seen[peerID] = true
-		parts = append(parts, ParticipantItem{ID: peerID, Name: name, Username: username})
+		label := participantTypeLabel(peerType)
+		key := participantKey{Type: label, ID: peerID}
+
+		if seen[key] {
+			return
+		}
+
+		seen[key] = true
+
+		parts = append(parts, ParticipantItem{
+			ID: peerID, Type: label, Name: name, Username: username,
+		})
 	}
 
 	for idx := range msgs {
 		msg := &msgs[idx]
-		add(msg.FromID, msg.FromName, msg.FromUsername)
+		add(msg.FromID, msg.FromType, msg.FromName, msg.FromUsername)
 
 		if msg.Forward != nil && msg.Forward.From != nil {
-			add(msg.Forward.From.Peer.ID, msg.Forward.From.Name, msg.Forward.From.Username)
+			add(
+				msg.Forward.From.Peer.ID, msg.Forward.From.Peer.Type,
+				msg.Forward.From.Name, msg.Forward.From.Username,
+			)
 		}
 	}
 

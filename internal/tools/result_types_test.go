@@ -8,7 +8,7 @@ import (
 
 func TestParticipantsFromMessages_SenderWithUsername(t *testing.T) {
 	msgs := []telegram.Message{
-		{ID: 1, FromID: 10, FromName: "Alice", FromUsername: "alice"},
+		{ID: 1, FromID: 10, FromType: telegram.PeerUser, FromName: "Alice", FromUsername: "alice"},
 	}
 
 	parts := participantsFromMessages(msgs)
@@ -17,8 +17,45 @@ func TestParticipantsFromMessages_SenderWithUsername(t *testing.T) {
 		t.Fatalf("got %d participants, want 1", len(parts))
 	}
 
-	if parts[0].ID != 10 || parts[0].Name != "Alice" || parts[0].Username != "alice" {
-		t.Errorf("participant = %+v, want {10 Alice alice}", parts[0])
+	got := parts[0]
+	if got.ID != 10 || got.Type != peerUser || got.Name != "Alice" || got.Username != "alice" {
+		t.Errorf("participant = %+v, want {10 user Alice alice}", got)
+	}
+}
+
+func TestParticipantsFromMessages_UserAndChannelSharedIDAreDistinct(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 1, FromID: 500, FromType: telegram.PeerUser, FromName: "Alice"},
+		{
+			ID: 2, FromID: 600, FromType: telegram.PeerUser, FromName: "Bob",
+			Forward: &telegram.ForwardInfo{
+				From: &telegram.PeerRef{
+					Peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},
+					Name: "Coincident Channel",
+				},
+			},
+		},
+	}
+
+	parts := participantsFromMessages(msgs)
+
+	var (
+		sawUser    bool
+		sawChannel bool
+	)
+
+	for _, part := range parts {
+		if part.ID == 500 && part.Type == peerUser {
+			sawUser = true
+		}
+
+		if part.ID == 500 && part.Type == peerChannel {
+			sawChannel = true
+		}
+	}
+
+	if !sawUser || !sawChannel {
+		t.Errorf("user 500 and channel 500 must survive dedup as distinct entries; got %+v", parts)
 	}
 }
 

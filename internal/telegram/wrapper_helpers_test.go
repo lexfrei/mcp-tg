@@ -347,7 +347,7 @@ func TestFillSenderRef_FillsUsername(t *testing.T) {
 	msg := &Message{FromID: 42}
 	users := map[int64]peerRef{42: {Name: "Carol", Username: "carol"}}
 
-	fillSenderRef(msg, users, nil, 0)
+	fillSenderRef(msg, users, nil, InputPeer{})
 
 	if msg.FromName != "Carol" || msg.FromUsername != "carol" {
 		t.Errorf("FromName=%q FromUsername=%q, want Carol/carol", msg.FromName, msg.FromUsername)
@@ -358,10 +358,30 @@ func TestFillSenderRef_DMFallbackToPeer(t *testing.T) {
 	msg := &Message{FromID: 0}
 	users := map[int64]peerRef{55: {Name: "DM Partner"}}
 
-	fillSenderRef(msg, users, nil, 55)
+	fillSenderRef(msg, users, nil, InputPeer{Type: PeerUser, ID: 55})
 
 	if msg.FromID != 55 || msg.FromName != "DM Partner" {
 		t.Errorf("FromID=%d FromName=%q, want 55/DM Partner", msg.FromID, msg.FromName)
+	}
+
+	if msg.FromType != PeerUser {
+		t.Errorf("FromType = %d, want PeerUser", msg.FromType)
+	}
+}
+
+func TestFillSenderRef_AnonymousChannelPostCarriesChannelType(t *testing.T) {
+	msg := &Message{FromID: 0}
+	chats := map[int64]peerRef{500: {Name: "Cozystack Blog"}}
+
+	fillSenderRef(msg, nil, chats, InputPeer{Type: PeerChannel, ID: 500})
+
+	if msg.FromType != PeerChannel {
+		t.Errorf("FromType = %d, want PeerChannel — anonymous channel post must keep host peer kind",
+			msg.FromType)
+	}
+
+	if msg.FromID != 500 {
+		t.Errorf("FromID = %d, want 500 (promoted from host peer)", msg.FromID)
 	}
 }
 
@@ -369,7 +389,7 @@ func TestFillSenderRef_EmptyLookupDoesNotOverwrite(t *testing.T) {
 	msg := &Message{FromID: 42, FromName: "Preset", FromUsername: "preset"}
 	users := map[int64]peerRef{42: {}} // entry exists but is empty
 
-	fillSenderRef(msg, users, nil, 0)
+	fillSenderRef(msg, users, nil, InputPeer{})
 
 	if msg.FromName != "Preset" || msg.FromUsername != "preset" {
 		t.Errorf("empty lookup overwrote Preset/preset → %q/%q", msg.FromName, msg.FromUsername)

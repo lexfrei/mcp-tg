@@ -151,12 +151,14 @@ Lines are emitted only when their underlying field is populated. Every peer refe
 - `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected (typical for forwards where the original author enabled forward-privacy)
 - `[user:N]` / `[hidden]` — degenerate forms when display name is also missing
 
-JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`) and `fromUsername` on each message. Original authors of forwarded messages are also included in the `participants` dictionary, so a single tool call hands the caller a complete attribution map.
+JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`), `fromUsername` and `fromType` (`0`=user / `1`=chat / `2`=channel) on each message. Original authors of forwarded messages are also included in the `participants` dictionary, which carries `type` (`"user"` / `"channel"` / `"group"`) alongside the bare ID so a user and a channel sharing the same numeric ID survive deduplication as distinct entries.
 
 Deep-links to the original message can be constructed from `forward.channelPost` and `forward.from`:
 
 - Public channel: `https://t.me/<username>/<channelPost>`
 - Private channel: `https://t.me/c/<from.peer.id>/<channelPost>`
+
+`forward.from.peer` carries the channel's `id` but `accessHash` is omitted when zero — passing such a peer back into MTProto would raise `PEER_ID_INVALID`. For follow-up tool calls, resolve the channel through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
 
 `tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers.
 

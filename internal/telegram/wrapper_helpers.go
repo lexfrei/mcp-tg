@@ -543,24 +543,24 @@ type peerRef struct {
 
 //nolint:gocritic // unnamedResult: names add no clarity for extraction.
 func extractMessages(
-	result tg.MessagesMessagesClass, peerID int64,
+	result tg.MessagesMessagesClass, peer InputPeer,
 ) ([]Message, int) {
 	switch res := result.(type) {
 	case *tg.MessagesMessages:
 		users := buildUserRefs(res.Users)
 		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, users, chats, peerID), len(res.Messages)
+		return convertMessages(res.Messages, users, chats, peer), len(res.Messages)
 	case *tg.MessagesMessagesSlice:
 		users := buildUserRefs(res.Users)
 		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, users, chats, peerID), res.Count
+		return convertMessages(res.Messages, users, chats, peer), res.Count
 	case *tg.MessagesChannelMessages:
 		users := buildUserRefs(res.Users)
 		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, users, chats, peerID), res.Count
+		return convertMessages(res.Messages, users, chats, peer), res.Count
 	default:
 		return nil, 0
 	}
@@ -606,7 +606,7 @@ func userDisplayName(usr *tg.User) string {
 }
 
 func convertMessages(
-	raw []tg.MessageClass, users, chats map[int64]peerRef, peerID int64,
+	raw []tg.MessageClass, users, chats map[int64]peerRef, peer InputPeer,
 ) []Message {
 	msgs := make([]Message, 0, len(raw))
 
@@ -617,7 +617,7 @@ func convertMessages(
 		}
 
 		converted := ConvertMessage(msg)
-		fillSenderRef(&converted, users, chats, peerID)
+		fillSenderRef(&converted, users, chats, peer)
 		fillForwardRefs(&converted, users, chats)
 		fillReplyToRef(&converted, users, chats)
 		msgs = append(msgs, converted)
@@ -627,14 +627,16 @@ func convertMessages(
 }
 
 // fillSenderRef resolves sender name and username from user/chat maps.
-// In DMs, FromID==0 means the peer (not owner), so we fall back to the
-// peerID for both ID and name.
+// In DMs and anonymous channel posts, FromID==0 means the peer (not
+// owner) is the sender, so we fall back to the host peer for both ID
+// and name — AND copy the peer's kind into msg.FromType so a channel
+// host renders as channel:N, not user:N.
 //
 // Empty fields in the resolved peerRef do NOT overwrite a value that
 // ConvertMessage may have already populated — this keeps any future
 // UserClass variant returning an empty display name from silently
 // wiping a populated sender name.
-func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peerID int64) {
+func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peer InputPeer) {
 	if msg.FromID != 0 {
 		if ref, ok := lookupRef(msg.FromID, users, chats); ok {
 			applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
@@ -643,8 +645,13 @@ func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peerID int64) {
 		return
 	}
 
-	if ref, ok := lookupRef(peerID, users, chats); ok {
-		msg.FromID = peerID
+	if peer.ID == 0 {
+		return
+	}
+
+	if ref, ok := lookupRef(peer.ID, users, chats); ok {
+		msg.FromID = peer.ID
+		msg.FromType = peer.Type
 		applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
 	}
 }
@@ -744,7 +751,11 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 
 func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Message {
 	converted := ConvertMessage(raw)
-	fillSenderRef(&converted, users, chats, 0)
+	// UpdateNewMessage / UpdateNewChannelMessage don't carry the host
+	// peer separately — pass an empty InputPeer so the DM-fallback in
+	// fillSenderRef short-circuits. Sender resolution still works for
+	// the common case where the message has a non-zero FromID.
+	fillSenderRef(&converted, users, chats, InputPeer{})
 	fillForwardRefs(&converted, users, chats)
 	fillReplyToRef(&converted, users, chats)
 

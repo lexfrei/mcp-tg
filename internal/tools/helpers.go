@@ -193,7 +193,7 @@ const peerRefHidden = "[hidden]"
 // unambiguously names a peer in message metadata. Output shapes:
 //
 //	"Display Name [@username]" — public username available
-//	"Display Name [user:N]" / "[channel:N]" / "[chat:N]" — id-only
+//	"Display Name [user:N]" / "[channel:N]" / "[group:N]" — id-only
 //	"Display Name [hidden]" — name present but no resolvable id (privacy-hidden forwards)
 //	"[user:N]" / "[hidden]" — degenerate forms when display name missing
 //

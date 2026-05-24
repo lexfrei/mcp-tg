@@ -158,7 +158,7 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 - Public channel: `https://t.me/<username>/<channelPost>`
 - Private channel: `https://t.me/c/<from.peer.id>/<channelPost>`
 
-`forward.from.peer` carries the channel's `id` but `accessHash` is omitted when zero — passing such a peer back into MTProto would raise `PEER_ID_INVALID`. For follow-up tool calls, resolve the channel through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
+**`accessHash` is omitted from every serialized `InputPeer` shape when zero** — that includes `messages[].peerId`, `messages[].replyTo.fromPeerId`, and `messages[].forward.from.peer`. The omission is deliberate: a zero hash looks like a valid one to MTProto but raises `PEER_ID_INVALID` when passed back. For follow-up tool calls against a peer whose `accessHash` field is missing, resolve it through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
 
 `tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers.
 

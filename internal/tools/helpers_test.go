@@ -309,6 +309,18 @@ func TestFormatPeerRef_LabelOnly(t *testing.T) {
 	}
 }
 
+func TestFormatPeerRef_BasicGroupLabel(t *testing.T) {
+	// Pins the [group:N] shape mentioned in formatPeerRef's godoc so a
+	// future rename of the kind label drift between code and docs gets
+	// caught here.
+	got := formatPeerRef("Devs", "", telegram.InputPeer{Type: telegram.PeerChat, ID: 77})
+	want := "Devs [group:77]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
 func TestPeerLabel_BasicGroupChat(t *testing.T) {
 	got := peerLabel(telegram.InputPeer{Type: telegram.PeerChat, ID: 77}, "")
 	want := "group:77"

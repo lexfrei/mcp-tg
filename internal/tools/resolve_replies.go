@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"sort"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
@@ -231,7 +232,19 @@ func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Messag
 		mergeRef(msgs[idx].FromType, msgs[idx].FromID, msgs[idx].FromName, msgs[idx].FromUsername)
 	}
 
-	for _, parent := range fetched {
+	// Iterate fetched in deterministic key order so two parents
+	// sharing the same {FromType, FromID} but disagreeing on
+	// FromName/FromUsername always tie-break the same way across runs
+	// (Go map iteration order is randomized).
+	ids := make([]int, 0, len(fetched))
+	for parentID := range fetched {
+		ids = append(ids, parentID)
+	}
+
+	sort.Ints(ids)
+
+	for _, parentID := range ids {
+		parent := fetched[parentID]
 		if parent != nil {
 			mergeRef(parent.FromType, parent.FromID, parent.FromName, parent.FromUsername)
 		}

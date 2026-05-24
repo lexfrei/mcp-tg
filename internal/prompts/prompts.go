@@ -8,6 +8,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
+	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -91,9 +92,7 @@ func replyHandler(client telegram.Client) mcp.PromptHandler {
 
 		fmt.Fprintf(&buf, "Recent messages in %s:\n\n", peerStr)
 
-		for idx := range msgs {
-			fmt.Fprintf(&buf, "[%d] %s\n", msgs[idx].ID, msgs[idx].Text)
-		}
+		buf.WriteString(tools.FormatMessageList(msgs))
 
 		fmt.Fprintf(&buf, "\nPlease compose a reply to message %s.", msgIDStr)
 
@@ -127,9 +126,7 @@ func summarizeHandler(client telegram.Client) mcp.PromptHandler {
 
 		fmt.Fprintf(&buf, "Recent messages in %s:\n\n", peerStr)
 
-		for idx := range msgs {
-			fmt.Fprintf(&buf, "[%d] %s\n", msgs[idx].ID, msgs[idx].Text)
-		}
+		buf.WriteString(tools.FormatMessageList(msgs))
 
 		buf.WriteString("\nPlease summarize this conversation.")
 
@@ -165,9 +162,7 @@ func searchAndReplyHandler(client telegram.Client) mcp.PromptHandler {
 
 		fmt.Fprintf(&buf, "Search results for %q in %s:\n\n", query, peerStr)
 
-		for idx := range msgs {
-			fmt.Fprintf(&buf, "[%d] %s\n", msgs[idx].ID, msgs[idx].Text)
-		}
+		buf.WriteString(tools.FormatMessageList(msgs))
 
 		buf.WriteString("\nPlease compose a reply based on these search results.")
 

@@ -43,25 +43,30 @@ type MessageItem struct {
 	Text           string                `json:"text"`
 	FromID         int64                 `json:"fromId"`
 	FromName       string                `json:"fromName,omitempty"`
+	FromUsername   string                `json:"fromUsername,omitempty"`
 	TopicID        int                   `json:"topicId,omitempty"`
 	MediaType      string                `json:"mediaType,omitempty"`
 	Entities       []telegram.Entity     `json:"entities,omitempty"`
 	ReplyTo        *telegram.ReplyToInfo `json:"replyTo,omitempty"`
 	ReplyToMessage *ReplyToMessage       `json:"replyToMessage,omitempty"`
+	Forward        *telegram.ForwardInfo `json:"forward,omitempty"`
 }
 
 // ReplyToMessage carries minimal parent-message context used to help
 // callers reconstruct thread structure when the parent is outside the
 // returned batch.
 type ReplyToMessage struct {
-	FromName string `json:"fromName,omitempty"`
-	Text     string `json:"text,omitempty"`
+	FromName     string `json:"fromName,omitempty"`
+	FromUsername string `json:"fromUsername,omitempty"`
+	Text         string `json:"text,omitempty"`
 }
 
-// ParticipantItem maps a user ID to display name for message attribution.
+// ParticipantItem maps a user ID to display name and @username for
+// message attribution.
 type ParticipantItem struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Username string `json:"username,omitempty"`
 }
 
 func participantsFromMessages(msgs []telegram.Message) []ParticipantItem {
@@ -69,17 +74,22 @@ func participantsFromMessages(msgs []telegram.Message) []ParticipantItem {
 
 	var parts []ParticipantItem
 
-	for idx := range msgs {
-		fid := msgs[idx].FromID
-		if fid == 0 || seen[fid] {
-			continue
+	add := func(peerID int64, name, username string) {
+		if peerID == 0 || seen[peerID] {
+			return
 		}
 
-		seen[fid] = true
-		parts = append(parts, ParticipantItem{
-			ID:   fid,
-			Name: msgs[idx].FromName,
-		})
+		seen[peerID] = true
+		parts = append(parts, ParticipantItem{ID: peerID, Name: name, Username: username})
+	}
+
+	for idx := range msgs {
+		msg := &msgs[idx]
+		add(msg.FromID, msg.FromName, msg.FromUsername)
+
+		if msg.Forward != nil && msg.Forward.From != nil {
+			add(msg.Forward.From.Peer.ID, msg.Forward.From.Name, msg.Forward.From.Username)
+		}
 	}
 
 	return parts
@@ -122,15 +132,17 @@ type PhotoItem struct {
 
 func messageToItem(msg *telegram.Message) MessageItem {
 	return MessageItem{
-		ID:        msg.ID,
-		Date:      msg.Date,
-		Text:      msg.Text,
-		FromID:    msg.FromID,
-		FromName:  msg.FromName,
-		TopicID:   msg.TopicID,
-		MediaType: msg.MediaType,
-		Entities:  msg.Entities,
-		ReplyTo:   msg.ReplyTo,
+		ID:           msg.ID,
+		Date:         msg.Date,
+		Text:         msg.Text,
+		FromID:       msg.FromID,
+		FromName:     msg.FromName,
+		FromUsername: msg.FromUsername,
+		TopicID:      msg.TopicID,
+		MediaType:    msg.MediaType,
+		Entities:     msg.Entities,
+		ReplyTo:      msg.ReplyTo,
+		Forward:      msg.Forward,
 	}
 }
 

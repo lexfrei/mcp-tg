@@ -121,7 +121,7 @@ func attachReplyParents(
 	inBatch map[int]*telegram.Message,
 	fetched map[int]*telegram.Message,
 ) {
-	nameByID := buildNameLookup(msgs, fetched)
+	refByID := buildSenderLookup(msgs, fetched)
 
 	for idx := range items {
 		reply := items[idx].ReplyTo
@@ -133,47 +133,90 @@ func attachReplyParents(
 			continue
 		}
 
-		parent, ok := inBatch[reply.MessageID]
-		if !ok {
-			parent, ok = fetched[reply.MessageID]
-		}
-
-		if !ok || parent == nil {
+		parent := lookupParent(reply.MessageID, inBatch, fetched)
+		if parent == nil {
 			continue
 		}
 
-		name := parent.FromName
-		if name == "" && parent.FromID != 0 {
-			name = nameByID[parent.FromID]
-		}
-
-		items[idx].ReplyToMessage = &ReplyToMessage{
-			FromName: name,
-			Text:     truncateText(parent.Text, replyParentTextLimit),
-		}
+		items[idx].ReplyToMessage = buildReplyToMessage(parent, refByID)
 	}
 }
 
-// buildNameLookup combines FromID→FromName from the primary batch and
-// from any parents fetched by the resolver. Without fetched entries,
-// a parent whose own FromName is empty but whose FromID appears in
-// the fetched payload would miss its display name.
+func lookupParent(
+	parentID int, inBatch, fetched map[int]*telegram.Message,
+) *telegram.Message {
+	if parent, ok := inBatch[parentID]; ok {
+		return parent
+	}
+
+	if parent, ok := fetched[parentID]; ok {
+		return parent
+	}
+
+	return nil
+}
+
+func buildReplyToMessage(parent *telegram.Message, refByID map[int64]senderRef) *ReplyToMessage {
+	name, username := parent.FromName, parent.FromUsername
+
+	if parent.FromID != 0 {
+		ref := refByID[parent.FromID]
+		if name == "" {
+			name = ref.name
+		}
+
+		if username == "" {
+			username = ref.username
+		}
+	}
+
+	return &ReplyToMessage{
+		FromName:     name,
+		FromUsername: username,
+		Text:         truncateText(parent.Text, replyParentTextLimit),
+	}
+}
+
+type senderRef struct {
+	name     string
+	username string
+}
+
+// buildSenderLookup combines FromID→{name, username} from the primary
+// batch and from any parents fetched by the resolver. Without fetched
+// entries, a parent whose own fields are empty but whose FromID appears
+// in the fetched payload would miss its display name.
 //
 // FromID==0 entries are excluded: zero means "no identifiable sender"
 // (channel posts without signature, anonymous admins), and bucketing
 // them together would cross-attribute names between unrelated senders.
-func buildNameLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]string {
-	lookup := make(map[int64]string, len(msgs)+len(fetched))
+func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]senderRef {
+	lookup := make(map[int64]senderRef, len(msgs)+len(fetched))
+
+	mergeRef := func(peerID int64, name, username string) {
+		if peerID == 0 {
+			return
+		}
+
+		ref := lookup[peerID]
+		if ref.name == "" {
+			ref.name = name
+		}
+
+		if ref.username == "" {
+			ref.username = username
+		}
+
+		lookup[peerID] = ref
+	}
 
 	for idx := range msgs {
-		if msgs[idx].FromID != 0 && msgs[idx].FromName != "" {
-			lookup[msgs[idx].FromID] = msgs[idx].FromName
-		}
+		mergeRef(msgs[idx].FromID, msgs[idx].FromName, msgs[idx].FromUsername)
 	}
 
 	for _, parent := range fetched {
-		if parent != nil && parent.FromID != 0 && parent.FromName != "" {
-			lookup[parent.FromID] = parent.FromName
+		if parent != nil {
+			mergeRef(parent.FromID, parent.FromName, parent.FromUsername)
 		}
 	}
 

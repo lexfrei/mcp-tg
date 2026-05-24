@@ -17,9 +17,14 @@ type MessagesGetReactionsParams struct {
 }
 
 // ReactionUserItem is a structured reaction entry for JSON results.
+//
+// Name and Username mirror the shape used by every other peer-bearing
+// JSON entry (sender, forward-author, participant) so a consumer can
+// render a reactor with the same "Display Name [@username]" identifier.
 type ReactionUserItem struct {
 	UserID   int64  `json:"userId"`
-	UserName string `json:"userName,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Username string `json:"username,omitempty"`
 	Emoji    string `json:"emoji"`
 }
 
@@ -103,7 +108,8 @@ func reactionUsersToItems(
 	for idx := range reactions {
 		items[idx] = ReactionUserItem{
 			UserID:   reactions[idx].UserID,
-			UserName: reactions[idx].UserName,
+			Name:     reactions[idx].Name,
+			Username: reactions[idx].Username,
 			Emoji:    reactions[idx].Emoji,
 		}
 	}
@@ -115,12 +121,12 @@ func formatReactionUsers(reactions []telegram.ReactionUser) string {
 	var buf strings.Builder
 
 	for idx := range reactions {
-		fmt.Fprintf(
-			&buf, "[%d] %s %s\n",
-			reactions[idx].UserID,
-			reactions[idx].Emoji,
-			reactions[idx].UserName,
+		ref := formatPeerRef(
+			reactions[idx].Name,
+			reactions[idx].Username,
+			telegram.InputPeer{Type: telegram.PeerUser, ID: reactions[idx].UserID},
 		)
+		fmt.Fprintf(&buf, "%s %s\n", reactions[idx].Emoji, ref)
 	}
 
 	return buf.String()

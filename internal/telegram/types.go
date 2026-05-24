@@ -198,15 +198,23 @@ type Folder struct {
 }
 
 // ReactionUser represents a user who reacted to a message.
+//
+// The Name and Username fields mirror the shape every other
+// peer-bearing JSON surface uses (sender, forward-author, participant)
+// so a downstream consumer can treat a reactor as a "Display Name
+// [@username]" identifier just like any other peer.
 type ReactionUser struct {
 	UserID   int64  `json:"userId"`
-	UserName string `json:"userName,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Username string `json:"username,omitempty"`
 	Emoji    string `json:"emoji"`
 }
 
 // ContactStatus represents the online status of a contact.
 type ContactStatus struct {
 	UserID   int64  `json:"userId"`
+	Name     string `json:"name,omitempty"`
+	Username string `json:"username,omitempty"`
 	Status   string `json:"status"`
 	LastSeen int    `json:"lastSeen,omitempty"`
 }

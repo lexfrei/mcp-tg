@@ -87,6 +87,14 @@ type ParticipantItem struct {
 	Username string `json:"username,omitempty"`
 }
 
+// PeerRefItem is the canonical {id, type, name, username} shape used
+// for every peer JSON-rendered across the tool surface — sender,
+// forward-author, participant, dialog, channel/group reference,
+// reactor, contact. Tools that historically used ad-hoc shapes
+// (DialogItem, UserItem, ReactionUserItem, etc.) are converging on
+// this struct so a consumer can treat any peer uniformly.
+type PeerRefItem = ParticipantItem
+
 type participantKey struct {
 	Type string
 	ID   int64

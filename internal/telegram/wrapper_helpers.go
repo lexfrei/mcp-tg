@@ -1214,7 +1214,8 @@ func extractReactionUsers(
 		}
 
 		if usr, ok := names[item.UserID]; ok {
-			item.UserName = userDisplayName(usr)
+			item.Name = userDisplayName(usr)
+			item.Username = usr.Username
 		}
 
 		items = append(items, item)

@@ -777,6 +777,17 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 // what the server returns when the client's sequence diverges enough to
 // need both Seq and SeqStart; ignoring it would silently drop the
 // returned messages in messageFromUpdate / messagesFromUpdates.
+//
+// The short variants — *tg.UpdateShort, *tg.UpdateShortMessage,
+// *tg.UpdateShortChatMessage, *tg.UpdateShortSentMessage,
+// *tg.UpdatesTooLong — are deliberately NOT handled here. They don't
+// carry parallel Users[]/Chats[] arrays (their inline message field
+// references peers by bare ID only). SendMessage / EditMessage /
+// ForwardMessages responses route the SentMessage shape directly in
+// messageFromUpdate, and incoming-update paths don't currently feed
+// through this helper. If a future tool subscribes to live updates,
+// it must add cases for those variants rather than extending this
+// switch — they need a different enrichment strategy.
 func unwrapUpdates(result tg.UpdatesClass) ([]tg.UpdateClass, []tg.UserClass, []tg.ChatClass, bool) {
 	switch upd := result.(type) {
 	case *tg.Updates:

@@ -48,7 +48,8 @@ func formatTimestamp(unix int) string {
 //
 // Lines are emitted only when their underlying field is populated. The
 // caller (formatMessages, formatContextMessages, etc.) is responsible
-// for the blank line that separates one block from the next.
+// for placing the literal '---' block separator between adjacent
+// blocks; formatMessage returns the block without trailing whitespace.
 func formatMessage(msg *telegram.Message) string {
 	if msg == nil {
 		return unknownValue

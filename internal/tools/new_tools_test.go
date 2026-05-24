@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"github.com/cockroachdb/errors"
@@ -472,6 +473,17 @@ func TestMessagesSearchGlobalHandler_Happy(t *testing.T) {
 
 	if res.Count != 1 {
 		t.Errorf("count = %d, want 1", res.Count)
+	}
+}
+
+// TestMessagesSearchGlobalResult_NoParticipantsField pins that the
+// MessagesSearchGlobalResult JSON shape has no Participants field.
+// Global search spans arbitrary peers with unreliable access-hash
+// resolution; documenting it here so the README claim stays honest.
+func TestMessagesSearchGlobalResult_NoParticipantsField(t *testing.T) {
+	val := reflect.ValueOf(MessagesSearchGlobalResult{})
+	if _, found := val.Type().FieldByName("Participants"); found {
+		t.Error("MessagesSearchGlobalResult must not expose Participants — see README's tg_messages_search_global caveat")
 	}
 }
 

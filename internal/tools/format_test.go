@@ -291,6 +291,24 @@ func TestFormatMessage_ForwardedAnonymousChannelPost_KeepsPostID(t *testing.T) {
 	}
 }
 
+func TestFormatMessage_EmptyForwardHeaderStillRenders(t *testing.T) {
+	// Degenerate but possible: a MessageFwdHeader with no From, no
+	// FromName, no ChannelPost. The line still renders (just '[hidden]')
+	// instead of producing a half-empty block.
+	msg := &telegram.Message{
+		ID: 7, Date: 1700000000,
+		FromID: 1, FromType: telegram.PeerUser, FromName: "F",
+		Text:    "body",
+		Forward: &telegram.ForwardInfo{},
+	}
+
+	got := formatMessage(msg)
+
+	if !strings.Contains(got, "forwarded from: [hidden]") {
+		t.Errorf("empty forward header should still emit a 'forwarded from: [hidden]' line, got:\n%s", got)
+	}
+}
+
 func TestFormatMessage_ForwardedHiddenPrivacy(t *testing.T) {
 	msg := &telegram.Message{
 		ID: 7, Date: 1700000200,
@@ -379,6 +397,25 @@ func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
 
 	if got != want {
 		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFormatMessages_TrailingNewline(t *testing.T) {
+	// formatMessages appends a single '\n' so terminal-style consumers
+	// get a clean line-break after the last block. Pin both the
+	// single-block and multi-block cases so a future allocation-shave
+	// touching the trailing byte must update this test.
+	single := formatMessages([]telegram.Message{{ID: 1, Date: 1700000000, Text: "only"}})
+	if !strings.HasSuffix(single, "\n") || strings.HasSuffix(single, "\n\n") {
+		t.Errorf("single-block output should end with exactly one '\\n', got %q", single)
+	}
+
+	multi := formatMessages([]telegram.Message{
+		{ID: 1, Date: 1700000000, Text: "first"},
+		{ID: 2, Date: 1700000000, Text: "second"},
+	})
+	if !strings.HasSuffix(multi, "\n") || strings.HasSuffix(multi, "\n\n") {
+		t.Errorf("multi-block output should end with exactly one '\\n', got %q", multi)
 	}
 }
 

@@ -26,17 +26,30 @@ func TestFormatTimestamp_Zero(t *testing.T) {
 }
 
 func TestFormatMessage_TextOnly(t *testing.T) {
+	msg := &telegram.Message{ID: 42, Date: 1700000000, Text: "hello"}
+	got := formatMessage(msg)
+	want := "[42] 2023-11-14T22:13:20Z\ntext:\nhello"
+
+	if got != want {
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFormatMessage_WithSenderUsername(t *testing.T) {
 	msg := &telegram.Message{
-		ID:   42,
-		Date: 1700000000,
-		Text: "hello",
+		ID:           7,
+		Date:         1700000000,
+		FromID:       123,
+		FromName:     "Alice",
+		FromUsername: "alice",
+		Text:         "hi",
 	}
 
 	got := formatMessage(msg)
-	want := "[42] 2023-11-14T22:13:20Z hello"
+	want := "[7] 2023-11-14T22:13:20Z\nfrom: Alice [@alice]\ntext:\nhi"
 
 	if got != want {
-		t.Errorf("formatMessage() = %q, want %q", got, want)
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -44,15 +57,15 @@ func TestFormatMessage_WithReply(t *testing.T) {
 	msg := &telegram.Message{
 		ID:      26154,
 		Date:    1700000000,
-		Text:    "по твоему сдвгшник это камера?",
+		Text:    "punchline",
 		ReplyTo: &telegram.ReplyToInfo{MessageID: 26150},
 	}
 
 	got := formatMessage(msg)
-	want := "[26154 ↩26150] 2023-11-14T22:13:20Z по твоему сдвгшник это камера?"
+	want := "[26154] 2023-11-14T22:13:20Z\nreply to: 26150\ntext:\npunchline"
 
 	if got != want {
-		t.Errorf("formatMessage() = %q, want %q", got, want)
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
 	}
 }
 
@@ -66,36 +79,150 @@ func TestFormatMessage_WithReplyAndMedia(t *testing.T) {
 	}
 
 	got := formatMessage(msg)
-	want := "[100 ↩99] 2023-11-14T22:13:20Z [photo] caption"
+	want := "[100] 2023-11-14T22:13:20Z\nreply to: 99\nmedia: photo\ntext:\ncaption"
 
 	if got != want {
-		t.Errorf("formatMessage() = %q, want %q", got, want)
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
 	}
 }
 
 func TestFormatMessage_WithMedia(t *testing.T) {
+	msg := &telegram.Message{ID: 42, Date: 1700000000, Text: "caption", MediaType: "photo"}
+	got := formatMessage(msg)
+	want := "[42] 2023-11-14T22:13:20Z\nmedia: photo\ntext:\ncaption"
+
+	if got != want {
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFormatMessage_ForwardedFromUser(t *testing.T) {
 	msg := &telegram.Message{
-		ID:        42,
-		Date:      1700000000,
-		Text:      "caption",
-		MediaType: "photo",
+		ID: 7, Date: 1700000200,
+		FromID: 1, FromName: "Forwarder", FromUsername: "forw",
+		Text: "fwd body",
+		Forward: &telegram.ForwardInfo{
+			Date: 1700000000,
+			From: &telegram.PeerRef{
+				Peer:     telegram.InputPeer{Type: telegram.PeerUser, ID: 99},
+				Name:     "Origin",
+				Username: "orig",
+			},
+		},
 	}
 
 	got := formatMessage(msg)
-	want := "[42] 2023-11-14T22:13:20Z [photo] caption"
+	want := strings.Join([]string{
+		"[7] 2023-11-14T22:16:40Z",
+		"from: Forwarder [@forw]",
+		"forwarded from: Origin [@orig] at 2023-11-14T22:13:20Z",
+		"text:",
+		"fwd body",
+	}, "\n")
 
 	if got != want {
-		t.Errorf("formatMessage() = %q, want %q", got, want)
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFormatMessage_ForwardedFromChannel_WithPostAuthor(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 7, Date: 1700000200,
+		FromID: 1, FromName: "Forwarder",
+		Text: "body",
+		Forward: &telegram.ForwardInfo{
+			Date:        1700000000,
+			ChannelPost: 4567,
+			PostAuthor:  "Kvaps",
+			From: &telegram.PeerRef{
+				Peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},
+				Name:     "Cozystack Blog",
+				Username: "cozystack_blog",
+			},
+		},
+	}
+
+	got := formatMessage(msg)
+	want := strings.Join([]string{
+		"[7] 2023-11-14T22:16:40Z",
+		"from: Forwarder [user:1]",
+		`forwarded from channel: Cozystack Blog [@cozystack_blog] #4567 by "Kvaps" at 2023-11-14T22:13:20Z`,
+		"text:",
+		"body",
+	}, "\n")
+
+	if got != want {
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFormatMessage_ForwardedHiddenPrivacy(t *testing.T) {
+	msg := &telegram.Message{
+		ID: 7, Date: 1700000200,
+		FromID: 1, FromName: "Forwarder",
+		Text: "body",
+		Forward: &telegram.ForwardInfo{
+			Date:     1700000000,
+			FromName: "Kaidxen",
+		},
+	}
+
+	got := formatMessage(msg)
+	wantLine := "forwarded from: Kaidxen [hidden] at 2023-11-14T22:13:20Z"
+
+	if !strings.Contains(got, wantLine) {
+		t.Errorf("formatMessage() missing %q in:\n%s", wantLine, got)
+	}
+}
+
+func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
+	otherPeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
+	msg := &telegram.Message{
+		ID: 10, Date: 1700000000,
+		Text: "my reaction",
+		ReplyTo: &telegram.ReplyToInfo{
+			MessageID:    698,
+			FromPeerID:   &otherPeer,
+			FromName:     "Other Author",
+			FromUsername: "otherauthor",
+			QuoteText:    "key fragment",
+		},
+	}
+
+	got := formatMessage(msg)
+	want := strings.Join([]string{
+		"[10] 2023-11-14T22:13:20Z",
+		"reply to: 698 in Other Author [@otherauthor]",
+		"quote: «key fragment»",
+		"text:",
+		"my reaction",
+	}, "\n")
+
+	if got != want {
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
+func TestFormatMessages_BlankLineBetweenBlocks(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 1, Date: 1700000000, Text: "first"},
+		{ID: 2, Date: 1700000000, Text: "second"},
+	}
+
+	got := formatMessages(msgs)
+
+	if !strings.Contains(got, "first\n\n[2]") {
+		t.Errorf("formatMessages should separate blocks with a blank line, got:\n%s", got)
 	}
 }
 
 func TestFormatMessage_LongText(t *testing.T) {
-	long := strings.Repeat("a", 120)
+	long := strings.Repeat("a", 5000)
 	msg := &telegram.Message{ID: 1, Date: 1700000000, Text: long}
 	got := formatMessage(msg)
 
-	if len(got) > 200 {
-		t.Errorf("formatMessage should truncate long text, got len=%d", len(got))
+	if !strings.HasSuffix(got, long) {
+		t.Errorf("formatMessage should preserve long text body verbatim, got len=%d", len(got))
 	}
 }
 

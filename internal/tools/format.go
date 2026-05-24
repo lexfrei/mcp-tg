@@ -26,56 +26,137 @@ func formatTimestamp(unix int) string {
 	return time.Unix(int64(unix), 0).UTC().Format(time.RFC3339)
 }
 
-// formatMessage returns a single-line summary of a message.
+// formatMessage renders a single message as a multi-line block. Layout:
+//
+//	[<id>] <ISO-timestamp>
+//	from: <Name [@username]>
+//	forwarded from: <Name [hidden]> at <ts>           (when Forward.From is a user OR privacy-hidden)
+//	forwarded from channel: <Title [@username]> #<post> by "<author>" at <ts>
+//	reply to: <parentId>                              (same-chat reply)
+//	reply to: <parentId> in <Name [@username]>        (cross-chat reply)
+//	quote: «<QuoteText>»
+//	media: <type>
+//	text:
+//	<msg.Text>
+//
+// Lines are emitted only when their underlying field is populated. The
+// caller (formatMessages, formatContextMessages, etc.) is responsible
+// for the blank line that separates one block from the next.
 func formatMessage(msg *telegram.Message) string {
 	if msg == nil {
 		return unknownValue
 	}
 
-	text := msg.Text
-	timestamp := formatTimestamp(msg.Date)
-	sender := formatSender(msg)
-	header := formatMessageHeader(msg)
-
-	if msg.MediaType != "" {
-		return fmt.Sprintf("%s %s %s[%s] %s", header, timestamp, sender, msg.MediaType, text)
-	}
-
-	return fmt.Sprintf("%s %s %s%s", header, timestamp, sender, text)
-}
-
-// formatMessageHeader returns the "[ID]" or "[ID ↩parentID]" prefix.
-// ReplyTo is non-nil only when extractReplyTo produced a valid parent
-// ID, so we don't re-check MessageID here.
-func formatMessageHeader(msg *telegram.Message) string {
-	if msg.ReplyTo != nil {
-		return fmt.Sprintf("[%d ↩%d]", msg.ID, msg.ReplyTo.MessageID)
-	}
-
-	return fmt.Sprintf("[%d]", msg.ID)
-}
-
-func formatSender(msg *telegram.Message) string {
-	if msg.FromName != "" {
-		return msg.FromName + ": "
-	}
-
-	if msg.FromID != 0 {
-		return fmt.Sprintf("user:%d: ", msg.FromID)
-	}
-
-	return ""
-}
-
-// formatMessages formats a slice of messages as newline-separated lines.
-func formatMessages(msgs []telegram.Message) string {
 	var buf strings.Builder
 
-	for idx := range msgs {
-		fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
+	fmt.Fprintf(&buf, "[%d] %s\n", msg.ID, formatTimestamp(msg.Date))
+	writeSenderLine(&buf, msg)
+	writeForwardLine(&buf, msg.Forward)
+	writeReplyLines(&buf, msg.ReplyTo)
+
+	if msg.MediaType != "" {
+		fmt.Fprintf(&buf, "media: %s\n", msg.MediaType)
 	}
 
-	return buf.String()
+	if msg.Text != "" {
+		buf.WriteString("text:\n")
+		buf.WriteString(msg.Text)
+	}
+
+	return strings.TrimRight(buf.String(), "\n")
+}
+
+func writeSenderLine(buf *strings.Builder, msg *telegram.Message) {
+	ref := formatPeerRef(msg.FromName, msg.FromUsername, telegram.InputPeer{
+		Type: telegram.PeerUser,
+		ID:   msg.FromID,
+	})
+
+	if ref == peerRefHidden {
+		return
+	}
+
+	fmt.Fprintf(buf, "from: %s\n", ref)
+}
+
+func writeForwardLine(buf *strings.Builder, fwd *telegram.ForwardInfo) {
+	if fwd == nil {
+		return
+	}
+
+	ref := forwardSourceRef(fwd)
+
+	if fwd.From != nil && fwd.From.Peer.Type == telegram.PeerChannel {
+		writeChannelForwardLine(buf, fwd, ref)
+
+		return
+	}
+
+	if fwd.Date != 0 {
+		fmt.Fprintf(buf, "forwarded from: %s at %s\n", ref, formatTimestamp(fwd.Date))
+
+		return
+	}
+
+	fmt.Fprintf(buf, "forwarded from: %s\n", ref)
+}
+
+func writeChannelForwardLine(buf *strings.Builder, fwd *telegram.ForwardInfo, ref string) {
+	buf.WriteString("forwarded from channel: ")
+	buf.WriteString(ref)
+
+	if fwd.ChannelPost != 0 {
+		fmt.Fprintf(buf, " #%d", fwd.ChannelPost)
+	}
+
+	if fwd.PostAuthor != "" {
+		fmt.Fprintf(buf, " by %q", fwd.PostAuthor)
+	}
+
+	if fwd.Date != 0 {
+		fmt.Fprintf(buf, " at %s", formatTimestamp(fwd.Date))
+	}
+
+	buf.WriteString("\n")
+}
+
+func forwardSourceRef(fwd *telegram.ForwardInfo) string {
+	if fwd.From != nil {
+		return formatPeerRef(fwd.From.Name, fwd.From.Username, fwd.From.Peer)
+	}
+
+	return formatPeerRef(fwd.FromName, "", telegram.InputPeer{})
+}
+
+func writeReplyLines(buf *strings.Builder, reply *telegram.ReplyToInfo) {
+	if reply == nil || reply.MessageID == 0 {
+		return
+	}
+
+	if reply.FromPeerID != nil {
+		ref := formatPeerRef(reply.FromName, reply.FromUsername, *reply.FromPeerID)
+		fmt.Fprintf(buf, "reply to: %d in %s\n", reply.MessageID, ref)
+	} else {
+		fmt.Fprintf(buf, "reply to: %d\n", reply.MessageID)
+	}
+
+	if reply.QuoteText != "" {
+		fmt.Fprintf(buf, "quote: «%s»\n", reply.QuoteText)
+	}
+}
+
+// formatMessages joins message blocks separated by a blank line.
+func formatMessages(msgs []telegram.Message) string {
+	if len(msgs) == 0 {
+		return ""
+	}
+
+	blocks := make([]string, 0, len(msgs))
+	for idx := range msgs {
+		blocks = append(blocks, formatMessage(&msgs[idx]))
+	}
+
+	return strings.Join(blocks, "\n\n") + "\n"
 }
 
 // formatDialog returns a single-line summary of a dialog.

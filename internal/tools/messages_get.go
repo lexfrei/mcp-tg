@@ -2,8 +2,6 @@ package tools
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -70,17 +68,11 @@ func NewMessagesGetHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesGe
 }
 
 func buildMessagesGetResult(msgs []telegram.Message, items []MessageItem) MessagesGetResult {
-	var buf strings.Builder
-
-	for idx := range msgs {
-		fmt.Fprintln(&buf, formatMessage(&msgs[idx]))
-	}
-
 	return MessagesGetResult{
 		Count:        len(msgs),
 		Participants: participantsFromMessages(msgs),
 		Messages:     items,
-		Output:       buf.String(),
+		Output:       formatMessages(msgs),
 	}
 }
 

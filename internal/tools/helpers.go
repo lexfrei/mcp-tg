@@ -172,7 +172,10 @@ func truncateText(text string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-// formatUserName builds a display name from first/last name and username.
+// formatUserName builds a display name plus identifier for a User.
+// Routes through formatPeerRef so the rendered shape matches the rest
+// of the tool surface: "First Last [@username]" / "First Last [user:N]"
+// / "First Last [hidden]" — never the legacy "Name (@username)" form.
 func formatUserName(user *telegram.User) string {
 	if user == nil {
 		return unknownValue
@@ -180,11 +183,8 @@ func formatUserName(user *telegram.User) string {
 
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
 
-	if user.Username != "" {
-		return fmt.Sprintf("%s (@%s)", name, user.Username)
-	}
-
-	return name
+	return formatPeerRef(name, user.Username,
+		telegram.InputPeer{Type: telegram.PeerUser, ID: user.ID})
 }
 
 const peerRefHidden = "[hidden]"

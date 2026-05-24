@@ -52,7 +52,7 @@ func NewContactsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Contact
 		var buf strings.Builder
 
 		for idx := range users {
-			fmt.Fprintf(&buf, "[%d] %s\n", users[idx].ID, formatUserName(&users[idx]))
+			fmt.Fprintf(&buf, "%s\n", formatUserName(&users[idx]))
 		}
 
 		return nil, ContactsSearchResult{

@@ -97,20 +97,21 @@ func TestFormatUserName_Nil(t *testing.T) {
 	}
 }
 
-func TestFormatUserName_FullName(t *testing.T) {
+func TestFormatUserName_FullName_NoIDNoUsername(t *testing.T) {
 	user := &telegram.User{FirstName: "John", LastName: "Doe"}
 	got := formatUserName(user)
-	want := "John Doe"
+	want := "John Doe [hidden]"
 
 	if got != want {
-		t.Errorf("formatUserName() = %q, want %q", got, want)
+		t.Errorf("formatUserName() = %q, want %q — name present but no ID/username collapses to [hidden]",
+			got, want)
 	}
 }
 
-func TestFormatUserName_FirstOnly(t *testing.T) {
-	user := &telegram.User{FirstName: "John"}
+func TestFormatUserName_WithID(t *testing.T) {
+	user := &telegram.User{ID: 42, FirstName: "John"}
 	got := formatUserName(user)
-	want := "John"
+	want := "John [user:42]"
 
 	if got != want {
 		t.Errorf("formatUserName() = %q, want %q", got, want)
@@ -119,12 +120,13 @@ func TestFormatUserName_FirstOnly(t *testing.T) {
 
 func TestFormatUserName_WithUsername(t *testing.T) {
 	user := &telegram.User{
+		ID:        42,
 		FirstName: "John",
 		LastName:  "Doe",
 		Username:  "johndoe",
 	}
 	got := formatUserName(user)
-	want := "John Doe (@johndoe)"
+	want := "John Doe [@johndoe]"
 
 	if got != want {
 		t.Errorf("formatUserName() = %q, want %q", got, want)

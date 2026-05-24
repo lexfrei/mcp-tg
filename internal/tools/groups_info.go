@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -49,6 +50,21 @@ func NewGroupsInfoHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsInfoP
 				telegramErr("failed to get group info", err)
 		}
 
+		ref := formatPeerRef(info.Title, info.Username, info.Peer)
+
+		var out strings.Builder
+
+		out.WriteString(ref)
+
+		if info.MembersCount > 0 {
+			fmt.Fprintf(&out, " — %d members", info.MembersCount)
+		}
+
+		if info.About != "" {
+			out.WriteString(": ")
+			out.WriteString(info.About)
+		}
+
 		return nil, GroupsInfoResult{
 			Title:        info.Title,
 			Username:     info.Username,
@@ -57,10 +73,7 @@ func NewGroupsInfoHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsInfoP
 			IsChannel:    info.IsChannel,
 			IsSupergroup: info.IsSupergroup,
 			IsForum:      info.IsForum,
-			Output: fmt.Sprintf(
-				"%s (@%s) — %d members: %s",
-				info.Title, info.Username, info.MembersCount, info.About,
-			),
+			Output:       out.String(),
 		}, nil
 	}
 }

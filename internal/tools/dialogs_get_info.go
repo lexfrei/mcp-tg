@@ -2,7 +2,7 @@ package tools
 
 import (
 	"context"
-	"fmt"
+	"strings"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -46,12 +46,26 @@ func NewDialogsGetInfoHandler(client telegram.Client) mcp.ToolHandlerFor[Dialogs
 				telegramErr("failed to get peer info", err)
 		}
 
+		ref := formatPeerRef(info.Title, info.Username, info.Peer)
+
+		var out strings.Builder
+
+		out.WriteString(ref)
+		out.WriteString(" [")
+		out.WriteString(info.Type)
+		out.WriteString("]")
+
+		if info.About != "" {
+			out.WriteString(": ")
+			out.WriteString(info.About)
+		}
+
 		return nil, DialogsGetInfoResult{
 			Title:    info.Title,
 			Username: info.Username,
 			About:    info.About,
 			Type:     info.Type,
-			Output:   fmt.Sprintf("%s (@%s) [%s]: %s", info.Title, info.Username, info.Type, info.About),
+			Output:   out.String(),
 		}, nil
 	}
 }

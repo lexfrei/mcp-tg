@@ -206,23 +206,35 @@ func formatMessages(msgs []telegram.Message) string {
 	return strings.Join(blocks, blockSeparator) + "\n"
 }
 
-// formatDialog returns a single-line summary of a dialog.
+// formatDialog returns a single-line summary of a dialog. The peer
+// identifier follows the same shape as formatPeerRef ("Title [@user]"
+// / "Title [user:N]" / "Title [channel:N]" / "Title [group:N]" /
+// "Title [hidden]") so a consumer can pattern-match dialogs and
+// messages uniformly. Unread count is appended as a trailing suffix.
 func formatDialog(dlg *telegram.Dialog) string {
 	if dlg == nil {
 		return unknownValue
 	}
 
-	peerType := peerUser
-	if dlg.IsChannel {
-		peerType = peerChannel
-	} else if dlg.IsGroup {
-		peerType = peerGroup
-	}
+	peerType := dialogPeerKind(dlg)
+	ref := formatPeerRef(dlg.Title, dlg.Username,
+		telegram.InputPeer{Type: peerType, ID: dlg.Peer.ID})
 
 	unread := ""
 	if dlg.UnreadCount > 0 {
 		unread = fmt.Sprintf(" (%d unread)", dlg.UnreadCount)
 	}
 
-	return fmt.Sprintf("[%s] %s%s", peerType, dlg.Title, unread)
+	return ref + unread
+}
+
+// dialogPeerKind resolves a Dialog into a PeerType honoring the
+// IsGroup hint (a *tg.Chat dialog in a supergroup context will be
+// flagged as IsGroup while Peer.Type stays PeerChat).
+func dialogPeerKind(dlg *telegram.Dialog) telegram.PeerType {
+	if dlg.IsGroup && dlg.Peer.Type == telegram.PeerChat {
+		return telegram.PeerChat
+	}
+
+	return dlg.Peer.Type
 }

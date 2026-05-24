@@ -463,10 +463,27 @@ func TestFormatMessage_LongText(t *testing.T) {
 	}
 }
 
-func TestFormatDialog_User(t *testing.T) {
-	dlg := &telegram.Dialog{Title: "Pavel Durov"}
+func TestFormatDialog_UserWithUsername(t *testing.T) {
+	dlg := &telegram.Dialog{
+		Title:    "Pavel Durov",
+		Username: "durov",
+		Peer:     telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+	}
 	got := formatDialog(dlg)
-	want := "[user] Pavel Durov"
+	want := "Pavel Durov [@durov]"
+
+	if got != want {
+		t.Errorf("formatDialog() = %q, want %q", got, want)
+	}
+}
+
+func TestFormatDialog_PrivateUser_ShowsUserID(t *testing.T) {
+	dlg := &telegram.Dialog{
+		Title: "Anon",
+		Peer:  telegram.InputPeer{Type: telegram.PeerUser, ID: 42},
+	}
+	got := formatDialog(dlg)
+	want := "Anon [user:42]"
 
 	if got != want {
 		t.Errorf("formatDialog() = %q, want %q", got, want)
@@ -476,11 +493,13 @@ func TestFormatDialog_User(t *testing.T) {
 func TestFormatDialog_Channel_WithUnread(t *testing.T) {
 	dlg := &telegram.Dialog{
 		Title:       "News",
+		Username:    "news_channel",
+		Peer:        telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},
 		IsChannel:   true,
 		UnreadCount: 5,
 	}
 	got := formatDialog(dlg)
-	want := "[channel] News (5 unread)"
+	want := "News [@news_channel] (5 unread)"
 
 	if got != want {
 		t.Errorf("formatDialog() = %q, want %q", got, want)
@@ -488,9 +507,13 @@ func TestFormatDialog_Channel_WithUnread(t *testing.T) {
 }
 
 func TestFormatDialog_Group(t *testing.T) {
-	dlg := &telegram.Dialog{Title: "Devs", IsGroup: true}
+	dlg := &telegram.Dialog{
+		Title:   "Devs",
+		Peer:    telegram.InputPeer{Type: telegram.PeerChat, ID: 77},
+		IsGroup: true,
+	}
 	got := formatDialog(dlg)
-	want := "[group] Devs"
+	want := "Devs [group:77]"
 
 	if got != want {
 		t.Errorf("formatDialog() = %q, want %q", got, want)

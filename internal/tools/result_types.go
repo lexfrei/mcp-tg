@@ -3,9 +3,18 @@ package tools
 import "github.com/lexfrei/mcp-tg/internal/telegram"
 
 // DialogItem is a structured dialog entry for JSON results.
+//
+// Peer is the bot-API numeric ID (signed: positive = user, negative =
+// chat, -100xxx = channel), kept for backwards compatibility with the
+// peer parameter every other tool accepts. Username is the @handle
+// when the dialog is a public user/channel/supergroup — absent for
+// private chats and basic groups. Type uses the same labels as
+// ParticipantItem.Type / MessageItem.FromType so a consumer can pivot
+// between the shapes uniformly.
 type DialogItem struct {
 	Peer        string `json:"peer"`
 	Title       string `json:"title"`
+	Username    string `json:"username,omitempty"`
 	Type        string `json:"type"`
 	UnreadCount int    `json:"unreadCount,omitempty"`
 }
@@ -14,6 +23,7 @@ func dialogToItem(dlg *telegram.Dialog) DialogItem {
 	return DialogItem{
 		Peer:        formatPeer(dlg.Peer),
 		Title:       dlg.Title,
+		Username:    dlg.Username,
 		Type:        dialogPeerType(dlg),
 		UnreadCount: dlg.UnreadCount,
 	}

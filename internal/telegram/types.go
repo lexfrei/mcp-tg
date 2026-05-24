@@ -22,28 +22,59 @@ type InputPeer struct {
 
 // Message represents a simplified Telegram message.
 type Message struct {
-	ID        int          `json:"id"`
-	PeerID    InputPeer    `json:"peerId"`
-	FromID    int64        `json:"fromId"`
-	FromName  string       `json:"fromName,omitempty"`
-	TopicID   int          `json:"topicId,omitempty"`
-	Date      int          `json:"date"`
-	Text      string       `json:"text"`
-	MediaType string       `json:"mediaType,omitempty"`
-	ReplyTo   *ReplyToInfo `json:"replyTo,omitempty"`
-	Entities  []Entity     `json:"entities,omitempty"`
-	Views     int          `json:"views,omitempty"`
-	Forwards  int          `json:"forwards,omitempty"`
-	EditDate  int          `json:"editDate,omitempty"`
+	ID           int          `json:"id"`
+	PeerID       InputPeer    `json:"peerId"`
+	FromID       int64        `json:"fromId"`
+	FromName     string       `json:"fromName,omitempty"`
+	FromUsername string       `json:"fromUsername,omitempty"`
+	TopicID      int          `json:"topicId,omitempty"`
+	Date         int          `json:"date"`
+	Text         string       `json:"text"`
+	MediaType    string       `json:"mediaType,omitempty"`
+	ReplyTo      *ReplyToInfo `json:"replyTo,omitempty"`
+	Forward      *ForwardInfo `json:"forward,omitempty"`
+	Entities     []Entity     `json:"entities,omitempty"`
+	Views        int          `json:"views,omitempty"`
+	Forwards     int          `json:"forwards,omitempty"`
+	EditDate     int          `json:"editDate,omitempty"`
 }
 
 // ReplyToInfo captures Telegram MessageReplyHeader fields relevant for
 // reconstructing thread structure from a message history response.
+//
+// FromName and FromUsername are populated when FromPeerID identifies a
+// peer present in the response's Users/Chats list. They are advisory —
+// the source of truth is the peer ID.
 type ReplyToInfo struct {
-	MessageID  int        `json:"messageId"`
-	TopID      int        `json:"topId,omitempty"`
-	QuoteText  string     `json:"quoteText,omitempty"`
-	FromPeerID *InputPeer `json:"fromPeerId,omitempty"`
+	MessageID    int        `json:"messageId"`
+	TopID        int        `json:"topId,omitempty"`
+	QuoteText    string     `json:"quoteText,omitempty"`
+	FromPeerID   *InputPeer `json:"fromPeerId,omitempty"`
+	FromName     string     `json:"fromName,omitempty"`
+	FromUsername string     `json:"fromUsername,omitempty"`
+}
+
+// PeerRef pairs an InputPeer with its human-readable display name and
+// optional @username. It is used wherever a message references another
+// peer (sender, forwarded-from origin, cross-chat reply target) so the
+// caller gets a single consistent identifier shape instead of bare IDs.
+type PeerRef struct {
+	Peer     InputPeer `json:"peer"`
+	Name     string    `json:"name,omitempty"`
+	Username string    `json:"username,omitempty"`
+}
+
+// ForwardInfo captures Telegram MessageFwdHeader fields. From identifies
+// the original sender (user or channel) when the original author has not
+// hidden it via forward-privacy settings. When From is nil but FromName
+// is set, the author is privacy-hidden and only the display name leaked
+// through.
+type ForwardInfo struct {
+	From        *PeerRef `json:"from,omitempty"`
+	FromName    string   `json:"fromName,omitempty"`
+	Date        int      `json:"date,omitempty"`
+	ChannelPost int      `json:"channelPost,omitempty"`
+	PostAuthor  string   `json:"postAuthor,omitempty"`
 }
 
 // Entity describes a span of formatted text within a message. Offset

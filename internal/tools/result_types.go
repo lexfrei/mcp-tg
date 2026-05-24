@@ -29,11 +29,19 @@ func dialogToItem(dlg *telegram.Dialog) DialogItem {
 	}
 }
 
+// dialogPeerType maps a Dialog to the canonical kind label. It MUST
+// agree with peerLabel for the same Peer — the README and CLAUDE.md
+// promise that the JSON 'type' field and the text '[kind:N]' bracket
+// label use the same string. Supergroups arrive as PeerChannel (gotd
+// folds broadcast channels and supergroups into the same type), so
+// they MUST label as 'channel', not 'group'. 'group' is only legacy
+// basic groups (PeerChat).
+//
+// The Dialog.IsGroup flag is intentionally ignored here — it's a UX
+// hint for grouping in lists, not a kind discriminator. Honouring it
+// would create the very mismatch we promise not to: a supergroup
+// rendered as 'Title [channel:N]' in text but 'type:"group"' in JSON.
 func dialogPeerType(dlg *telegram.Dialog) string {
-	if dlg.IsGroup {
-		return peerGroup
-	}
-
 	switch dlg.Peer.Type {
 	case telegram.PeerUser:
 		return peerUser

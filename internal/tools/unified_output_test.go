@@ -305,6 +305,34 @@ func TestMessageItem_JSONIncludesNonZeroPeerID(t *testing.T) {
 	}
 }
 
+// TestDialogPeerType_SupergroupMatchesPeerLabel pins that the JSON
+// 'type' field on DialogItem for a supergroup matches the text
+// '[kind:N]' bracket label that peerLabel emits. Both must say
+// 'channel' (gotd folds supergroups and broadcast channels into
+// PeerChannel) — the previous code returned 'group' for IsGroup
+// dialogs, which contradicted the formatPeerRef text rendering and
+// broke the README's 'label = type' guarantee.
+func TestDialogPeerType_SupergroupMatchesPeerLabel(t *testing.T) {
+	dlg := &telegram.Dialog{
+		Peer:    telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},
+		Title:   "Supergroup",
+		IsGroup: true, // gotd flags supergroups via IsGroup hint
+	}
+
+	item := dialogToItem(dlg)
+	text := formatDialog(dlg)
+
+	if item.Type != peerChannel {
+		t.Errorf("supergroup dialog JSON type = %q, want %q — must match formatPeerRef's text label",
+			item.Type, peerChannel)
+	}
+
+	wantText := "Supergroup [channel:500]"
+	if text != wantText {
+		t.Errorf("supergroup formatDialog = %q, want %q", text, wantText)
+	}
+}
+
 // TestDialogItemFieldShape pins the JSON tags on DialogItem so the
 // added Username field stays under its canonical tag.
 func TestDialogItemFieldShape(t *testing.T) {

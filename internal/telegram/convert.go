@@ -39,8 +39,45 @@ func ConvertMessage(raw *tg.Message) Message {
 	msg.ReplyTo = extractReplyTo(raw.ReplyTo)
 	msg.TopicID = extractTopicID(raw.ReplyTo)
 	msg.Entities = ConvertEntities(raw.Entities)
+	msg.Forward = extractForward(raw)
 
 	return msg
+}
+
+// extractForward pulls Telegram MessageFwdHeader fields into a domain
+// ForwardInfo. Returns nil when the message is not a forward. Resolving
+// PeerRef.Name and PeerRef.Username is deferred to the wrapper layer,
+// which has access to the Users/Chats arrays from the MTProto response.
+func extractForward(raw *tg.Message) *ForwardInfo {
+	fwd, ok := raw.GetFwdFrom()
+	if !ok {
+		return nil
+	}
+
+	info := &ForwardInfo{
+		Date: fwd.Date,
+	}
+
+	if fromName, hasFromName := fwd.GetFromName(); hasFromName {
+		info.FromName = fromName
+	}
+
+	if channelPost, hasPost := fwd.GetChannelPost(); hasPost {
+		info.ChannelPost = channelPost
+	}
+
+	if postAuthor, hasAuthor := fwd.GetPostAuthor(); hasAuthor {
+		info.PostAuthor = postAuthor
+	}
+
+	if fromID, hasFromID := fwd.GetFromID(); hasFromID {
+		peer := extractPeerID(fromID)
+		if peer != (InputPeer{}) {
+			info.From = &PeerRef{Peer: peer}
+		}
+	}
+
+	return info
 }
 
 func extractPeerID(peer tg.PeerClass) InputPeer {

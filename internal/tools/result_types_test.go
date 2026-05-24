@@ -6,6 +6,15 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
+func TestParticipantTypeLabel_UnknownSurfacesAsUnknown(t *testing.T) {
+	got := participantTypeLabel(telegram.PeerType(99))
+
+	if got != unknownValue {
+		t.Errorf("participantTypeLabel(unknown) = %q, want %q — must mirror peerLabel's default to keep text and JSON consistent",
+			got, unknownValue)
+	}
+}
+
 func TestMessageToItem_FromTypeChannel(t *testing.T) {
 	msg := &telegram.Message{
 		ID: 7, Date: 1700000000,

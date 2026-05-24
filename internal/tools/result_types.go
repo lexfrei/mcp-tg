@@ -98,7 +98,11 @@ func participantTypeLabel(peerType telegram.PeerType) string {
 	case telegram.PeerChannel:
 		return peerChannel
 	default:
-		return peerUser
+		// Mirror peerLabel's defensive default — surface an unknown
+		// peer kind explicitly so a future PeerType extension doesn't
+		// silently misclassify itself as a regular user in JSON while
+		// the text output (via peerLabel) shows 'unknown:N'.
+		return unknownValue
 	}
 }
 

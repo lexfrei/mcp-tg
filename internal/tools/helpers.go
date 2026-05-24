@@ -235,17 +235,21 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 		return ""
 	}
 
+	// Use the shared peerUser / peerGroup / peerChannel / unknownValue
+	// constants so the text labels stay locked to the JSON labels
+	// emitted by participantTypeLabel and messageToItem. Renaming any
+	// of these constants now propagates to both surfaces.
 	switch peer.Type {
 	case telegram.PeerUser:
-		return fmt.Sprintf("user:%d", peer.ID)
+		return fmt.Sprintf("%s:%d", peerUser, peer.ID)
 	case telegram.PeerChat:
-		return fmt.Sprintf("group:%d", peer.ID)
+		return fmt.Sprintf("%s:%d", peerGroup, peer.ID)
 	case telegram.PeerChannel:
-		return fmt.Sprintf("channel:%d", peer.ID)
+		return fmt.Sprintf("%s:%d", peerChannel, peer.ID)
 	default:
 		// Don't masquerade a future PeerType as 'user:' — surface the
 		// fact that we don't know the kind so the reader doesn't
 		// trust the wrong deep-link form.
-		return fmt.Sprintf("unknown:%d", peer.ID)
+		return fmt.Sprintf("%s:%d", unknownValue, peer.ID)
 	}
 }

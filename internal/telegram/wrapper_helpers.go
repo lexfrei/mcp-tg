@@ -632,10 +632,11 @@ func convertMessages(
 // and name — AND copy the peer's kind into msg.FromType so a channel
 // host renders as channel:N, not user:N.
 //
-// Empty fields in the resolved peerRef do NOT overwrite a value that
-// ConvertMessage may have already populated — this keeps any future
-// UserClass variant returning an empty display name from silently
-// wiping a populated sender name.
+// Empty fields in the resolved peerRef do NOT overwrite any value
+// populated upstream. ConvertMessage doesn't set FromName/FromUsername
+// today, so the guard is defensive — it makes a future UserClass
+// variant that returns an empty display name through buildUserRefs
+// non-destructive instead of silently wiping a preset.
 func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peer InputPeer) {
 	if msg.FromID != 0 {
 		fromPeer := InputPeer{Type: msg.FromType, ID: msg.FromID}
@@ -733,31 +734,47 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 		return nil
 	}
 
-	upd, ok := result.(*tg.Updates)
+	updates, users, chats, ok := unwrapUpdates(result)
 	if !ok {
 		return nil
 	}
 
-	users := buildUserRefs(upd.Users)
-	chats := buildChatRefs(upd.Chats)
+	userRefs := buildUserRefs(users)
+	chatRefs := buildChatRefs(chats)
 
 	var msgs []Message
 
-	for _, update := range upd.Updates {
+	for _, update := range updates {
 		if newMsg, ok := update.(*tg.UpdateNewMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				msgs = append(msgs, enrichUpdateMessage(msg, users, chats))
+				msgs = append(msgs, enrichUpdateMessage(msg, userRefs, chatRefs))
 			}
 		}
 
 		if newMsg, ok := update.(*tg.UpdateNewChannelMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				msgs = append(msgs, enrichUpdateMessage(msg, users, chats))
+				msgs = append(msgs, enrichUpdateMessage(msg, userRefs, chatRefs))
 			}
 		}
 	}
 
 	return msgs
+}
+
+// unwrapUpdates accepts either *tg.Updates or *tg.UpdatesCombined and
+// returns the common (updates, users, chats) triple. UpdatesCombined is
+// what the server returns when the client's sequence diverges enough to
+// need both Seq and SeqStart; ignoring it would silently drop the
+// returned messages in messageFromUpdate / messagesFromUpdates.
+func unwrapUpdates(result tg.UpdatesClass) ([]tg.UpdateClass, []tg.UserClass, []tg.ChatClass, bool) {
+	switch upd := result.(type) {
+	case *tg.Updates:
+		return upd.Updates, upd.Users, upd.Chats, true
+	case *tg.UpdatesCombined:
+		return upd.Updates, upd.Users, upd.Chats, true
+	default:
+		return nil, nil, nil, false
+	}
 }
 
 func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Message {
@@ -778,20 +795,19 @@ func messageFromUpdate(result tg.UpdatesClass) *Message {
 		return nil
 	}
 
-	switch upd := result.(type) {
-	case *tg.UpdateShortSentMessage:
+	if upd, ok := result.(*tg.UpdateShortSentMessage); ok {
 		return &Message{
 			ID:   upd.ID,
 			Date: upd.Date,
 		}
-	case *tg.Updates:
-		users := buildUserRefs(upd.Users)
-		chats := buildChatRefs(upd.Chats)
-
-		return firstMessageFromUpdates(upd.Updates, users, chats)
 	}
 
-	return nil
+	updates, users, chats, ok := unwrapUpdates(result)
+	if !ok {
+		return nil
+	}
+
+	return firstMessageFromUpdates(updates, buildUserRefs(users), buildChatRefs(chats))
 }
 
 func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]peerRef) *Message {

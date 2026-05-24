@@ -343,6 +343,33 @@ func TestBuildChatRefs_ChannelAndChat(t *testing.T) {
 	}
 }
 
+func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
+	// The server returns *tg.UpdatesCombined when the client's update
+	// sequence diverges enough to need both Seq and SeqStart. Skipping
+	// it would silently drop the just-sent message data — no ID, no
+	// echo of the text — for SendMessage / EditMessage / Forward
+	// callers reading the response.
+	raw := &tg.Message{ID: 42, Date: 100, FromID: &tg.PeerUser{UserID: 10}}
+	combined := &tg.UpdatesCombined{
+		Updates: []tg.UpdateClass{&tg.UpdateNewMessage{Message: raw}},
+		Users:   []tg.UserClass{&tg.User{ID: 10, FirstName: "Bob", Username: "bob"}},
+	}
+
+	got := messageFromUpdate(combined)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil for *tg.UpdatesCombined")
+	}
+
+	if got.ID != 42 {
+		t.Errorf("got ID = %d, want 42 — message data lost from UpdatesCombined", got.ID)
+	}
+
+	if got.FromName != "Bob" || got.FromUsername != "bob" {
+		t.Errorf("got FromName=%q FromUsername=%q, want Bob/bob — UpdatesCombined was not enriched",
+			got.FromName, got.FromUsername)
+	}
+}
+
 func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 	// SendMessage/EditMessage/ForwardMessages return values flow through
 	// messageFromUpdate; the single-message path must apply the same

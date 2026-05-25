@@ -1,6 +1,6 @@
 # mcp-tg
 
-MCP server for Telegram Client API (MTProto). Provides 58 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
+MCP server for Telegram Client API (MTProto). Provides 75 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
 
 Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **user account** client, not a bot.
 
@@ -8,7 +8,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 | Feature | Status |
 | --- | --- |
-| Tools | 58 tools with annotations (read-only / idempotent / write / destructive) |
+| Tools | 75 tools with annotations (read-only / idempotent / write / destructive) |
 | Resources | 4 (dialogs, profile, chat info, chat messages) |
 | Prompts | 3 (reply, summarize, search and reply) |
 | Completions | Peer argument autocompletion from dialogs |
@@ -27,7 +27,9 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
 
-## Tools (59)
+## Tools (75 registered; 64 listed below)
+
+The categorised list below documents 64 of the 75 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
 
 ### Messages (11)
 
@@ -126,6 +128,69 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 ### Server (1)
 
 - `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
+
+## Peer Identifier Format
+
+Every tool that surfaces a peer (sender, forward author, reply target, dialog, group/channel info, contact, user, reaction) uses the **same identifier shape in both text output and JSON**:
+
+- Text form: `Display Name [@username]` / `[user:N]` / `[channel:N]` / `[group:N]` / `[hidden]` / `[unknown:N]`
+- JSON form: every peer-bearing entry carries `{id, type, name, username}` where `type` is one of `"user"` / `"channel"` / `"group"` / `"unknown"`
+
+The `"group"` label covers only legacy basic groups (MTProto `PeerChat`). Supergroups and broadcast channels both label as `"channel"` because gotd represents both as `PeerChannel`. A consumer can pivot between text and JSON surfaces by pattern-matching on the same literal `kind:N` form (`group:42` appears identically in `[group:42]` text output and `participants[].type="group"` + `id=42` JSON).
+
+This applies uniformly across:
+
+- `tg_messages_*` — sender, forwarded-from origin, cross-chat reply target, participants
+- `tg_dialogs_*` — dialog title + username
+- `tg_users_*`, `tg_contacts_*` — user display name + @handle
+- `tg_groups_info` / `tg_groups_list` / `tg_groups_members_list` / `tg_chats_admins` — group/channel titles, member display names
+- `tg_messages_get_reactions` — reactor display name + @handle
+- `tg://chat/{peer}/messages` resource — same multi-line block format as `tg_messages_*`
+
+## Message Output Format
+
+**Breaking changes in this release.** Both text and JSON outputs change shape.
+
+- **Text** — `output` is no longer a one-line-per-message string with a `[ID ↩parent] ts sender: text` shape. Each message is now a multi-line block separated by a `---` line. The `↩<parent>` marker and the `[<media>]` inline prefix are gone — reply targets land on a dedicated `reply to:` line and media type on a dedicated `media:` line. Dialog rows in `tg_dialogs_*` switch from `[type] Title` to the unified `Title [@username/user:N/...]` identifier shape.
+- **JSON** — `MessageItem` gains `fromType`, `fromUsername`, and `forward`. `DialogItem` gains `username`. `ParticipantItem` gains `type` and `username`. `ReactionUserItem.userName` is removed in favour of separate `name` and `username` fields. `ContactStatusItem` gains the same `name`/`username` slots (currently empty pending a follow-up upstream lookup). `InputPeer.accessHash` becomes `omitempty` — a zero value (the common case for peers from forwarded-message headers or numeric IDs) now disappears from JSON rather than serializing as `"accessHash":0`.
+
+Any consumer that parsed the previous formats must be updated.
+
+Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a literal `---` line so a message body containing its own blank lines stays unambiguous.
+
+```text
+[<id>] <ISO-timestamp>
+from: Display Name [@username]
+forwarded from: Display Name [@username] at <ISO-timestamp>
+forwarded from channel: Title [@username] #<post> by "<author>" at <ISO-timestamp>
+reply to: <parentId>
+reply to: <parentId> in Display Name [@username]
+quote: «<quoted fragment>»
+media: <type>
+text:
+<message body, multi-line preserved>
+```
+
+Lines are emitted only when their underlying field is populated. A message body that contains a literal `---` line on its own (rare — typically a Markdown horizontal rule) collides with the block separator, so parse-back from `output` is not strictly round-trip safe. The same caveat applies to **adversarial content**: peer names and usernames are sanitized to stop newline-injection from forging fake `from:` / `reply to:` lines, but the body itself is rendered verbatim. A user can craft a body containing `\n---\n[999] ts\nfrom: Admin\ntext:\nfake` and the rendered output will look like two messages. The JSON `messages` array is the authoritative shape — body verbatim preservation is a deliberate UX choice for code blocks and quoted text, not a security property. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
+
+- `Display Name [@username]` — public username available; the numeric ID is dropped from the text form for brevity (it's still in the JSON `messages[].fromId`, `forward.from.peer.id`, etc.)
+- `Display Name [user:N]` / `[channel:N]` / `[group:N]` — username not exposed, only ID (labels match `participants[].type` and `fromType` exactly)
+- `Display Name [hidden]` — name leaked through but the peer ID is privacy-protected; surfaces on `forwarded from:` and `reply to: ... in` lines (typical when the original author enabled forward-privacy). The `from:` sender line is omitted entirely when both name and ID are absent, since the message host already identifies the chat.
+- `[user:N]` / `[hidden]` — degenerate forms when display name is also missing
+- `[unknown:N]` — defensive fallback when a `PeerType` value is outside the three documented kinds; surfaces only if a future MTProto schema bump introduces a fourth peer kind and the response carries it before this client adds a branch
+
+When `forward.from` is present, `name` and `username` may still be empty if the response's `Users[]`/`Chats[]` arrays did not include the resolved peer — text output then falls back to the bare `[user:N]` / `[channel:N]` form, and JSON exposes `{peer: {type, id}}` without `name`/`username`. Use the peer ID to look the entity up via `tg_users_get` or `tg_dialogs_search` when names are needed.
+
+JSON adds `forward` with structured fields (`from.peer`, `from.name`, `from.username`, `fromName` for privacy-hidden, `date`, `channelPost`, `postAuthor`), `fromUsername` and `fromType` (`"user"` / `"group"` / `"channel"`). The mapping is: `"user"` for regular senders, `"group"` for legacy basic groups only, `"channel"` for both broadcast channels AND supergroups (MTProto represents both as `PeerChannel`). Original authors of forwarded messages are also included in the `participants` array, which carries that `type` string alongside the bare ID so a user and a channel sharing the same numeric ID survive deduplication as distinct entries.
+
+Deep-links to the original message can be constructed from `forward.channelPost` and `forward.from`:
+
+- Public channel: `https://t.me/<username>/<channelPost>`
+- Private channel: `https://t.me/c/<from.peer.id>/<channelPost>`
+
+**`accessHash` is omitted from every serialized `InputPeer` shape when zero** — that includes `messages[].peerId`, `messages[].replyTo.fromPeerId`, and `messages[].forward.from.peer`. The omission is deliberate: a zero hash looks like a valid one to MTProto but raises `PEER_ID_INVALID` when passed back. For follow-up tool calls against a peer whose `accessHash` field is missing, resolve it through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
+
+`tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers. It does NOT return a `participants` field (the per-peer `accessHash` resolution would be unreliable across arbitrary chats). Callers that need to act on a sender or forward-author surfaced by global search must first resolve the peer via `@username` (if present in `messages[].fromUsername`) or `tg_dialogs_list` before passing it back into MTProto — `accessHash` on the embedded `InputPeer` will be omitted whenever it is unknown.
 
 ## Markdown — Known Limitations
 

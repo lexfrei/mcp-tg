@@ -35,12 +35,49 @@ func ConvertMessage(raw *tg.Message) Message {
 	}
 
 	msg.PeerID = extractPeerID(raw.PeerID)
-	msg.FromID = extractFromID(raw.FromID)
+	msg.FromID, msg.FromType = extractFromIDAndType(raw.FromID)
 	msg.ReplyTo = extractReplyTo(raw.ReplyTo)
 	msg.TopicID = extractTopicID(raw.ReplyTo)
 	msg.Entities = ConvertEntities(raw.Entities)
+	msg.Forward = extractForward(raw)
 
 	return msg
+}
+
+// extractForward pulls Telegram MessageFwdHeader fields into a domain
+// ForwardInfo. Returns nil when the message is not a forward. Resolving
+// PeerRef.Name and PeerRef.Username is deferred to the wrapper layer,
+// which has access to the Users/Chats arrays from the MTProto response.
+func extractForward(raw *tg.Message) *ForwardInfo {
+	fwd, ok := raw.GetFwdFrom()
+	if !ok {
+		return nil
+	}
+
+	info := &ForwardInfo{
+		Date: fwd.Date,
+	}
+
+	if fromName, hasFromName := fwd.GetFromName(); hasFromName {
+		info.FromName = fromName
+	}
+
+	if channelPost, hasPost := fwd.GetChannelPost(); hasPost {
+		info.ChannelPost = channelPost
+	}
+
+	if postAuthor, hasAuthor := fwd.GetPostAuthor(); hasAuthor {
+		info.PostAuthor = postAuthor
+	}
+
+	if fromID, hasFromID := fwd.GetFromID(); hasFromID {
+		peer := extractPeerID(fromID)
+		if peer != (InputPeer{}) {
+			info.From = &PeerRef{Peer: peer}
+		}
+	}
+
+	return info
 }
 
 func extractPeerID(peer tg.PeerClass) InputPeer {
@@ -60,20 +97,35 @@ func extractPeerID(peer tg.PeerClass) InputPeer {
 	}
 }
 
+// extractFromID returns just the numeric ID for a PeerClass — used
+// where the peer kind has already been narrowed by context (e.g. the
+// reaction-list endpoint where every PeerID is a user).
 func extractFromID(from tg.PeerClass) int64 {
+	id, _ := extractFromIDAndType(from)
+
+	return id
+}
+
+// extractFromIDAndType returns the bare ID and the peer kind for a
+// Message.FromID. The kind matters because Telegram supergroups let a
+// channel admin post under the channel's own identity — the FromID is
+// then a PeerChannel and the rendered label should read channel:N, not
+// user:N. Returns (0, PeerUser) for a nil/unknown PeerClass; callers
+// that care about absence check FromID == 0.
+func extractFromIDAndType(from tg.PeerClass) (int64, PeerType) {
 	if from == nil {
-		return 0
+		return 0, PeerUser
 	}
 
 	switch peer := from.(type) {
 	case *tg.PeerUser:
-		return peer.UserID
+		return peer.UserID, PeerUser
 	case *tg.PeerChat:
-		return peer.ChatID
+		return peer.ChatID, PeerChat
 	case *tg.PeerChannel:
-		return peer.ChannelID
+		return peer.ChannelID, PeerChannel
 	default:
-		return 0
+		return 0, PeerUser
 	}
 }
 

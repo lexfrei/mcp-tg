@@ -533,38 +533,67 @@ func dialogsFromSearch(result *tg.ContactsFound) []Dialog {
 	return dialogs
 }
 
+// peerRef is the internal name+username pair used to enrich messages
+// with display names and usernames resolved from the MTProto response's
+// Users/Chats arrays.
+type peerRef struct {
+	Name     string
+	Username string
+}
+
 //nolint:gocritic // unnamedResult: names add no clarity for extraction.
 func extractMessages(
-	result tg.MessagesMessagesClass, peerID int64,
+	result tg.MessagesMessagesClass, peer InputPeer,
 ) ([]Message, int) {
 	switch res := result.(type) {
 	case *tg.MessagesMessages:
-		names := buildUserNames(res.Users)
+		users := buildUserRefs(res.Users)
+		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, names, peerID), len(res.Messages)
+		return convertMessages(res.Messages, users, chats, peer), len(res.Messages)
 	case *tg.MessagesMessagesSlice:
-		names := buildUserNames(res.Users)
+		users := buildUserRefs(res.Users)
+		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, names, peerID), res.Count
+		return convertMessages(res.Messages, users, chats, peer), res.Count
 	case *tg.MessagesChannelMessages:
-		names := buildUserNames(res.Users)
+		users := buildUserRefs(res.Users)
+		chats := buildChatRefs(res.Chats)
 
-		return convertMessages(res.Messages, names, peerID), res.Count
+		return convertMessages(res.Messages, users, chats, peer), res.Count
 	default:
 		return nil, 0
 	}
 }
 
-func buildUserNames(users []tg.UserClass) map[int64]string {
-	names := make(map[int64]string, len(users))
+func buildUserRefs(users []tg.UserClass) map[int64]peerRef {
+	refs := make(map[int64]peerRef, len(users))
 
 	for _, usr := range users {
 		if typed, ok := usr.(*tg.User); ok {
-			names[typed.ID] = userDisplayName(typed)
+			refs[typed.ID] = peerRef{
+				Name:     userDisplayName(typed),
+				Username: typed.Username,
+			}
 		}
 	}
 
-	return names
+	return refs
+}
+
+func buildChatRefs(chats []tg.ChatClass) map[int64]peerRef {
+	refs := make(map[int64]peerRef, len(chats))
+
+	for _, ch := range chats {
+		switch typed := ch.(type) {
+		case *tg.Channel:
+			refs[typed.ID] = peerRef{Name: typed.Title, Username: typed.Username}
+		case *tg.Chat:
+			refs[typed.ID] = peerRef{Name: typed.Title}
+		}
+	}
+
+	return refs
 }
 
 func userDisplayName(usr *tg.User) string {
@@ -577,33 +606,137 @@ func userDisplayName(usr *tg.User) string {
 }
 
 func convertMessages(
-	raw []tg.MessageClass, names map[int64]string, peerID int64,
+	raw []tg.MessageClass, users, chats map[int64]peerRef, peer InputPeer,
 ) []Message {
 	msgs := make([]Message, 0, len(raw))
 
 	for _, m := range raw {
-		if msg, ok := m.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
-			fillFromName(&converted, names, peerID)
-			msgs = append(msgs, converted)
+		msg, ok := m.(*tg.Message)
+		if !ok {
+			continue
 		}
+
+		converted := ConvertMessage(msg)
+		fillSenderRef(&converted, users, chats, peer)
+		fillForwardRefs(&converted, users, chats)
+		fillReplyToRef(&converted, users, chats)
+		msgs = append(msgs, converted)
 	}
 
 	return msgs
 }
 
-// fillFromName resolves sender name from user map.
-// In DMs, FromID==0 means the peer (not owner).
-func fillFromName(msg *Message, names map[int64]string, peerID int64) {
+// fillSenderRef resolves sender name and username from user/chat maps.
+// In DMs and anonymous channel posts, FromID==0 means the peer (not
+// owner) is the sender, so we fall back to the host peer for both ID
+// and name — AND copy the peer's kind into msg.FromType so a channel
+// host renders as channel:N, not user:N.
+//
+// Empty fields in the resolved peerRef do NOT overwrite any value
+// already populated on msg. applyPeerRef is shared with the merge
+// paths in buildSenderLookup and participantsFromMessages, where
+// preserving a non-empty earlier value over a later empty one is the
+// load-bearing rule for last-non-empty-wins semantics; keeping the
+// same shape here means a future buildUserRefs that emits an empty
+// name through a new UserClass variant can't silently wipe a preset.
+func fillSenderRef(msg *Message, users, chats map[int64]peerRef, peer InputPeer) {
 	if msg.FromID != 0 {
-		msg.FromName = names[msg.FromID]
+		fromPeer := InputPeer{Type: msg.FromType, ID: msg.FromID}
+		if ref, ok := lookupRefByPeer(fromPeer, users, chats); ok {
+			applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
+		}
 
 		return
 	}
 
-	if name, ok := names[peerID]; ok {
-		msg.FromID = peerID
-		msg.FromName = name
+	if peer.ID == 0 {
+		return
+	}
+
+	if ref, ok := lookupRefByPeer(peer, users, chats); ok {
+		msg.FromID = peer.ID
+		msg.FromType = peer.Type
+		applyPeerRef(&msg.FromName, &msg.FromUsername, ref)
+	}
+}
+
+func applyPeerRef(name, username *string, ref peerRef) {
+	if ref.Name != "" {
+		*name = ref.Name
+	}
+
+	if ref.Username != "" {
+		*username = ref.Username
+	}
+}
+
+// fillForwardRefs resolves PeerRef.Name and PeerRef.Username on
+// msg.Forward.From using the response's Users/Chats arrays. Privacy-
+// hidden forwards (From == nil, only FromName set) are passed through
+// unchanged. Empty fields in the resolved peerRef do not overwrite a
+// value already populated by ConvertMessage.
+func fillForwardRefs(msg *Message, users, chats map[int64]peerRef) {
+	if msg.Forward == nil || msg.Forward.From == nil {
+		return
+	}
+
+	ref, ok := lookupRefByPeer(msg.Forward.From.Peer, users, chats)
+	if !ok {
+		return
+	}
+
+	applyPeerRef(&msg.Forward.From.Name, &msg.Forward.From.Username, ref)
+}
+
+// fillReplyToRef resolves FromName/FromUsername on the reply parent
+// when ReplyTo.FromPeerID is present. The Telegram client populates
+// FromPeerID for cross-chat quote-replies and may also populate it for
+// in-chat quote-replies; either way the resolved name lands in the
+// advisory FromName/FromUsername slots. Same-chat replies without a
+// FromPeerID skip resolution because the parent author is reachable
+// via msg.FromID at the call site that needs it. Empty resolved
+// fields do not overwrite values already populated upstream.
+func fillReplyToRef(msg *Message, users, chats map[int64]peerRef) {
+	if msg.ReplyTo == nil || msg.ReplyTo.FromPeerID == nil {
+		return
+	}
+
+	ref, ok := lookupRefByPeer(*msg.ReplyTo.FromPeerID, users, chats)
+	if !ok {
+		return
+	}
+
+	applyPeerRef(&msg.ReplyTo.FromName, &msg.ReplyTo.FromUsername, ref)
+}
+
+// lookupRefByPeer routes to the correct map based on the peer kind.
+// User IDs and channel IDs technically share an int64 namespace and
+// can collide, so a type-blind union lookup would let a same-ID user
+// stamp its name onto a channel-shaped PeerRef (and vice versa).
+// Knowing the kind at the call site lets us go straight to the right
+// half. PeerChat shares the chats map with PeerChannel (gotd packs
+// basic groups, supergroups, and broadcast channels all into Chats[]
+// — same numeric ID across these three is vanishingly rare because
+// gotd populates them from disjoint MTProto constructors, but if it
+// happened the {Type, ID} dedup in participantsFromMessages would
+// still keep them distinct in the JSON).
+//
+// The default branch returns (peerRef{}, false), so a future PeerType
+// extension would silently lose name resolution for that kind. If you
+// add a new PeerType, extend the switch here too — the missing branch
+// is otherwise discoverable only by noticing names stop populating.
+func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, bool) {
+	switch peer.Type {
+	case PeerUser:
+		ref, ok := users[peer.ID]
+
+		return ref, ok
+	case PeerChat, PeerChannel:
+		ref, ok := chats[peer.ID]
+
+		return ref, ok
+	default:
+		return peerRef{}, false
 	}
 }
 
@@ -612,29 +745,26 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 		return nil
 	}
 
-	upd, ok := result.(*tg.Updates)
+	updates, users, chats, ok := unwrapUpdates(result)
 	if !ok {
 		return nil
 	}
 
-	names := buildUserNames(upd.Users)
+	userRefs := buildUserRefs(users)
+	chatRefs := buildChatRefs(chats)
 
 	var msgs []Message
 
-	for _, update := range upd.Updates {
+	for _, update := range updates {
 		if newMsg, ok := update.(*tg.UpdateNewMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				converted := ConvertMessage(msg)
-				converted.FromName = names[converted.FromID]
-				msgs = append(msgs, converted)
+				msgs = append(msgs, enrichUpdateMessage(msg, userRefs, chatRefs))
 			}
 		}
 
 		if newMsg, ok := update.(*tg.UpdateNewChannelMessage); ok {
 			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				converted := ConvertMessage(msg)
-				converted.FromName = names[converted.FromID]
-				msgs = append(msgs, converted)
+				msgs = append(msgs, enrichUpdateMessage(msg, userRefs, chatRefs))
 			}
 		}
 	}
@@ -642,27 +772,69 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 	return msgs
 }
 
+// unwrapUpdates accepts either *tg.Updates or *tg.UpdatesCombined and
+// returns the common (updates, users, chats) triple. UpdatesCombined is
+// what the server returns when the client's sequence diverges enough to
+// need both Seq and SeqStart; ignoring it would silently drop the
+// returned messages in messageFromUpdate / messagesFromUpdates.
+//
+// The short variants — *tg.UpdateShort, *tg.UpdateShortMessage,
+// *tg.UpdateShortChatMessage, *tg.UpdateShortSentMessage,
+// *tg.UpdatesTooLong — are deliberately NOT handled here. They don't
+// carry parallel Users[]/Chats[] arrays (their inline message field
+// references peers by bare ID only). SendMessage / EditMessage /
+// ForwardMessages responses route the SentMessage shape directly in
+// messageFromUpdate, and incoming-update paths don't currently feed
+// through this helper. If a future tool subscribes to live updates,
+// it must add cases for those variants rather than extending this
+// switch — they need a different enrichment strategy.
+func unwrapUpdates(result tg.UpdatesClass) ([]tg.UpdateClass, []tg.UserClass, []tg.ChatClass, bool) {
+	switch upd := result.(type) {
+	case *tg.Updates:
+		return upd.Updates, upd.Users, upd.Chats, true
+	case *tg.UpdatesCombined:
+		return upd.Updates, upd.Users, upd.Chats, true
+	default:
+		return nil, nil, nil, false
+	}
+}
+
+func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Message {
+	converted := ConvertMessage(raw)
+	// UpdateNewMessage / UpdateNewChannelMessage don't carry the host
+	// peer separately — pass an empty InputPeer so the DM-fallback in
+	// fillSenderRef short-circuits. Sender resolution still works for
+	// the common case where the message has a non-zero FromID.
+	fillSenderRef(&converted, users, chats, InputPeer{})
+	fillForwardRefs(&converted, users, chats)
+	fillReplyToRef(&converted, users, chats)
+
+	return converted
+}
+
 func messageFromUpdate(result tg.UpdatesClass) *Message {
 	if result == nil {
 		return nil
 	}
 
-	switch upd := result.(type) {
-	case *tg.UpdateShortSentMessage:
+	if upd, ok := result.(*tg.UpdateShortSentMessage); ok {
 		return &Message{
 			ID:   upd.ID,
 			Date: upd.Date,
 		}
-	case *tg.Updates:
-		return firstMessageFromUpdates(upd.Updates)
 	}
 
-	return nil
+	updates, users, chats, ok := unwrapUpdates(result)
+	if !ok {
+		return nil
+	}
+
+	return firstMessageFromUpdates(updates, buildUserRefs(users), buildChatRefs(chats))
 }
 
-func firstMessageFromUpdates(updates []tg.UpdateClass) *Message {
+func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	for _, update := range updates {
-		if msg := extractMessageFromUpdate(update); msg != nil {
+		if msg := extractMessageFromUpdate(update, users, chats); msg != nil {
 			return msg
 		}
 	}
@@ -670,25 +842,25 @@ func firstMessageFromUpdates(updates []tg.UpdateClass) *Message {
 	return nil
 }
 
-func extractMessageFromUpdate(update tg.UpdateClass) *Message {
+func extractMessageFromUpdate(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	switch upd := update.(type) {
 	case *tg.UpdateNewMessage:
 		if msg, ok := upd.Message.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
+			enriched := enrichUpdateMessage(msg, users, chats)
 
-			return &converted
+			return &enriched
 		}
 	case *tg.UpdateNewChannelMessage:
 		if msg, ok := upd.Message.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
+			enriched := enrichUpdateMessage(msg, users, chats)
 
-			return &converted
+			return &enriched
 		}
 	case *tg.UpdateNewScheduledMessage:
 		if msg, ok := upd.Message.(*tg.Message); ok {
-			converted := ConvertMessage(msg)
+			enriched := enrichUpdateMessage(msg, users, chats)
 
-			return &converted
+			return &enriched
 		}
 	}
 
@@ -1042,7 +1214,8 @@ func extractReactionUsers(
 		}
 
 		if usr, ok := names[item.UserID]; ok {
-			item.UserName = userDisplayName(usr)
+			item.Name = userDisplayName(usr)
+			item.Username = usr.Username
 		}
 
 		items = append(items, item)

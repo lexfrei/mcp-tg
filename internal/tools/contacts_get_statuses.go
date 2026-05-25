@@ -13,8 +13,16 @@ import (
 type ContactsGetStatusesParams struct{}
 
 // ContactStatusItem is a structured contact status entry for JSON results.
+//
+// Name and Username mirror the shape every other peer-bearing JSON
+// entry uses. They stay empty today because ContactsGetStatuses
+// (MTProto) does not return a parallel Users[] array — a follow-up
+// can wire a batched UsersGetUsers lookup to populate them without
+// touching the schema again.
 type ContactStatusItem struct {
 	UserID   int64  `json:"userId"`
+	Name     string `json:"name,omitempty"`
+	Username string `json:"username,omitempty"`
 	Status   string `json:"status"`
 	LastSeen int    `json:"lastSeen,omitempty"`
 }
@@ -47,10 +55,12 @@ func NewContactsGetStatusesHandler(
 		var buf strings.Builder
 
 		for idx := range statuses {
-			fmt.Fprintf(
-				&buf, "[%d] %s\n",
-				statuses[idx].UserID, statuses[idx].Status,
+			ref := formatPeerRef(
+				statuses[idx].Name,
+				statuses[idx].Username,
+				telegram.InputPeer{Type: telegram.PeerUser, ID: statuses[idx].UserID},
 			)
+			fmt.Fprintf(&buf, "%s %s\n", ref, statuses[idx].Status)
 		}
 
 		return nil, ContactsGetStatusesResult{
@@ -69,6 +79,8 @@ func contactStatusesToItems(
 	for idx := range statuses {
 		items[idx] = ContactStatusItem{
 			UserID:   statuses[idx].UserID,
+			Name:     statuses[idx].Name,
+			Username: statuses[idx].Username,
 			Status:   statuses[idx].Status,
 			LastSeen: statuses[idx].LastSeen,
 		}

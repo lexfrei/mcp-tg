@@ -42,7 +42,7 @@ func NewDialogsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsS
 		var buf strings.Builder
 
 		for _, dlg := range dialogs {
-			fmt.Fprintf(&buf, "%s (peer: %s)\n", formatDialog(&dlg), formatPeer(dlg.Peer))
+			fmt.Fprintf(&buf, "%s\n", formatDialog(&dlg))
 		}
 
 		return nil, DialogsSearchResult{

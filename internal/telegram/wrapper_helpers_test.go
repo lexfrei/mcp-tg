@@ -294,3 +294,264 @@ func TestChannelType_Supergroup(t *testing.T) {
 		t.Errorf("channelType(supergroup) = %q, want %q", got, wantSupergroup)
 	}
 }
+
+func TestBuildUserRefs_PopulatesNameAndUsername(t *testing.T) {
+	users := []tg.UserClass{
+		&tg.User{ID: 10, FirstName: "Alice", LastName: "A", Username: "alice"},
+		&tg.User{ID: 20, FirstName: "Bob"},
+		&tg.UserEmpty{ID: 30},
+	}
+
+	refs := buildUserRefs(users)
+
+	if refs[10].Name != "Alice A" {
+		t.Errorf("refs[10].Name = %q, want %q", refs[10].Name, "Alice A")
+	}
+
+	if refs[10].Username != "alice" {
+		t.Errorf("refs[10].Username = %q, want %q", refs[10].Username, "alice")
+	}
+
+	if refs[20].Username != "" {
+		t.Errorf("refs[20].Username = %q, want empty", refs[20].Username)
+	}
+
+	if _, ok := refs[30]; ok {
+		t.Errorf("refs[30] populated for UserEmpty, want absent")
+	}
+}
+
+func TestBuildChatRefs_ChannelAndChat(t *testing.T) {
+	chats := []tg.ChatClass{
+		&tg.Channel{ID: 100, Title: "Public Channel", Username: "pub"},
+		&tg.Channel{ID: 200, Title: "Private Channel"},
+		&tg.Chat{ID: 300, Title: "Basic Group"},
+	}
+
+	refs := buildChatRefs(chats)
+
+	if refs[100].Name != "Public Channel" || refs[100].Username != "pub" {
+		t.Errorf("refs[100] = %+v, want {Public Channel, pub}", refs[100])
+	}
+
+	if refs[200].Username != "" {
+		t.Errorf("refs[200].Username = %q, want empty for private channel", refs[200].Username)
+	}
+
+	if refs[300].Name != "Basic Group" {
+		t.Errorf("refs[300].Name = %q, want %q", refs[300].Name, "Basic Group")
+	}
+}
+
+func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
+	// The server returns *tg.UpdatesCombined when the client's update
+	// sequence diverges enough to need both Seq and SeqStart. Skipping
+	// it would silently drop the just-sent message data — no ID, no
+	// echo of the text — for SendMessage / EditMessage / Forward
+	// callers reading the response.
+	raw := &tg.Message{ID: 42, Date: 100, FromID: &tg.PeerUser{UserID: 10}}
+	combined := &tg.UpdatesCombined{
+		Updates: []tg.UpdateClass{&tg.UpdateNewMessage{Message: raw}},
+		Users:   []tg.UserClass{&tg.User{ID: 10, FirstName: "Bob", Username: "bob"}},
+	}
+
+	got := messageFromUpdate(combined)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil for *tg.UpdatesCombined")
+	}
+
+	if got.ID != 42 {
+		t.Errorf("got ID = %d, want 42 — message data lost from UpdatesCombined", got.ID)
+	}
+
+	if got.FromName != "Bob" || got.FromUsername != "bob" {
+		t.Errorf("got FromName=%q FromUsername=%q, want Bob/bob — UpdatesCombined was not enriched",
+			got.FromName, got.FromUsername)
+	}
+}
+
+func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
+	// SendMessage/EditMessage/ForwardMessages return values flow through
+	// messageFromUpdate; the single-message path must apply the same
+	// name/username resolution as the history-read path so callers don't
+	// see a half-populated Message just because the response shape was
+	// tg.Updates instead of tg.MessagesMessages.
+	raw := &tg.Message{ID: 7, Date: 100, FromID: &tg.PeerUser{UserID: 42}}
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateNewMessage{Message: raw}},
+		Users: []tg.UserClass{
+			&tg.User{ID: 42, FirstName: "Alice", LastName: "A", Username: "alice"},
+		},
+	}
+
+	got := messageFromUpdate(updates)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if got.FromName != "Alice A" || got.FromUsername != "alice" {
+		t.Errorf("got FromName=%q FromUsername=%q, want Alice A/alice — enrichment did not run on the single-message-update path",
+			got.FromName, got.FromUsername)
+	}
+}
+
+func TestEnrichUpdateMessage_FromIDZeroStaysZero(t *testing.T) {
+	// enrichUpdateMessage passes InputPeer{} for the host peer because
+	// UpdateNewMessage doesn't carry one. If fillSenderRef misread that
+	// empty peer as 'present', a FromID==0 message would get promoted
+	// to peer.ID==0 — a no-op in practice but a silent invariant bug.
+	raw := &tg.Message{ID: 1, Date: 100} // FromID nil → 0 after ConvertMessage
+	users := map[int64]peerRef{0: {Name: "should not match"}}
+
+	got := enrichUpdateMessage(raw, users, nil)
+
+	if got.FromID != 0 {
+		t.Errorf("FromID = %d, want 0 — enrichUpdateMessage must not promote when host peer is empty", got.FromID)
+	}
+
+	if got.FromName != "" {
+		t.Errorf("FromName = %q, want empty — must not pick up the {0: ...} sentinel entry", got.FromName)
+	}
+}
+
+func TestFillSenderRef_FillsUsername(t *testing.T) {
+	msg := &Message{FromID: 42}
+	users := map[int64]peerRef{42: {Name: "Carol", Username: "carol"}}
+
+	fillSenderRef(msg, users, nil, InputPeer{})
+
+	if msg.FromName != "Carol" || msg.FromUsername != "carol" {
+		t.Errorf("FromName=%q FromUsername=%q, want Carol/carol", msg.FromName, msg.FromUsername)
+	}
+}
+
+func TestFillSenderRef_DMFallbackToPeer(t *testing.T) {
+	msg := &Message{FromID: 0}
+	users := map[int64]peerRef{55: {Name: "DM Partner"}}
+
+	fillSenderRef(msg, users, nil, InputPeer{Type: PeerUser, ID: 55})
+
+	if msg.FromID != 55 || msg.FromName != "DM Partner" {
+		t.Errorf("FromID=%d FromName=%q, want 55/DM Partner", msg.FromID, msg.FromName)
+	}
+
+	if msg.FromType != PeerUser {
+		t.Errorf("FromType = %d, want PeerUser", msg.FromType)
+	}
+}
+
+func TestFillSenderRef_AnonymousChannelPostCarriesChannelType(t *testing.T) {
+	msg := &Message{FromID: 0}
+	chats := map[int64]peerRef{500: {Name: "Example Channel"}}
+
+	fillSenderRef(msg, nil, chats, InputPeer{Type: PeerChannel, ID: 500})
+
+	if msg.FromType != PeerChannel {
+		t.Errorf("FromType = %d, want PeerChannel — anonymous channel post must keep host peer kind",
+			msg.FromType)
+	}
+
+	if msg.FromID != 500 {
+		t.Errorf("FromID = %d, want 500 (promoted from host peer)", msg.FromID)
+	}
+}
+
+func TestFillSenderRef_EmptyLookupDoesNotOverwrite(t *testing.T) {
+	msg := &Message{FromID: 42, FromName: "Preset", FromUsername: "preset"}
+	users := map[int64]peerRef{42: {}} // entry exists but is empty
+
+	fillSenderRef(msg, users, nil, InputPeer{})
+
+	if msg.FromName != "Preset" || msg.FromUsername != "preset" {
+		t.Errorf("empty lookup overwrote Preset/preset → %q/%q", msg.FromName, msg.FromUsername)
+	}
+}
+
+func TestFillForwardRefs_CollidingIDsResolvesByType(t *testing.T) {
+	// Same numeric ID 500 in both Users[] and Chats[]; the forward
+	// targets a channel and must NOT pick up the user's name.
+	msg := &Message{
+		Forward: &ForwardInfo{From: &PeerRef{
+			Peer: InputPeer{Type: PeerChannel, ID: 500},
+		}},
+	}
+	users := map[int64]peerRef{500: {Name: "Wrong User", Username: "wrong"}}
+	chats := map[int64]peerRef{500: {Name: "Correct Channel", Username: "correct"}}
+
+	fillForwardRefs(msg, users, chats)
+
+	if msg.Forward.From.Name != "Correct Channel" {
+		t.Errorf("Forward.From.Name = %q, want %q — type-blind lookup let the user shadow the channel",
+			msg.Forward.From.Name, "Correct Channel")
+	}
+
+	if msg.Forward.From.Username != "correct" {
+		t.Errorf("Forward.From.Username = %q, want %q", msg.Forward.From.Username, "correct")
+	}
+}
+
+func TestFillForwardRefs_ResolvesUser(t *testing.T) {
+	msg := &Message{
+		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerUser, ID: 777}}},
+	}
+	users := map[int64]peerRef{777: {Name: "Original Author", Username: "orig"}}
+
+	fillForwardRefs(msg, users, nil)
+
+	if msg.Forward.From.Name != "Original Author" {
+		t.Errorf("Forward.From.Name = %q, want %q", msg.Forward.From.Name, "Original Author")
+	}
+
+	if msg.Forward.From.Username != "orig" {
+		t.Errorf("Forward.From.Username = %q, want %q", msg.Forward.From.Username, "orig")
+	}
+}
+
+func TestFillForwardRefs_ResolvesChannelTitle(t *testing.T) {
+	msg := &Message{
+		Forward: &ForwardInfo{From: &PeerRef{Peer: InputPeer{Type: PeerChannel, ID: 100}}},
+	}
+	chats := map[int64]peerRef{100: {Name: "Example Channel", Username: "examplechan"}}
+
+	fillForwardRefs(msg, nil, chats)
+
+	if msg.Forward.From.Name != "Example Channel" || msg.Forward.From.Username != "examplechan" {
+		t.Errorf("Forward.From = %+v, want Example Channel/examplechan", msg.Forward.From)
+	}
+}
+
+func TestFillForwardRefs_HiddenName_NoResolve(t *testing.T) {
+	msg := &Message{Forward: &ForwardInfo{FromName: "Privacy Hidden Author"}}
+
+	fillForwardRefs(msg, nil, nil)
+
+	if msg.Forward.FromName != "Privacy Hidden Author" {
+		t.Errorf("Forward.FromName = %q, want preserved", msg.Forward.FromName)
+	}
+
+	if msg.Forward.From != nil {
+		t.Errorf("Forward.From = %+v, want nil for privacy-hidden", msg.Forward.From)
+	}
+}
+
+func TestFillReplyToRef_CrossChat(t *testing.T) {
+	other := InputPeer{Type: PeerUser, ID: 999}
+	msg := &Message{ReplyTo: &ReplyToInfo{MessageID: 1, FromPeerID: &other}}
+	users := map[int64]peerRef{999: {Name: "Other User", Username: "other"}}
+
+	fillReplyToRef(msg, users, nil)
+
+	if msg.ReplyTo.FromName != "Other User" || msg.ReplyTo.FromUsername != "other" {
+		t.Errorf("ReplyTo = %+v, want Other User/other", msg.ReplyTo)
+	}
+}
+
+func TestFillReplyToRef_SameChat_NoResolve(t *testing.T) {
+	msg := &Message{ReplyTo: &ReplyToInfo{MessageID: 1}}
+
+	fillReplyToRef(msg, nil, nil)
+
+	if msg.ReplyTo.FromName != "" {
+		t.Errorf("ReplyTo.FromName populated for same-chat reply, want empty")
+	}
+}

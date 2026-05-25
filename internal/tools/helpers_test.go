@@ -97,20 +97,21 @@ func TestFormatUserName_Nil(t *testing.T) {
 	}
 }
 
-func TestFormatUserName_FullName(t *testing.T) {
+func TestFormatUserName_FullName_NoIDNoUsername(t *testing.T) {
 	user := &telegram.User{FirstName: "John", LastName: "Doe"}
 	got := formatUserName(user)
-	want := "John Doe"
+	want := "John Doe [hidden]"
 
 	if got != want {
-		t.Errorf("formatUserName() = %q, want %q", got, want)
+		t.Errorf("formatUserName() = %q, want %q — name present but no ID/username collapses to [hidden]",
+			got, want)
 	}
 }
 
-func TestFormatUserName_FirstOnly(t *testing.T) {
-	user := &telegram.User{FirstName: "John"}
+func TestFormatUserName_WithID(t *testing.T) {
+	user := &telegram.User{ID: 42, FirstName: "John"}
 	got := formatUserName(user)
-	want := "John"
+	want := "John [user:42]"
 
 	if got != want {
 		t.Errorf("formatUserName() = %q, want %q", got, want)
@@ -119,12 +120,13 @@ func TestFormatUserName_FirstOnly(t *testing.T) {
 
 func TestFormatUserName_WithUsername(t *testing.T) {
 	user := &telegram.User{
+		ID:        42,
 		FirstName: "John",
 		LastName:  "Doe",
 		Username:  "johndoe",
 	}
 	got := formatUserName(user)
-	want := "John Doe (@johndoe)"
+	want := "John Doe [@johndoe]"
 
 	if got != want {
 		t.Errorf("formatUserName() = %q, want %q", got, want)
@@ -242,5 +244,102 @@ func TestTruncateText_NegativeMax(t *testing.T) {
 
 	if got != "" {
 		t.Errorf("truncateText with negative max = %q, want empty", got)
+	}
+}
+
+func TestFormatPeerRef_WithUsername(t *testing.T) {
+	got := formatPeerRef("Alice", "alice", telegram.InputPeer{Type: telegram.PeerUser, ID: 10})
+	want := "Alice [@alice]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_IDOnlyUser(t *testing.T) {
+	got := formatPeerRef("Bob", "", telegram.InputPeer{Type: telegram.PeerUser, ID: 99})
+	want := "Bob [user:99]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_ChannelLabel(t *testing.T) {
+	got := formatPeerRef("Example Channel", "examplechan",
+		telegram.InputPeer{Type: telegram.PeerChannel, ID: 500})
+	want := "Example Channel [@examplechan]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_PrivateChannelID(t *testing.T) {
+	got := formatPeerRef("Private", "", telegram.InputPeer{Type: telegram.PeerChannel, ID: 500})
+	want := "Private [channel:500]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_HiddenPrivacy(t *testing.T) {
+	got := formatPeerRef("Privacy Hidden Author", "", telegram.InputPeer{})
+	want := "Privacy Hidden Author [hidden]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_AllUnknown(t *testing.T) {
+	got := formatPeerRef("", "", telegram.InputPeer{})
+	want := "[hidden]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_LabelOnly(t *testing.T) {
+	got := formatPeerRef("", "alice", telegram.InputPeer{Type: telegram.PeerUser, ID: 10})
+	want := "[@alice]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestFormatPeerRef_BasicGroupLabel(t *testing.T) {
+	// Pins the [group:N] shape mentioned in formatPeerRef's godoc so a
+	// future rename of the kind label drift between code and docs gets
+	// caught here.
+	got := formatPeerRef("Devs", "", telegram.InputPeer{Type: telegram.PeerChat, ID: 77})
+	want := "Devs [group:77]"
+
+	if got != want {
+		t.Errorf("formatPeerRef = %q, want %q", got, want)
+	}
+}
+
+func TestPeerLabel_BasicGroupChat(t *testing.T) {
+	got := peerLabel(telegram.InputPeer{Type: telegram.PeerChat, ID: 77}, "")
+	want := "group:77"
+
+	if got != want {
+		t.Errorf("peerLabel = %q, want %q — matches participant.type and fromType label", got, want)
+	}
+}
+
+func TestPeerLabel_UnknownTypeSurfacesAsUnknown(t *testing.T) {
+	// PeerType is the Go iota enum; a future API extension or a
+	// directly-constructed struct could carry an out-of-range value.
+	// The default branch must NOT silently relabel it as "user:N".
+	got := peerLabel(telegram.InputPeer{Type: telegram.PeerType(99), ID: 42}, "")
+	want := "unknown:42"
+
+	if got != want {
+		t.Errorf("peerLabel for unknown PeerType = %q, want %q — must not masquerade as user:", got, want)
 	}
 }

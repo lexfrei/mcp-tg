@@ -53,7 +53,7 @@ func NewGroupsListHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsListP
 				continue
 			}
 
-			fmt.Fprintf(&buf, "%s (peer: %s)\n", dialogs[idx].Title, formatPeer(dialogs[idx].Peer))
+			fmt.Fprintf(&buf, "%s\n", formatDialog(&dialogs[idx]))
 
 			groups = append(groups, dialogToItem(&dialogs[idx]))
 		}

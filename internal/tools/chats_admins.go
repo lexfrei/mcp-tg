@@ -48,7 +48,7 @@ func NewChatsAdminsHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsAdmin
 		var buf strings.Builder
 
 		for idx := range admins {
-			fmt.Fprintf(&buf, "[%d] %s\n", admins[idx].ID, formatUserName(&admins[idx]))
+			fmt.Fprintf(&buf, "%s\n", formatUserName(&admins[idx]))
 		}
 
 		return nil, ChatsAdminsResult{

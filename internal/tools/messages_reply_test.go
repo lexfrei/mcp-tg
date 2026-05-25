@@ -52,8 +52,8 @@ func TestMessagesListHandler_ReplyTo_Propagated(t *testing.T) {
 		t.Errorf("ReplyTo.MessageID = %d, want 26150", res.Messages[1].ReplyTo.MessageID)
 	}
 
-	if !strings.Contains(res.Output, "↩26150") {
-		t.Errorf("output missing reply marker ↩26150: %q", res.Output)
+	if !strings.Contains(res.Output, "reply to: 26150") {
+		t.Errorf("output missing reply marker reply to: 26150: %q", res.Output)
 	}
 
 	// Without ResolveReplies, parent text should not be fetched again
@@ -250,7 +250,7 @@ func TestMessagesContextHandler_ReplyTo_Propagated(t *testing.T) {
 		t.Errorf("ReplyTo not propagated: %+v", res.Messages[1].ReplyTo)
 	}
 
-	if !strings.Contains(res.Output, "↩26150") {
+	if !strings.Contains(res.Output, "reply to: 26150") {
 		t.Errorf("output missing reply marker: %q", res.Output)
 	}
 }
@@ -274,7 +274,7 @@ func TestMessagesGetHandler_ReplyTo_Propagated(t *testing.T) {
 		t.Fatal("ReplyTo = nil, want populated")
 	}
 
-	if !strings.Contains(res.Output, "↩26150") {
+	if !strings.Contains(res.Output, "reply to: 26150") {
 		t.Errorf("output missing reply marker: %q", res.Output)
 	}
 }
@@ -298,7 +298,7 @@ func TestMessagesSearchHandler_ReplyTo_Propagated(t *testing.T) {
 		t.Fatal("ReplyTo = nil, want populated")
 	}
 
-	if !strings.Contains(res.Output, "↩26150") {
+	if !strings.Contains(res.Output, "reply to: 26150") {
 		t.Errorf("output missing reply marker: %q", res.Output)
 	}
 }
@@ -413,15 +413,15 @@ func TestMessagesListHandler_ResolveReplies_OutputUnchanged(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	// Output only carries the ↩<parentId> marker; resolved parent text
-	// lives in the JSON replyToMessage field. Keep both behaviours
-	// pinned so future changes touch them deliberately.
+	// Output only carries the "reply to: <parentId>" marker; resolved
+	// parent text lives in the JSON replyToMessage field. Keep both
+	// behaviours pinned so future changes touch them deliberately.
 	if strings.Contains(res.Output, testSetupFromEarly) {
 		t.Errorf("Output must not embed resolved parent text, got %q", res.Output)
 	}
 
-	if !strings.Contains(res.Output, "↩26150") {
-		t.Errorf("Output missing reply marker ↩26150: %q", res.Output)
+	if !strings.Contains(res.Output, "reply to: 26150") {
+		t.Errorf("Output missing reply marker reply to: 26150: %q", res.Output)
 	}
 }
 
@@ -453,9 +453,9 @@ func TestMessagesSearchGlobalHandler_ReplyTo_Propagated(t *testing.T) {
 	}
 
 	// Global search intentionally returns only a summary line as
-	// output; individual ↩ markers are not emitted. Pin that, so a
-	// future change to output format has to touch this test.
-	if strings.Contains(res.Output, "↩") {
-		t.Errorf("Output must not contain reply markers for global search, got %q", res.Output)
+	// output; per-message reply lines are not emitted. Pin that, so
+	// a future change to output format has to touch this test.
+	if strings.Contains(res.Output, "reply to:") {
+		t.Errorf("Output must not contain per-message reply lines for global search, got %q", res.Output)
 	}
 }

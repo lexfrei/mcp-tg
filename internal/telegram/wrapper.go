@@ -230,7 +230,7 @@ func (w *Wrapper) GetHistory(ctx context.Context, peer InputPeer, opts HistoryOp
 		return nil, 0, errors.Wrap(err, "getting history")
 	}
 
-	msgs, total := extractMessages(result, peer.ID)
+	msgs, total := extractMessages(result, peer)
 
 	return msgs, total, nil
 }
@@ -254,7 +254,7 @@ func (w *Wrapper) GetTopicMessages(
 		return nil, 0, errors.Wrap(err, "getting topic messages")
 	}
 
-	msgs, total := extractMessages(result, peer.ID)
+	msgs, total := extractMessages(result, peer)
 
 	return msgs, total, nil
 }
@@ -284,7 +284,7 @@ func (w *Wrapper) GetMessages(ctx context.Context, peer InputPeer, ids []int) ([
 		return nil, errors.Wrap(err, "getting messages")
 	}
 
-	msgs, _ := extractMessages(result, peer.ID)
+	msgs, _ := extractMessages(result, peer)
 
 	return msgs, nil
 }
@@ -307,7 +307,7 @@ func (w *Wrapper) SearchMessages(ctx context.Context, peer InputPeer, query stri
 		return nil, errors.Wrap(err, "searching messages")
 	}
 
-	msgs, _ := extractMessages(result, peer.ID)
+	msgs, _ := extractMessages(result, peer)
 
 	return msgs, nil
 }
@@ -1230,7 +1230,7 @@ func (w *Wrapper) GetScheduledMessages(
 		return nil, errors.Wrap(err, "getting scheduled messages")
 	}
 
-	msgs, _ := extractMessages(result, peer.ID)
+	msgs, _ := extractMessages(result, peer)
 
 	return msgs, nil
 }
@@ -1256,7 +1256,7 @@ func (w *Wrapper) SearchGlobal(
 		return nil, errors.Wrap(err, "searching global messages")
 	}
 
-	msgs, _ := extractMessages(result, 0)
+	msgs, _ := extractMessages(result, InputPeer{})
 
 	return msgs, nil
 }

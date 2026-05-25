@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -53,7 +52,7 @@ func NewContactsGetHandler(client telegram.Client) mcp.ToolHandlerFor[ContactsGe
 			LastName:  user.LastName,
 			Username:  user.Username,
 			Bio:       user.Bio,
-			Output:    fmt.Sprintf("Contact: %s (ID: %d)", formatUserName(user), user.ID),
+			Output:    "Contact: " + formatUserName(user),
 		}, nil
 	}
 }

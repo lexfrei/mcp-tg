@@ -463,3 +463,148 @@ func TestConvertMessage_GeneralTopic(t *testing.T) {
 		t.Errorf("TopicID = %d, want 1 (General topic)", got.TopicID)
 	}
 }
+
+func TestConvertMessage_FromTypeChannelOnBehalfOf(t *testing.T) {
+	raw := &tg.Message{
+		ID:     7,
+		Date:   100,
+		FromID: &tg.PeerChannel{ChannelID: 5005003001},
+	}
+
+	got := ConvertMessage(raw)
+
+	if got.FromType != PeerChannel {
+		t.Errorf("FromType = %d, want PeerChannel (channel-on-behalf-of post)", got.FromType)
+	}
+
+	if got.FromID != 5005003001 {
+		t.Errorf("FromID = %d, want 5005003001", got.FromID)
+	}
+}
+
+func TestConvertMessage_FromTypeUser_Default(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 100, FromID: &tg.PeerUser{UserID: 99}}
+
+	got := ConvertMessage(raw)
+
+	if got.FromType != PeerUser {
+		t.Errorf("FromType = %d, want PeerUser", got.FromType)
+	}
+}
+
+func TestConvertMessage_WithoutForward(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 100}
+
+	got := ConvertMessage(raw)
+
+	if got.Forward != nil {
+		t.Errorf("Forward = %+v, want nil for non-forwarded message", got.Forward)
+	}
+}
+
+func TestConvertMessage_WithForward_FullUser(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 200}
+
+	fwd := tg.MessageFwdHeader{Date: 100}
+	fwd.SetFromID(&tg.PeerUser{UserID: 777})
+	raw.SetFwdFrom(fwd)
+
+	got := ConvertMessage(raw)
+
+	if got.Forward == nil {
+		t.Fatal("Forward = nil, want populated ForwardInfo")
+	}
+
+	if got.Forward.Date != 100 {
+		t.Errorf("Forward.Date = %d, want 100", got.Forward.Date)
+	}
+
+	if got.Forward.From == nil {
+		t.Fatal("Forward.From = nil, want populated PeerRef")
+	}
+
+	if got.Forward.From.Peer.Type != PeerUser {
+		t.Errorf("Forward.From.Peer.Type = %d, want PeerUser", got.Forward.From.Peer.Type)
+	}
+
+	if got.Forward.From.Peer.ID != 777 {
+		t.Errorf("Forward.From.Peer.ID = %d, want 777", got.Forward.From.Peer.ID)
+	}
+}
+
+func TestConvertMessage_WithForward_HiddenName(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 200}
+
+	fwd := tg.MessageFwdHeader{Date: 100}
+	fwd.SetFromName("Privacy Hidden Author")
+	raw.SetFwdFrom(fwd)
+
+	got := ConvertMessage(raw)
+
+	if got.Forward == nil {
+		t.Fatal("Forward = nil, want populated ForwardInfo")
+	}
+
+	if got.Forward.From != nil {
+		t.Errorf("Forward.From = %+v, want nil when only FromName is set", got.Forward.From)
+	}
+
+	if got.Forward.FromName != "Privacy Hidden Author" {
+		t.Errorf("Forward.FromName = %q, want %q", got.Forward.FromName, "Privacy Hidden Author")
+	}
+}
+
+func TestConvertMessage_WithForward_FromIDAndFromNameBoth(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 200}
+
+	fwd := tg.MessageFwdHeader{Date: 100}
+	fwd.SetFromID(&tg.PeerUser{UserID: 555})
+	fwd.SetFromName("Visible Name")
+	raw.SetFwdFrom(fwd)
+
+	got := ConvertMessage(raw)
+
+	if got.Forward == nil {
+		t.Fatal("Forward = nil, want populated ForwardInfo")
+	}
+
+	if got.Forward.From == nil || got.Forward.From.Peer.ID != 555 {
+		t.Errorf("Forward.From = %+v, want PeerUser ID 555", got.Forward.From)
+	}
+
+	if got.Forward.FromName != "Visible Name" {
+		t.Errorf("Forward.FromName = %q, want preserved alongside From", got.Forward.FromName)
+	}
+}
+
+func TestConvertMessage_WithForward_FromChannel(t *testing.T) {
+	raw := &tg.Message{ID: 1, Date: 200}
+
+	fwd := tg.MessageFwdHeader{Date: 100}
+	fwd.SetFromID(&tg.PeerChannel{ChannelID: 1006503122})
+	fwd.SetChannelPost(4567)
+	fwd.SetPostAuthor("Channel Signature")
+	raw.SetFwdFrom(fwd)
+
+	got := ConvertMessage(raw)
+
+	if got.Forward == nil {
+		t.Fatal("Forward = nil, want populated ForwardInfo")
+	}
+
+	if got.Forward.From == nil || got.Forward.From.Peer.Type != PeerChannel {
+		t.Errorf("Forward.From = %+v, want channel peer", got.Forward.From)
+	}
+
+	if got.Forward.From != nil && got.Forward.From.Peer.ID != 1006503122 {
+		t.Errorf("Forward.From.Peer.ID = %d, want 1006503122", got.Forward.From.Peer.ID)
+	}
+
+	if got.Forward.ChannelPost != 4567 {
+		t.Errorf("Forward.ChannelPost = %d, want 4567", got.Forward.ChannelPost)
+	}
+
+	if got.Forward.PostAuthor != "Channel Signature" {
+		t.Errorf("Forward.PostAuthor = %q, want %q", got.Forward.PostAuthor, "Channel Signature")
+	}
+}

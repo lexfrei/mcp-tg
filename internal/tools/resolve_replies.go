@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"sort"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
@@ -121,7 +122,7 @@ func attachReplyParents(
 	inBatch map[int]*telegram.Message,
 	fetched map[int]*telegram.Message,
 ) {
-	nameByID := buildNameLookup(msgs, fetched)
+	refByID := buildSenderLookup(msgs, fetched)
 
 	for idx := range items {
 		reply := items[idx].ReplyTo
@@ -133,47 +134,119 @@ func attachReplyParents(
 			continue
 		}
 
-		parent, ok := inBatch[reply.MessageID]
-		if !ok {
-			parent, ok = fetched[reply.MessageID]
-		}
-
-		if !ok || parent == nil {
+		parent := lookupParent(reply.MessageID, inBatch, fetched)
+		if parent == nil {
 			continue
 		}
 
-		name := parent.FromName
-		if name == "" && parent.FromID != 0 {
-			name = nameByID[parent.FromID]
-		}
-
-		items[idx].ReplyToMessage = &ReplyToMessage{
-			FromName: name,
-			Text:     truncateText(parent.Text, replyParentTextLimit),
-		}
+		items[idx].ReplyToMessage = buildReplyToMessage(parent, refByID)
 	}
 }
 
-// buildNameLookup combines FromID→FromName from the primary batch and
-// from any parents fetched by the resolver. Without fetched entries,
-// a parent whose own FromName is empty but whose FromID appears in
-// the fetched payload would miss its display name.
+func lookupParent(
+	parentID int, inBatch, fetched map[int]*telegram.Message,
+) *telegram.Message {
+	if parent, ok := inBatch[parentID]; ok {
+		return parent
+	}
+
+	if parent, ok := fetched[parentID]; ok {
+		return parent
+	}
+
+	return nil
+}
+
+func buildReplyToMessage(parent *telegram.Message, refByID map[senderKey]senderRef) *ReplyToMessage {
+	name, username := parent.FromName, parent.FromUsername
+
+	if parent.FromID != 0 {
+		ref := refByID[senderKey{Type: parent.FromType, ID: parent.FromID}]
+		if name == "" {
+			name = ref.name
+		}
+
+		if username == "" {
+			username = ref.username
+		}
+	}
+
+	return &ReplyToMessage{
+		FromName:     name,
+		FromUsername: username,
+		Text:         truncateText(parent.Text, replyParentTextLimit),
+	}
+}
+
+type senderKey struct {
+	Type telegram.PeerType
+	ID   int64
+}
+
+type senderRef struct {
+	name     string
+	username string
+}
+
+// buildSenderLookup combines FromID→{name, username} from the primary
+// batch and from any parents fetched by the resolver. Without fetched
+// entries, a parent whose own fields are empty but whose FromID appears
+// in the fetched payload would miss its display name.
 //
 // FromID==0 entries are excluded: zero means "no identifiable sender"
 // (channel posts without signature, anonymous admins), and bucketing
 // them together would cross-attribute names between unrelated senders.
-func buildNameLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[int64]string {
-	lookup := make(map[int64]string, len(msgs)+len(fetched))
+//
+// The key is keyed on {FromType, FromID} rather than bare FromID — same
+// reason participantsFromMessages does: a user with ID 500 and a channel
+// posting under its own identity with ID 500 must not stomp each other.
+func buildSenderLookup(msgs []telegram.Message, fetched map[int]*telegram.Message) map[senderKey]senderRef {
+	lookup := make(map[senderKey]senderRef, len(msgs)+len(fetched))
 
-	for idx := range msgs {
-		if msgs[idx].FromID != 0 && msgs[idx].FromName != "" {
-			lookup[msgs[idx].FromID] = msgs[idx].FromName
+	// last-wins-among-non-empty: a later non-empty value overrides an
+	// earlier one (mirrors how the previous buildNameLookup gated on
+	// `FromName != ""` and then assigned). This way a renamed user
+	// reflects the most recent display name seen in the batch instead
+	// of being frozen to whichever message landed first in iteration
+	// order.
+	mergeRef := func(peerType telegram.PeerType, peerID int64, name, username string) {
+		if peerID == 0 {
+			return
 		}
+
+		key := senderKey{Type: peerType, ID: peerID}
+		ref := lookup[key]
+
+		if name != "" {
+			ref.name = name
+		}
+
+		if username != "" {
+			ref.username = username
+		}
+
+		lookup[key] = ref
 	}
 
-	for _, parent := range fetched {
-		if parent != nil && parent.FromID != 0 && parent.FromName != "" {
-			lookup[parent.FromID] = parent.FromName
+	for idx := range msgs {
+		mergeRef(msgs[idx].FromType, msgs[idx].FromID, msgs[idx].FromName, msgs[idx].FromUsername)
+	}
+
+	// Iterate fetched in deterministic key order so two parents
+	// sharing the same {FromType, FromID} but disagreeing on
+	// FromName/FromUsername always tie-break the same way across runs
+	// (Go map iteration order is randomized).
+	ids := make([]int, 0, len(fetched))
+	for parentID := range fetched {
+		ids = append(ids, parentID)
+	}
+
+	sort.Ints(ids)
+
+	for _, parentID := range ids {
+		parent := fetched[parentID]
+		if parent != nil {
+			mergeRef(parent.FromType, parent.FromID, parent.FromName, parent.FromUsername)
 		}
 	}
 

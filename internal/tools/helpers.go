@@ -172,7 +172,10 @@ func truncateText(text string, maxRunes int) string {
 	return string(runes[:maxRunes]) + "…"
 }
 
-// formatUserName builds a display name from first/last name and username.
+// formatUserName builds a display name plus identifier for a User.
+// Routes through formatPeerRef so the rendered shape matches the rest
+// of the tool surface: "First Last [@username]" / "First Last [user:N]"
+// / "First Last [hidden]" — never the legacy "Name (@username)" form.
 func formatUserName(user *telegram.User) string {
 	if user == nil {
 		return unknownValue
@@ -180,9 +183,95 @@ func formatUserName(user *telegram.User) string {
 
 	name := strings.TrimSpace(user.FirstName + " " + user.LastName)
 
-	if user.Username != "" {
-		return fmt.Sprintf("%s (@%s)", name, user.Username)
+	return formatPeerRef(name, user.Username,
+		telegram.InputPeer{Type: telegram.PeerUser, ID: user.ID})
+}
+
+const peerRefHidden = "[hidden]"
+
+// formatPeerRef returns a single human-readable identifier that
+// unambiguously names a peer in message metadata. Output shapes:
+//
+//	"Display Name [@username]" — public username available
+//	"Display Name [user:N]" / "[channel:N]" / "[group:N]" — id-only
+//	"Display Name [hidden]" — name present but no resolvable id (privacy-hidden forwards)
+//	"[user:N]" / "[hidden]" — degenerate forms when display name missing
+//
+// Callers pass the display name, optional @username and the InputPeer
+// that identifies the peer. A zero InputPeer (Type == PeerUser && ID == 0)
+// is treated as "no peer identity available".
+//
+// Display name and username are passed through collapseLineBreaks so an
+// adversarial peer name like "Alice\nfrom: Mallory" cannot inject fake
+// key:value lines into the multi-line text output. The JSON surface
+// keeps the original strings verbatim — sanitization is purely a
+// presentation-layer defense against prompt-injection through the
+// human-readable output that LLMs typically consume.
+//
+// Important scope limit: the message body itself (Message.Text)
+// is rendered VERBATIM after 'text:\n' and is NOT sanitized. A user
+// can therefore put '\n---\n[999] 2030-01-01T00:00:00Z\nfrom: Admin\n
+// text:\nfake' in their message body and the rendered output will
+// look like two messages. The JSON 'messages[]' array is the
+// authoritative shape if integrity matters — body verbatim
+// preservation is a deliberate UX choice for code blocks and quoted
+// text, not a security property.
+func formatPeerRef(name, username string, peer telegram.InputPeer) string {
+	name = collapseLineBreaks(name)
+	username = collapseLineBreaks(username)
+	label := peerLabel(peer, username)
+
+	if name != "" && label != "" {
+		return fmt.Sprintf("%s [%s]", name, label)
 	}
 
-	return name
+	if name != "" {
+		return name + " " + peerRefHidden
+	}
+
+	if label != "" {
+		return fmt.Sprintf("[%s]", label)
+	}
+
+	return peerRefHidden
+}
+
+// peerLabel returns the bracket-contents portion of formatPeerRef.
+// Returns "" when the peer is empty AND no username is provided so the
+// caller can fall back to "[hidden]". Callers must pre-sanitize the
+// username for line-break injection if the value comes from
+// adversarial input; formatPeerRef does this for its callers.
+//
+// The kind labels — user / group / channel — match the strings used by
+// ParticipantItem.Type and MessageItem.FromType, so a caller can grep
+// either surface for the same identifier ("group:42" appears in both
+// text and JSON). "channel:N" covers both broadcast channels and
+// supergroups (gotd represents both as PeerChannel); "group:N" is
+// only legacy basic groups.
+func peerLabel(peer telegram.InputPeer, username string) string {
+	if username != "" {
+		return "@" + username
+	}
+
+	if peer.ID == 0 {
+		return ""
+	}
+
+	// Use the shared peerUser / peerGroup / peerChannel /
+	// unknownPeerType constants so the text labels stay locked to the
+	// JSON labels emitted by participantTypeLabel and messageToItem.
+	// Renaming any of these constants now propagates to both surfaces.
+	switch peer.Type {
+	case telegram.PeerUser:
+		return fmt.Sprintf("%s:%d", peerUser, peer.ID)
+	case telegram.PeerChat:
+		return fmt.Sprintf("%s:%d", peerGroup, peer.ID)
+	case telegram.PeerChannel:
+		return fmt.Sprintf("%s:%d", peerChannel, peer.ID)
+	default:
+		// Don't masquerade a future PeerType as 'user:' — surface the
+		// fact that we don't know the kind so the reader doesn't
+		// trust the wrong deep-link form.
+		return fmt.Sprintf("%s:%d", unknownPeerType, peer.ID)
+	}
 }

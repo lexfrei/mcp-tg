@@ -29,7 +29,7 @@ internal/telegram/           Telegram abstraction layer
 internal/tools/              MCP tool handlers (75 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
-  helpers.go                 Shared helpers (deref, formatPeer, formatUserName)
+  helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
   format.go                  Output formatting (timestamps, messages, dialogs)
   roots.go                   File path validation against client roots
   progress.go                Progress notification helper
@@ -72,6 +72,7 @@ internal/testutil/           NoopClient for registration tests
 ### Peer resolution
 
 All tools accept `peer` as string. Supported formats:
+
 - `@username`
 - `username` (bare)
 - `https://t.me/username`
@@ -100,12 +101,30 @@ Tools that send messages (`messages_send`, `messages_send_file`, `media_send_alb
 
 Reading tools (`messages_list`, `messages_context`, `messages_get`, `messages_search`, `messages_search_global`) expose reply-header fields on each `MessageItem`:
 
-- Structured `replyTo` object (`messageId`, `topId`, `quoteText`, `fromPeerId`) when the message replies to another. Omitted otherwise.
-- Text `output` prefixes replying messages with `[<id> ↩<parentId>]` so humans can see thread links without parsing JSON. This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N message(s)`) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies.
+- Structured `replyTo` object (`messageId`, `topId`, `quoteText`, `fromPeerId`, plus advisory `fromName`/`fromUsername` for cross-chat replies) when the message replies to another. Omitted otherwise.
+- Text `output` emits a `reply to: <parentId>` line (or `reply to: <parentId> in <peer-ref>` for cross-chat replies, followed by a `quote: «...»` line if `quoteText` is present). This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N message(s)`) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies. See README's "Message Output Format" for the full block layout.
 
-The first four tools also accept an optional `resolveReplies` parameter (default `false`). When `true`, parent messages that aren't in the returned batch are fetched in a single batched `GetMessages` call and attached as `replyToMessage: { fromName, text }` (text truncated to 200 runes). Cross-chat replies (`replyTo.fromPeerId` points elsewhere) are skipped since we lack the foreign peer's access hash. `messages_search_global` does not offer `resolveReplies` for the same reason — its results span arbitrary peers, a batched lookup is not feasible.
+The first four tools also accept an optional `resolveReplies` parameter (default `false`). When `true`, parent messages that aren't in the returned batch are fetched in a single batched `GetMessages` call and attached as `replyToMessage: { fromName, fromUsername, text }` (text truncated to 200 runes). Cross-chat replies (`replyTo.fromPeerId` points elsewhere) are skipped since we lack the foreign peer's access hash. `messages_search_global` does not offer `resolveReplies` for the same reason — its results span arbitrary peers, a batched lookup is not feasible.
 
-`resolveReplies` enriches only the JSON `replyToMessage` field. The text `output` is built once from the fetched batch and keeps just the `↩<parentId>` marker regardless of the flag — callers that need resolved parent text should read the JSON structure.
+`resolveReplies` enriches only the JSON `replyToMessage` field. The text `output` is built once from the fetched batch and keeps just the `reply to: <parentId>` line regardless of the flag — callers that need resolved parent text should read the JSON structure.
+
+### Forwards and peer identifiers
+
+Reading tools populate `MessageItem.forward` from `tg.MessageFwdHeader` so callers can distinguish a forwarder from the original author:
+
+- `forward.from` — resolved `PeerRef` (peer+name+username) of the original sender; nil when the original author has forward-privacy enabled.
+- `forward.fromName` — display name leaked through when `from` is nil (privacy-hidden forward).
+- `forward.date`, `forward.channelPost`, `forward.postAuthor` — original timestamp, ID of the source channel post, and the channel's signed-author byline.
+
+**Single helper, single shape, everywhere.** Every peer rendered to the user — sender, forward origin, cross-chat reply target, dialog, group, channel, user, contact, reactor — goes through `formatPeerRef(name, username, peer)` and produces the same string: `Display Name [@username]` / `[user:N]` / `[channel:N]` / `[group:N]` / `[hidden]` / `[unknown:N]`. The kind label (`user` / `group` / `channel` / `unknown`) matches the JSON `type` field on `ParticipantItem`, `MessageItem.fromType`, and every other peer-bearing JSON entry. `group:` covers `PeerChat` only; supergroups label as `channel:` (gotd folds them into `PeerChannel`).
+
+`formatUserName(*telegram.User)` and `formatDialog(*telegram.Dialog)` are thin adapters that route their inputs into `formatPeerRef`, so a renamed `peer*` constant in `format.go` propagates to every surface. Resource `tg://chat/{peer}/messages` uses the exported `tools.FormatMessageList` so it shares the same multi-line block layout the read tools emit.
+
+Username resolution for `messages_*` piggybacks on the `Users[]`/`Chats[]` arrays MTProto already returns in `MessagesMessagesClass`, so no extra API round-trip. `tg_dialogs_*` and `tg_groups_info` get the username directly from the wrapper-returned `Dialog`/`GroupInfo`. `ContactStatus` has the field slot but it is currently unpopulated — `ContactsGetStatuses` does not return `Users[]` alongside statuses, so consumers see `[user:N]` rather than `Name [@user]` for those entries until a follow-up adds a batched lookup.
+
+### Multi-line text output
+
+Each message in `output` is a block of `key: value` lines (`from:`, `forwarded from:`, `reply to:`, `quote:`, `media:`) followed by the body under `text:`. Blocks are separated by a literal `---` line so a message body containing its own blank lines (Telegram bodies routinely have paragraph breaks) stays unambiguous. Long bodies are emitted verbatim — no truncation in the human-readable string. The single-line `[ID ↩parent] ts sender: text` form was removed; do NOT reintroduce it or grep for `↩`.
 
 ### Message entities (formatting on read)
 
@@ -132,6 +151,7 @@ Known CommonMark gaps documented in README's "Markdown — Known Limitations": n
 ## Linter
 
 Strict config in `.golangci.yml`:
+
 - funlen: 50 lines / 40 statements
 - gocyclo/cyclop: 10
 - dupl: 100

@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -94,18 +93,26 @@ func fetchContext(
 }
 
 func formatContextMessages(msgs []telegram.Message, targetID int) string {
-	var buf strings.Builder
-
-	for idx := range msgs {
-		marker := "  "
-		if msgs[idx].ID == targetID {
-			marker = "> "
-		}
-
-		fmt.Fprintf(&buf, "%s%s\n", marker, formatMessage(&msgs[idx]))
+	if len(msgs) == 0 {
+		return ""
 	}
 
-	return buf.String()
+	blocks := make([]string, 0, len(msgs))
+
+	for idx := range msgs {
+		block := formatMessage(&msgs[idx])
+		if msgs[idx].ID == targetID {
+			// Prefix every line of the target block so the marker
+			// stays anchored across the multi-line layout; a single
+			// "> " on the header line gets visually lost once the
+			// text: body is more than a couple of lines.
+			block = "> " + strings.ReplaceAll(block, "\n", "\n> ")
+		}
+
+		blocks = append(blocks, block)
+	}
+
+	return strings.Join(blocks, blockSeparator) + "\n"
 }
 
 // MessagesContextTool returns the MCP tool definition for tg_messages_context.

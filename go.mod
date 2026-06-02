@@ -1,10 +1,10 @@
 module github.com/lexfrei/mcp-tg
 
-go 1.26.3
+go 1.26.4
 
 require (
 	github.com/cockroachdb/errors v1.13.0
-	github.com/gotd/td v0.144.0
+	github.com/gotd/td v0.145.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	golang.org/x/sync v0.20.0
 )

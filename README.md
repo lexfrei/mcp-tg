@@ -238,6 +238,7 @@ Peers resolved by username include a valid access hash. Numeric IDs use a cached
 | `TELEGRAM_DOWNLOAD_DIR` | Media download directory | `/tmp/mcp-tg/downloads` | No |
 | `MCP_HTTP_PORT` | HTTP/SSE transport port | disabled | No |
 | `MCP_HTTP_HOST` | HTTP bind address | `127.0.0.1` | No |
+| `MCP_HTTP_ONLY` | Run as a headless HTTP-only daemon (no stdio transport) | `false` | No (requires `MCP_HTTP_PORT`) |
 
 ## Authentication
 
@@ -260,7 +261,29 @@ Authentication uses a cascade: environment variable, then MCP elicitation (the c
 -v ~/.mcp-tg:/home/nobody/.mcp-tg
 ```
 
-**Multiple sessions:** each Claude Code session starts its own container. This is safe for normal use — Telegram allows multiple MTProto connections with the same auth key. However, avoid running many instances simultaneously (5+), as Telegram may rate-limit or drop connections. Session file writes are rare (only on re-auth or DC migration) so volume sharing is safe in practice.
+**Multiple sessions:** by default each Claude Code (or other MCP) client starts its own stdio process — that is how the stdio transport works. This is fine for one or two clients, but every process opens its own MTProto connection on the same auth key and shares write access to the session file. Running many at once (5+) wastes connections and risks a write race on the session file when Telegram triggers a re-auth or DC migration. To share one process across many clients, run the headless HTTP-only daemon described below.
+
+### Shared daemon (HTTP-only)
+
+To serve many MCP clients from a single process and a single Telegram connection, run the server as a headless HTTP-only daemon. Set `MCP_HTTP_ONLY=true` together with `MCP_HTTP_PORT`. In this mode the server skips the stdio transport entirely and listens only on HTTP, multiplexing every connecting client onto the same Telegram session — so the session file has exactly one writer and the connection count stays at one regardless of how many clients attach.
+
+Because all clients share that one MTProto connection, they also share its throughput: requests serialize through a single connection, and a FLOOD_WAIT triggered by one client's burst pauses the auto-retry for everyone until the server-specified delay elapses. The shared daemon trades per-client isolation for one connection and one session writer — a good trade for many lightly-used clients, less so for a few high-volume ones.
+
+Because a headless daemon has no client session to prompt through, it cannot complete an interactive login. Log in once in the normal (stdio) mode to create the session file, then start the daemon; it reuses that file. If the session is missing or expired, the daemon exits with an authentication error instead of hanging.
+
+```bash
+export TELEGRAM_APP_ID=12345
+export TELEGRAM_APP_HASH=your_app_hash
+export MCP_HTTP_PORT=8787
+export MCP_HTTP_ONLY=true
+./mcp-tg
+```
+
+Point each client at the running daemon over HTTP instead of spawning its own process:
+
+```bash
+claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
+```
 
 ## Usage
 

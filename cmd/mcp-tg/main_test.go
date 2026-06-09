@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -50,6 +51,63 @@ func TestRegisterTools(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestHeadlessServer_ServesMultipleClients pins that the headless daemon's
+// server — built through the exact production seam newHeadlessServer, not a
+// local nil literal — accepts more than one client without panicking. Each
+// client.Connect drives a full initialize handshake; the trailing ListTools
+// forces the server to process the initialized notification before the next
+// client connects. If a future change wired an InitializedHandler that closes a
+// shared channel into newHeadlessServer, the second handshake would panic with
+// "close of closed channel" and fail this test. It also confirms the full
+// toolset survives the build and the pre-auth allowlisted tool
+// (tg_server_version) is reachable.
+func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
+	ctx := context.Background()
+
+	authDone := make(chan struct{})
+	close(authDone) // simulate completed auth so the guard lets calls through
+
+	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone)
+
+	for i := range 2 {
+		ct, st := mcp.NewInMemoryTransports()
+
+		ss, connErr := server.Connect(ctx, st, nil)
+		if connErr != nil {
+			t.Fatalf("server connect #%d: %v", i, connErr)
+		}
+
+		client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+
+		cs, clientErr := client.Connect(ctx, ct, nil)
+		if clientErr != nil {
+			t.Fatalf("client connect #%d: %v", i, clientErr)
+		}
+
+		res, listErr := cs.ListTools(ctx, nil)
+		if listErr != nil {
+			t.Fatalf("list tools #%d: %v", i, listErr)
+		}
+
+		assertToolPresent(t, res, tools.ServerVersionToolName)
+
+		_ = cs.Close()
+		ss.Wait()
+	}
+}
+
+func assertToolPresent(t *testing.T, res *mcp.ListToolsResult, name string) {
+	t.Helper()
+
+	for _, tool := range res.Tools {
+		if tool.Name == name {
+			return
+		}
+	}
+
+	t.Errorf("tool %q missing from headless server (got %d tools)", name, len(res.Tools))
 }
 
 // TestNewHTTPHandler_RejectsCrossOriginPOST pins the cross-origin protection

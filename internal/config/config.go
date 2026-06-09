@@ -27,6 +27,14 @@ var ErrInvalidAppID = errors.New("TELEGRAM_APP_ID must be a positive integer")
 // ErrInvalidHTTPPort is returned when MCP_HTTP_PORT is not a valid port number.
 var ErrInvalidHTTPPort = errors.New("MCP_HTTP_PORT must be a valid port number (1-65535)")
 
+// ErrInvalidHTTPOnly is returned when MCP_HTTP_ONLY is not a valid boolean.
+var ErrInvalidHTTPOnly = errors.New("MCP_HTTP_ONLY must be a boolean (1/0/true/false)")
+
+// ErrHTTPOnlyRequiresPort is returned when HTTP-only mode is requested without
+// an HTTP port. Headless mode has no stdio transport, so HTTP is the only way
+// clients can reach the server — without a port it would serve nothing.
+var ErrHTTPOnlyRequiresPort = errors.New("MCP_HTTP_ONLY requires MCP_HTTP_PORT to be set")
+
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
 	AppID       int
@@ -38,6 +46,7 @@ type Config struct {
 	DownloadDir string
 	HTTPPort    string
 	HTTPHost    string
+	HTTPOnly    bool
 }
 
 // Load reads configuration from environment variables and returns a Config.
@@ -57,6 +66,15 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	httpOnly, err := loadHTTPOnly()
+	if err != nil {
+		return nil, err
+	}
+
+	if httpOnly && httpPort == "" {
+		return nil, ErrHTTPOnlyRequiresPort
+	}
+
 	return &Config{
 		AppID:       appID,
 		AppHash:     appHash,
@@ -67,6 +85,7 @@ func Load() (*Config, error) {
 		DownloadDir: loadDownloadDir(),
 		HTTPPort:    httpPort,
 		HTTPHost:    loadHTTPHost(),
+		HTTPOnly:    httpOnly,
 	}, nil
 }
 
@@ -143,6 +162,20 @@ func loadHTTPPort() (string, error) {
 	}
 
 	return httpPort, nil
+}
+
+func loadHTTPOnly() (bool, error) {
+	raw := os.Getenv("MCP_HTTP_ONLY")
+	if raw == "" {
+		return false, nil
+	}
+
+	httpOnly, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, ErrInvalidHTTPOnly
+	}
+
+	return httpOnly, nil
 }
 
 func loadHTTPHost() string {

@@ -65,7 +65,10 @@ func run() error {
 
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: &session.FileStorage{Path: cfg.SessionFile},
-		Middlewares:    []telegram.Middleware{newFloodWaitMiddleware()},
+		Middlewares: []telegram.Middleware{
+			newFloodWaitMiddleware(),
+			newConnReinitMiddleware(cfg.AppID),
+		},
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())

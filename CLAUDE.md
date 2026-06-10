@@ -16,6 +16,8 @@ golangci-lint run
 
 ```text
 cmd/mcp-tg/main.go          Entry point: telegram client → MCP server → transports
+cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
+cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td
 internal/config/             Env var loading and validation
 internal/telegram/           Telegram abstraction layer
   types.go                   Domain types (Message, User, Dialog, etc.)
@@ -26,6 +28,9 @@ internal/telegram/           Telegram abstraction layer
   auth.go                    Auth flow with MCP elicitation support
   resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs, invite links)
   peer_cache.go              Thread-safe cache for peer access hashes
+  markdown.go                Markdown → Telegram entities parser (entry point)
+  markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
+  markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal
 internal/tools/              MCP tool handlers (75 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
@@ -36,11 +41,6 @@ internal/tools/              MCP tool handlers (75 tools)
   result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
   register.go                tools.AddTool wrapper that records bool fields into the coercer registry
   mock_test.go               Mock telegram.Client for tests
-cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
-internal/telegram/
-  markdown.go                Markdown → Telegram entities parser (entry point)
-  markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
-  markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
 internal/completions/        Argument autocompletion

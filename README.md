@@ -17,13 +17,14 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Roots | File path validation for uploads/downloads |
 | Transports | stdio + HTTP/SSE |
 | KeepAlive | 30s ping interval |
-| Middleware | Auth guard, request logging |
+| Middleware | Auth guard, request logging, bool coercion |
 
 ## Telegram Protocol Features
 
 - **Peer cache** — resolved peers with access hashes are cached in memory, so numeric ID lookups reuse valid hashes instead of failing
 - **Invite links** — `t.me/+hash` and `t.me/joinchat/hash` are resolved via `messages.checkChatInvite`
 - **FLOOD_WAIT retry** — automatic sleep and retry (up to 3 times) when Telegram rate-limits the client
+- **Connection re-init** — when the server forgets a long-lived connection's `initConnection` state and answers `CONNECTION_LAYER_INVALID` / `CONNECTION_NOT_INITED`, the request is retried once wrapped in `initConnection`, recovering the connection in place
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
 

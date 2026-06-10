@@ -112,6 +112,28 @@ func TestConnReinit_HandlesConnectionNotInited(t *testing.T) {
 	}
 }
 
+// encoderOnly implements bin.Encoder but not bin.Object (no Decode), so it
+// cannot be wrapped into initConnection.
+type encoderOnly struct{}
+
+func (encoderOnly) Encode(_ *bin.Buffer) error { return nil }
+
+func TestConnReinit_NonObjectInputReturnsOriginalError(t *testing.T) {
+	next := &recordingInvoker{errs: []error{tgerr.New(400, "CONNECTION_LAYER_INVALID")}}
+
+	mw := newConnReinitMiddleware(testAppID)
+	handler := mw(next)
+
+	err := handler(context.Background(), encoderOnly{}, nil)
+	if !tgerr.Is(err, "CONNECTION_LAYER_INVALID") {
+		t.Fatalf("expected original error passthrough, got: %v", err)
+	}
+
+	if len(next.inputs) != 1 {
+		t.Fatalf("expected no retry for non-Object input, got %d invokes", len(next.inputs))
+	}
+}
+
 func TestConnReinit_RetryFailureReturnsError(t *testing.T) {
 	next := &recordingInvoker{errs: []error{
 		tgerr.New(400, "CONNECTION_LAYER_INVALID"),

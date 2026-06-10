@@ -117,3 +117,21 @@ func TestNewLogging_ToolResultError(t *testing.T) {
 		t.Errorf("expected error text in log, got: %s", output)
 	}
 }
+
+func TestNewLogging_ToolResultErrorWithoutText(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	handler := NewLogging(logger)(func(_ context.Context, _ string, _ mcp.Request) (mcp.Result, error) {
+		return &mcp.CallToolResult{IsError: true}, nil
+	})
+
+	_, err := handler(context.Background(), "tools/call", nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Contains(buf.Bytes(), []byte("tool returned IsError without text content")) {
+		t.Errorf("expected placeholder error text in log, got: %s", buf.String())
+	}
+}

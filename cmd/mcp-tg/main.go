@@ -188,13 +188,23 @@ func buildServer(
 	registerTools(server, client, boolFields, downloadDir)
 	resources.Register(server, client)
 	prompts.Register(server, client)
-	server.AddReceivingMiddleware(
-		mcpmw.NewBoolCoercer(boolFields),
-		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
-		mcpmw.NewLogging(opts.Logger),
-	)
+	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone)...)
 
 	return server
+}
+
+// receivingMiddlewares returns the server middleware chain; the first entry is
+// the outermost wrapper. Logging must wrap the auth guard so calls rejected
+// before reaching a handler (every tool call made while authentication is
+// still pending) show up in the request log too.
+func receivingMiddlewares(
+	logger *slog.Logger, boolFields tools.BoolFieldRegistry, authDone chan struct{},
+) []mcp.Middleware {
+	return []mcp.Middleware{
+		mcpmw.NewLogging(logger),
+		mcpmw.NewBoolCoercer(boolFields),
+		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
+	}
 }
 
 // authenticate runs the Telegram auth flow. When session is non-nil the

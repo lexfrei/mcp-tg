@@ -72,5 +72,5 @@ func resultErrorText(result mcp.Result) string {
 		}
 	}
 
-	return ""
+	return "tool returned IsError without text content"
 }

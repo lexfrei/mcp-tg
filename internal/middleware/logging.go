@@ -57,7 +57,7 @@ func toolName(req mcp.Request) string {
 func isErrorResult(result mcp.Result) bool {
 	res, ok := result.(*mcp.CallToolResult)
 
-	return ok && res.IsError
+	return ok && res != nil && res.IsError
 }
 
 func resultErrorText(result mcp.Result) string {

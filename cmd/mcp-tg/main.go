@@ -83,30 +83,25 @@ func startServer(
 ) error {
 	wrapper := tgclient.NewWrapper(tgClient.API())
 
-	initDone := make(chan struct{})
-	authDone := make(chan struct{})
-	opts := newServerOptions(wrapper)
-	opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
-		close(initDone)
+	if cfg.HTTPOnly {
+		return startHeadless(ctx, tgClient, wrapper, cfg)
 	}
 
-	server := mcp.NewServer(
-		&mcp.Implementation{
-			Name:    serverName,
-			Version: version + "+" + revision,
-		},
-		opts,
-	)
+	return startStdio(ctx, cancel, tgClient, wrapper, cfg)
+}
 
-	boolFields := tools.BoolFieldRegistry{}
-	registerTools(server, wrapper, boolFields, cfg.DownloadDir)
-	resources.Register(server, wrapper)
-	prompts.Register(server, wrapper)
-	server.AddReceivingMiddleware(
-		mcpmw.NewBoolCoercer(boolFields),
-		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
-		mcpmw.NewLogging(opts.Logger),
-	)
+// startStdio runs the server with stdio as the primary transport (the default
+// one-process-per-client mode) plus an optional additional HTTP transport.
+// Auth elicitation is routed through the stdio session, so this mode can
+// complete an interactive login.
+func startStdio(
+	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
+	wrapper tgclient.Client, cfg *config.Config,
+) error {
+	initDone := make(chan struct{})
+	authDone := make(chan struct{})
+
+	server := buildServer(wrapper, cfg.DownloadDir, authDone, func() { close(initDone) })
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -119,19 +114,100 @@ func startServer(
 		return errors.Wrap(ctx.Err(), "waiting for client initialization")
 	}
 
-	authenticator := tgclient.NewAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)
-	authenticator.SetSession(stdioSession)
-
-	flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
-
-	authErr := tgClient.Auth().IfNecessary(ctx, flow)
+	authErr := authenticate(ctx, tgClient, cfg, stdioSession)
 	if authErr != nil {
-		return errors.Wrap(authErr, "authentication failed")
+		return authErr
 	}
 
 	close(authDone)
 
 	return waitForTransports(ctx, cancel, server, stdioSession, cfg)
+}
+
+// startHeadless runs the server with HTTP as the only transport and no stdio
+// peer. One process and one Telegram connection serve many concurrent MCP
+// clients — the shared-daemon mode.
+//
+// Auth cannot elicit interactively here (there is no client session to prompt),
+// so it relies on a valid persisted session file or env-var credentials. Log in
+// once in stdio mode to create the session, then run headless.
+func startHeadless(
+	ctx context.Context, tgClient *telegram.Client, wrapper tgclient.Client, cfg *config.Config,
+) error {
+	authDone := make(chan struct{})
+	server := newHeadlessServer(wrapper, cfg.DownloadDir, authDone)
+
+	authErr := authenticate(ctx, tgClient, cfg, nil)
+	if authErr != nil {
+		return authErr
+	}
+
+	close(authDone)
+
+	log.Printf("starting in HTTP-only headless mode (shared daemon)")
+
+	return runHTTPServer(ctx, server, cfg.HTTPAddr())
+}
+
+// newHeadlessServer builds the MCP server for headless HTTP-only mode. It is a
+// named seam so the daemon and its tests construct the server identically — in
+// particular the nil init hook is owned here, not duplicated per call site.
+//
+// onInit must stay nil: headless HTTP serves many clients, and a hook that
+// closes a shared channel would panic on the second client's initialize (close
+// of a closed channel). Wiring such a hook here trips the multi-client test.
+func newHeadlessServer(client tgclient.Client, downloadDir string, authDone chan struct{}) *mcp.Server {
+	return buildServer(client, downloadDir, authDone, nil)
+}
+
+// buildServer constructs the MCP server with all tools, resources, prompts, and
+// middleware. onInit, when non-nil, runs after a client completes the MCP
+// initialize handshake; pass nil when no single client owns the lifecycle.
+func buildServer(
+	client tgclient.Client, downloadDir string, authDone chan struct{}, onInit func(),
+) *mcp.Server {
+	opts := newServerOptions(client)
+	if onInit != nil {
+		opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
+			onInit()
+		}
+	}
+
+	server := mcp.NewServer(
+		&mcp.Implementation{
+			Name:    serverName,
+			Version: version + "+" + revision,
+		},
+		opts,
+	)
+
+	boolFields := tools.BoolFieldRegistry{}
+	registerTools(server, client, boolFields, downloadDir)
+	resources.Register(server, client)
+	prompts.Register(server, client)
+	server.AddReceivingMiddleware(
+		mcpmw.NewBoolCoercer(boolFields),
+		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
+		mcpmw.NewLogging(opts.Logger),
+	)
+
+	return server
+}
+
+// authenticate runs the Telegram auth flow. When session is non-nil the
+// authenticator may elicit missing credentials through it; otherwise it is
+// limited to env vars and the persisted session file.
+func authenticate(
+	ctx context.Context, tgClient *telegram.Client, cfg *config.Config, clientSession *mcp.ServerSession,
+) error {
+	authenticator := tgclient.NewAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)
+	if clientSession != nil {
+		authenticator.SetSession(clientSession)
+	}
+
+	flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
+
+	return errors.Wrap(tgClient.Auth().IfNecessary(ctx, flow), "authentication failed")
 }
 
 func waitForTransports(

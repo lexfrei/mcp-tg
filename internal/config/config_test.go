@@ -104,6 +104,62 @@ func TestHTTPDisabled(t *testing.T) {
 	}
 }
 
+func TestLoad_HTTPOnlyDefaultsFalse(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("MCP_HTTP_PORT", "8787")
+	t.Setenv("MCP_HTTP_ONLY", "")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.HTTPOnly {
+		t.Error("HTTPOnly = true, want false when MCP_HTTP_ONLY is unset")
+	}
+}
+
+func TestLoad_HTTPOnlyWithPort(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("MCP_HTTP_PORT", "8787")
+	t.Setenv("MCP_HTTP_ONLY", "true")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.HTTPOnly {
+		t.Error("HTTPOnly = false, want true when MCP_HTTP_ONLY=true")
+	}
+}
+
+func TestLoad_HTTPOnlyWithoutPortFails(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("MCP_HTTP_PORT", "")
+	t.Setenv("MCP_HTTP_ONLY", "true")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error: HTTP-only mode requires MCP_HTTP_PORT")
+	}
+}
+
+func TestLoad_HTTPOnlyInvalidValueFails(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("MCP_HTTP_PORT", "8787")
+	t.Setenv("MCP_HTTP_ONLY", "maybe")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid MCP_HTTP_ONLY value")
+	}
+}
+
 func TestHasPassword(t *testing.T) {
 	cfg := &config.Config{}
 	if cfg.HasPassword() {

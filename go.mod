@@ -4,12 +4,13 @@ go 1.26.4
 
 require (
 	github.com/cockroachdb/errors v1.13.0
-	github.com/gotd/td v0.151.0
+	github.com/gotd/td v0.152.0
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	golang.org/x/sync v0.21.0
 )
 
 require (
+	github.com/andybalholm/brotli v1.2.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
@@ -35,6 +36,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
+	github.com/refraction-networking/utls v1.8.2 // indirect
 	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

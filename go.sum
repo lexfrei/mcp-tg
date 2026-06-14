@@ -56,8 +56,8 @@ github.com/gotd/log/logzap v0.0.1 h1:WRsLpmUku/wFUBlVU2h/Pej+aToN5qtVD5uFr3/6pcw
 github.com/gotd/log/logzap v0.0.1/go.mod h1:3odzNYhmtCr/2+MBM2+7vXT5/PzhfFhpqpWknDEud0Y=
 github.com/gotd/neo v0.1.5 h1:oj0iQfMbGClP8xI59x7fE/uHoTJD7NZH9oV1WNuPukQ=
 github.com/gotd/neo v0.1.5/go.mod h1:9A2a4bn9zL6FADufBdt7tZt+WMhvZoc5gWXihOPoiBQ=
-github.com/gotd/td v0.156.2 h1:07bZ5YnuKjStRHJ1d8IyU19KZMLs1vZslT9dQeUAcaw=
-github.com/gotd/td v0.156.2/go.mod h1:pVVlJYiMUMinSR/5uDfCSUoB3DyqxftanMWYLP16riY=
+github.com/gotd/td v0.156.3 h1:Y4JxcYPUS386HSuVw646EIpJBVJ9kY33lBfZZJDfF0o=
+github.com/gotd/td v0.156.3/go.mod h1:pVVlJYiMUMinSR/5uDfCSUoB3DyqxftanMWYLP16riY=
 github.com/kisielk/errcheck v1.5.0/go.mod h1:pFxgyoBC7bSaBwPgfKdkLd5X25qrDl4LWUI2bnpBCr8=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.18.6 h1:2jupLlAwFm95+YDR+NwD2MEfFO9d4z4Prjl1XXDjuao=

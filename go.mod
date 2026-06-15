@@ -4,7 +4,7 @@ go 1.26.4
 
 require (
 	github.com/cockroachdb/errors v1.13.0
-	github.com/gotd/td v0.156.3
+	github.com/gotd/td v0.157.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	golang.org/x/sync v0.21.0
 )
@@ -15,7 +15,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
-	github.com/coder/websocket v1.8.14 // indirect
+	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/getsentry/sentry-go v0.46.0 // indirect
@@ -28,7 +28,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gotd/ige v0.2.2 // indirect
-	github.com/gotd/log v0.0.1 // indirect
+	github.com/gotd/log v0.1.0 // indirect
 	github.com/gotd/neo v0.1.5 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/kr/pretty v0.3.1 // indirect

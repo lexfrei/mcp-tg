@@ -75,7 +75,7 @@ func (NoopClient) DownloadMedia(_ context.Context, _ telegram.InputPeer, _ int, 
 	return "", nil
 }
 
-func (NoopClient) UploadFile(_ context.Context, _ string) (*telegram.UploadedFile, error) {
+func (NoopClient) UploadFile(_ context.Context, _ string, _ telegram.UploadOpts) (*telegram.UploadedFile, error) {
 	return nil, nil
 }
 

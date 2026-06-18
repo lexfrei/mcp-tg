@@ -484,7 +484,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, validErr
 	}
 
-	file, err := w.up.FromPath(ctx, path)
+	file, err := w.uploaderFor(opts.Progress).FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
 	}
@@ -536,13 +536,20 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 
 	peerTG := InputPeerToTG(peer)
 	visual := albumIsVisual(paths)
+	sizing := albumSizes(paths)
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
+	var base int64
+
 	for idx, path := range paths {
-		input, err := w.finalizeAlbumMedia(ctx, peerTG, path, visual)
+		itemProgress := albumItemProgress(opts.Progress, base, sizing.total)
+
+		input, err := w.finalizeAlbumMedia(ctx, peerTG, path, visual, itemProgress)
 		if err != nil {
 			return nil, errors.Wrapf(err, "album item %d", idx)
 		}
+
+		base += sizing.sizes[idx]
 
 		randID, randErr := cryptoRandID()
 		if randErr != nil {
@@ -645,8 +652,8 @@ func (w *Wrapper) DownloadMedia(ctx context.Context, peer InputPeer, msgID int, 
 }
 
 // UploadFile uploads a file and returns its metadata.
-func (w *Wrapper) UploadFile(ctx context.Context, path string) (*UploadedFile, error) {
-	file, err := w.up.FromPath(ctx, path)
+func (w *Wrapper) UploadFile(ctx context.Context, path string, opts UploadOpts) (*UploadedFile, error) {
+	file, err := w.uploaderFor(opts.Progress).FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
 	}
@@ -1536,9 +1543,9 @@ func (w *Wrapper) ClearAllDrafts(ctx context.Context) error {
 // sendMultiMedia is rejected with MEDIA_INVALID, so each item must be
 // finalized first.
 func (w *Wrapper) finalizeAlbumMedia(
-	ctx context.Context, peer tg.InputPeerClass, path string, visual bool,
+	ctx context.Context, peer tg.InputPeerClass, path string, visual bool, progress UploadProgress,
 ) (tg.InputMediaClass, error) {
-	file, err := w.up.FromPath(ctx, path)
+	file, err := w.uploaderFor(progress).FromPath(ctx, path)
 	if err != nil {
 		return nil, errors.Wrap(err, "uploading file")
 	}
@@ -1552,6 +1559,71 @@ func (w *Wrapper) finalizeAlbumMedia(
 	}
 
 	return inputMediaFromUploaded(res)
+}
+
+// uploadProgress adapts an UploadProgress callback to the gotd uploader's
+// Progress interface.
+type uploadProgress struct {
+	cb UploadProgress
+}
+
+func (p uploadProgress) Chunk(ctx context.Context, state uploader.ProgressState) error {
+	p.cb(ctx, state.Uploaded, state.Total)
+
+	return nil
+}
+
+// uploaderFor returns an uploader that reports byte-level progress through cb.
+// With no callback it returns the shared uploader; otherwise it builds a fresh
+// one, since uploader.WithProgress mutates its receiver and the shared uploader
+// must stay callback-free for concurrent uploads.
+func (w *Wrapper) uploaderFor(cb UploadProgress) *uploader.Uploader {
+	if cb == nil {
+		return w.up
+	}
+
+	return uploader.NewUploader(w.api).WithProgress(uploadProgress{cb: cb})
+}
+
+// albumSizing holds per-item byte sizes and their sum for aggregate progress.
+type albumSizing struct {
+	sizes []int64
+	total int64
+}
+
+// albumSizes stats each path, returning per-item sizes and their sum, used to
+// report aggregate album upload progress. Files that cannot be stat'd count as
+// zero.
+func albumSizes(paths []string) albumSizing {
+	out := albumSizing{sizes: make([]int64, len(paths))}
+
+	for idx, path := range paths {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue
+		}
+
+		out.sizes[idx] = info.Size()
+		out.total += info.Size()
+	}
+
+	return out
+}
+
+// albumItemProgress wraps the album-level callback so a single item reports its
+// bytes offset by the bytes already uploaded by earlier items, against the
+// album's grand total. Returns nil when there is no callback.
+func albumItemProgress(callback UploadProgress, base, grand int64) UploadProgress {
+	if callback == nil {
+		return nil
+	}
+
+	return func(ctx context.Context, uploaded, _ int64) {
+		// Clamp to the grand total: a file that could not be stat'd counts as
+		// zero bytes in `grand` yet still uploads real bytes, which would
+		// otherwise push the reported progress past 100%.
+		callback(ctx, min(base+uploaded, grand), grand)
+	}
 }
 
 // serverConfig returns the cached help.getConfig snapshot, fetching once on

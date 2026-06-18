@@ -1,6 +1,8 @@
 // Package telegram provides a Telegram Client API abstraction.
 package telegram
 
+import "context"
+
 // PeerType identifies the kind of Telegram peer.
 //
 // The zero value is PeerUser by historical accident — when an InputPeer
@@ -294,6 +296,11 @@ func IsCommonMarkParseMode(mode string) bool {
 	return mode == ParseModeMarkdown || mode == ParseModeCommonMark
 }
 
+// UploadProgress is an optional callback invoked during a file upload with the
+// running byte count and the total size. It carries the upload context so
+// consumers (e.g. the MCP progress forwarder) never have to store one.
+type UploadProgress func(ctx context.Context, uploaded, total int64)
+
 // SendOpts configures message sending.
 type SendOpts struct {
 	ReplyTo      int
@@ -302,6 +309,12 @@ type SendOpts struct {
 	Silent       bool
 	NoWebpage    bool
 	ScheduleDate int
+	Progress     UploadProgress
+}
+
+// UploadOpts configures a bare file upload.
+type UploadOpts struct {
+	Progress UploadProgress
 }
 
 // DialogOpts configures dialog listing.

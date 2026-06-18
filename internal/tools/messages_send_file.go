@@ -88,19 +88,22 @@ func uploadAndSendFile(
 		return nil, validationErr(topicErr)
 	}
 
-	notifyProgress(ctx, req.Session, token, 0, 1, "Uploading file")
+	fwd := newProgressForwarder(req.Session, token, "Uploading file")
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
 		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
+		Progress:     fwd.callback(),
 	}
 
 	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption), opts)
 	if err != nil {
 		return nil, telegramErr("failed to send file", err)
 	}
+
+	fwd.done(ctx, "File sent")
 
 	return msg, nil
 }

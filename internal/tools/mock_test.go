@@ -42,6 +42,7 @@ type mockClient struct {
 	lastQuery        string
 	lastTopicID      int
 	lastSendOpts     telegram.SendOpts
+	lastUploadOpts   telegram.UploadOpts
 	getMessagesCalls int
 	getMessagesIDs   []int
 	groupInfoCalls   int
@@ -165,16 +166,18 @@ func (m *mockClient) MarkRead(_ context.Context, peer telegram.InputPeer, _ int)
 	return m.err
 }
 
-func (m *mockClient) SendFile(_ context.Context, peer telegram.InputPeer, _, _ string, _ telegram.SendOpts) (*telegram.Message, error) {
+func (m *mockClient) SendFile(_ context.Context, peer telegram.InputPeer, _, _ string, opts telegram.SendOpts) (*telegram.Message, error) {
 	m.lastPeer = peer
+	m.lastSendOpts = opts
 
 	return m.message, m.err
 }
 
 func (m *mockClient) SendAlbum(
-	_ context.Context, peer telegram.InputPeer, _ []string, _ string, _ telegram.SendOpts,
+	_ context.Context, peer telegram.InputPeer, _ []string, _ string, opts telegram.SendOpts,
 ) ([]telegram.Message, error) {
 	m.lastPeer = peer
+	m.lastSendOpts = opts
 
 	return m.messages, m.err
 }
@@ -183,7 +186,9 @@ func (m *mockClient) DownloadMedia(_ context.Context, _ telegram.InputPeer, _ in
 	return m.filePath, m.err
 }
 
-func (m *mockClient) UploadFile(_ context.Context, _ string) (*telegram.UploadedFile, error) {
+func (m *mockClient) UploadFile(_ context.Context, _ string, opts telegram.UploadOpts) (*telegram.UploadedFile, error) {
+	m.lastUploadOpts = opts
+
 	return m.uploaded, m.err
 }
 

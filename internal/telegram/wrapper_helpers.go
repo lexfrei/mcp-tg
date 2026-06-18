@@ -56,7 +56,91 @@ func uploadedFileID(file tg.InputFileClass) int64 {
 func isImagePath(path string) bool {
 	mimeType := mimeByPath(path)
 
-	return strings.HasPrefix(mimeType, "image/")
+	return strings.HasPrefix(mimeType, imageMIMEPrefix)
+}
+
+const (
+	imageMIMEPrefix = "image/"
+	videoMIMEPrefix = "video/"
+)
+
+// albumIsVisual reports whether every path is visual media (image or video).
+// A visual album renders as a media grid; if any item is non-visual the album
+// falls back to uniform documents, since Telegram rejects grouping photos with
+// arbitrary documents in a single media group.
+func albumIsVisual(paths []string) bool {
+	if len(paths) == 0 {
+		return false
+	}
+
+	for _, path := range paths {
+		mimeType := mimeByPath(path)
+		if !strings.HasPrefix(mimeType, imageMIMEPrefix) && !strings.HasPrefix(mimeType, videoMIMEPrefix) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// uploadedAlbumMedia wraps a freshly-uploaded file into the InputMedia passed to
+// messages.uploadMedia. In a visual album images become photos and videos become
+// streamable documents; otherwise every item is a plain document.
+func uploadedAlbumMedia(file tg.InputFileClass, path string, visual bool) tg.InputMediaClass {
+	mimeType := mimeByPath(path)
+
+	if visual && strings.HasPrefix(mimeType, imageMIMEPrefix) {
+		return &tg.InputMediaUploadedPhoto{File: file}
+	}
+
+	attributes := []tg.DocumentAttributeClass{
+		&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
+	}
+
+	if visual && strings.HasPrefix(mimeType, videoMIMEPrefix) {
+		attributes = append(attributes, &tg.DocumentAttributeVideo{SupportsStreaming: true})
+	}
+
+	return &tg.InputMediaUploadedDocument{
+		File:       file,
+		MimeType:   mimeType,
+		Attributes: attributes,
+	}
+}
+
+// inputMediaFromUploaded converts the result of messages.uploadMedia into the
+// referenced InputMedia required by messages.sendMultiMedia. Freshly-uploaded
+// media cannot be used directly in an album (MEDIA_INVALID); it must first be
+// finalized through uploadMedia, then re-wrapped here.
+func inputMediaFromUploaded(media tg.MessageMediaClass) (tg.InputMediaClass, error) {
+	switch m := media.(type) {
+	case *tg.MessageMediaPhoto:
+		photo, ok := m.GetPhoto()
+		if !ok {
+			return nil, errors.New("uploadMedia returned photo media without a photo")
+		}
+
+		notEmpty, ok := photo.AsNotEmpty()
+		if !ok {
+			return nil, errors.New("uploadMedia returned an empty photo")
+		}
+
+		return &tg.InputMediaPhoto{ID: notEmpty.AsInput()}, nil
+	case *tg.MessageMediaDocument:
+		doc, ok := m.GetDocument()
+		if !ok {
+			return nil, errors.New("uploadMedia returned document media without a document")
+		}
+
+		notEmpty, ok := doc.AsNotEmpty()
+		if !ok {
+			return nil, errors.New("uploadMedia returned an empty document")
+		}
+
+		return &tg.InputMediaDocument{ID: notEmpty.AsInput()}, nil
+	default:
+		return nil, errors.Errorf("unexpected media type %T from uploadMedia", media)
+	}
 }
 
 func buildMultiMediaRequest(

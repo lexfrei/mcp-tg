@@ -534,12 +534,14 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		return nil, validErr
 	}
 
+	peerTG := InputPeerToTG(peer)
+	visual := albumIsVisual(paths)
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
 	for idx, path := range paths {
-		file, err := w.up.FromPath(ctx, path)
+		input, err := w.finalizeAlbumMedia(ctx, peerTG, path, visual)
 		if err != nil {
-			return nil, errors.Wrapf(err, "uploading file %d", idx)
+			return nil, errors.Wrapf(err, "album item %d", idx)
 		}
 
 		randID, randErr := cryptoRandID()
@@ -547,16 +549,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 			return nil, randErr
 		}
 
-		media := tg.InputSingleMedia{
-			RandomID: randID,
-			Media: &tg.InputMediaUploadedDocument{
-				File:     file,
-				MimeType: mimeByPath(path),
-				Attributes: []tg.DocumentAttributeClass{
-					&tg.DocumentAttributeFilename{FileName: filepath.Base(path)},
-				},
-			},
-		}
+		media := tg.InputSingleMedia{RandomID: randID, Media: input}
 
 		if idx == 0 {
 			applyAlbumCaption(&media, caption, opts.ParseMode)
@@ -1535,6 +1528,30 @@ func (w *Wrapper) ClearAllDrafts(ctx context.Context) error {
 	_, err := w.api.MessagesClearAllDrafts(ctx)
 
 	return errors.Wrap(err, "clearing all drafts")
+}
+
+// finalizeAlbumMedia uploads one album item and finalizes it through
+// messages.uploadMedia, returning referenced InputMedia usable inside
+// messages.sendMultiMedia. Freshly-uploaded media passed straight to
+// sendMultiMedia is rejected with MEDIA_INVALID, so each item must be
+// finalized first.
+func (w *Wrapper) finalizeAlbumMedia(
+	ctx context.Context, peer tg.InputPeerClass, path string, visual bool,
+) (tg.InputMediaClass, error) {
+	file, err := w.up.FromPath(ctx, path)
+	if err != nil {
+		return nil, errors.Wrap(err, "uploading file")
+	}
+
+	res, err := w.api.MessagesUploadMedia(ctx, &tg.MessagesUploadMediaRequest{
+		Peer:  peer,
+		Media: uploadedAlbumMedia(file, path, visual),
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "finalizing media")
+	}
+
+	return inputMediaFromUploaded(res)
 }
 
 // serverConfig returns the cached help.getConfig snapshot, fetching once on

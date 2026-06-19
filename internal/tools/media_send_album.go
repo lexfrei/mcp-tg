@@ -66,18 +66,15 @@ func sendAlbum(
 	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params *MediaSendAlbumParams,
 ) ([]telegram.Message, error) {
 	token := req.Params.GetProgressToken()
-	total := float64(len(params.Paths))
 
-	for idx, filePath := range params.Paths {
-		notifyProgress(ctx, req.Session, token, float64(idx), total, "Validating file paths")
-
+	for _, filePath := range params.Paths {
 		rootErr := validatePathAgainstRoots(ctx, req.Session, filePath)
 		if rootErr != nil {
 			return nil, validationErr(rootErr)
 		}
 	}
 
-	notifyProgress(ctx, req.Session, token, total/2, total, "Resolving peer")
+	notifyProgress(ctx, req.Session, token, 0, 1, "Resolving peer")
 
 	peer, err := client.ResolvePeer(ctx, params.Peer)
 	if err != nil {
@@ -89,19 +86,22 @@ func sendAlbum(
 		return nil, validationErr(topicErr)
 	}
 
-	notifyProgress(ctx, req.Session, token, total, total, "Uploading files")
+	fwd := newProgressForwarder(req.Session, token, "Uploading album")
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
 		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
+		Progress:     fwd.callback(),
 	}
 
 	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption), opts)
 	if err != nil {
 		return nil, telegramErr("failed to send album", err)
 	}
+
+	fwd.done(ctx, "Album sent")
 
 	return msgs, nil
 }

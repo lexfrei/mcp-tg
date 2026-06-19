@@ -47,7 +47,7 @@ type MediaClient interface {
 	SendFile(ctx context.Context, peer InputPeer, path, caption string, opts SendOpts) (*Message, error)
 	SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error)
 	DownloadMedia(ctx context.Context, peer InputPeer, msgID int, outputDir string) (string, error)
-	UploadFile(ctx context.Context, path string) (*UploadedFile, error)
+	UploadFile(ctx context.Context, path string, opts UploadOpts) (*UploadedFile, error)
 }
 
 // DialogClient handles dialog listing and search.

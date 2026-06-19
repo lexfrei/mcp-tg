@@ -38,11 +38,15 @@ func NewMediaUploadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaUploa
 				validationErr(rootErr)
 		}
 
-		uploaded, err := client.UploadFile(ctx, params.Path)
+		fwd := newProgressForwarder(req.Session, req.Params.GetProgressToken(), "Uploading file")
+
+		uploaded, err := client.UploadFile(ctx, params.Path, telegram.UploadOpts{Progress: fwd.callback()})
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaUploadResult{},
 				telegramErr("failed to upload file", err)
 		}
+
+		fwd.done(ctx, "Upload complete")
 
 		return nil, MediaUploadResult{
 			Name:   uploaded.Name,

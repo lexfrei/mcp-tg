@@ -1,60 +1,25 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": [
-    "config:recommended",
-    "docker:enableMajor",
-    ":separateMajorReleases",
-    ":prHourlyLimitNone",
-    ":prConcurrentLimitNone"
-  ],
-  "labels": ["dependencies"],
+  "extends": ["github>lexfrei/renovate-config"],
   "rangeStrategy": "pin",
-  "platformAutomerge": true,
-  "automergeStrategy": "squash",
-  "postUpdateOptions": ["gomodTidy"],
   "packageRules": [
     {
-      "description": "Group all Go module updates",
+      "description": "Group all Go module updates into one PR",
       "matchManagers": ["gomod"],
       "groupName": "go modules",
       "groupSlug": "go-modules"
     },
     {
-      "description": "Group all GitHub Actions updates",
+      "description": "Group all GitHub Actions updates into one PR",
       "matchManagers": ["github-actions"],
       "groupName": "github actions",
       "groupSlug": "github-actions"
     },
     {
-      "description": "Automerge patch and minor updates for Go modules; major stays manual for breaking-change review",
-      "matchManagers": ["gomod"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true
-    },
-    {
-      "description": "Automerge all GitHub Actions updates including major",
-      "matchManagers": ["github-actions"],
-      "automerge": true
-    },
-    {
-      "description": "Pin Go version in Containerfile using docker versioning",
+      "description": "Pin the Go base image in the Containerfile using docker versioning",
       "matchManagers": ["dockerfile"],
       "matchPackageNames": ["docker.io/library/golang"],
       "versioning": "docker"
-    },
-    {
-      "description": "Automerge patch and minor Go updates in Containerfile; major stays manual",
-      "matchManagers": ["dockerfile"],
-      "matchPackageNames": ["docker.io/library/golang"],
-      "matchUpdateTypes": ["patch", "minor"],
-      "automerge": true
-    },
-    {
-      "description": "Bump Go version in go.mod to latest minor",
-      "matchManagers": ["gomod"],
-      "matchDepNames": ["go"],
-      "matchDepTypes": ["golang"],
-      "rangeStrategy": "bump"
     }
   ]
 }

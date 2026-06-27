@@ -43,6 +43,7 @@ type mockClient struct {
 	lastTopicID      int
 	lastSendOpts     telegram.SendOpts
 	lastUploadOpts   telegram.UploadOpts
+	lastReactionOpts telegram.ReactionOpts
 	getMessagesCalls int
 	getMessagesIDs   []int
 	groupInfoCalls   int
@@ -154,8 +155,9 @@ func (m *mockClient) PinMessage(_ context.Context, peer telegram.InputPeer, _ in
 	return m.err
 }
 
-func (m *mockClient) SendReaction(_ context.Context, peer telegram.InputPeer, _ int, _ string, _ bool) error {
+func (m *mockClient) SendReaction(_ context.Context, peer telegram.InputPeer, _ int, opts telegram.ReactionOpts) error {
 	m.lastPeer = peer
+	m.lastReactionOpts = opts
 
 	return m.err
 }

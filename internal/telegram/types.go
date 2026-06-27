@@ -317,6 +317,24 @@ type UploadOpts struct {
 	Progress UploadProgress
 }
 
+// ReactionCustomPrefix marks a reaction encoded as a premium custom emoji:
+// "custom:<document_id>". GetReactions emits the same prefix when reading a
+// custom-emoji reaction, so a reaction can be round-tripped read → send.
+const ReactionCustomPrefix = "custom:"
+
+// ReactionOpts configures a reaction send.
+//
+// Each entry in Emojis is either a standard unicode emoji ("👍") or a
+// custom (premium) emoji encoded as "custom:<document_id>". Multiple
+// entries set several reactions at once (a premium-only capability).
+// Big requests the large animated reaction. Remove clears all reactions
+// on the message and ignores Emojis.
+type ReactionOpts struct {
+	Emojis []string
+	Big    bool
+	Remove bool
+}
+
 // DialogOpts configures dialog listing.
 type DialogOpts struct {
 	Limit      int

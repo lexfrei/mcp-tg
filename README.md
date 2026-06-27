@@ -201,6 +201,20 @@ The CommonMark subset supported via `parseMode: "commonmark"` covers most everyd
 - **Nested emphasis** (`**bold *italic***`). The inner italic is dropped and its asterisks are kept as literal characters. Implementing the full delimiter-run algorithm from CommonMark §6.4 would be a rewrite of the inline parser.
 - **Hard line breaks via two trailing spaces or `\`** (CommonMark §6.7). Telegram has no break entity; a plain `\n` already renders as a line break. Stripping the trailing whitespace would be silent data corruption when the user did not intend a hard break, so the parser passes both forms through unchanged.
 
+## Reactions
+
+`tg_messages_react` adds or removes reactions; `tg_messages_get_reactions` reads who reacted. Both share one encoding for a reaction:
+
+- A standard reaction is the unicode emoji itself (`"👍"`).
+- A premium custom-emoji reaction is encoded as `"custom:<document_id>"` (e.g. `"custom:5210952531676504517"`). `tg_messages_get_reactions` emits this exact form, so a reaction read from one message can be sent verbatim to another (read → send round-trip).
+
+`tg_messages_react` parameters:
+
+- `emoji` — a single reaction (standard or `custom:<id>`). Kept for convenience and backward compatibility.
+- `emojis` — an array to set several reactions at once. Setting more than one reaction on a message requires Telegram Premium. When both `emoji` and `emojis` are supplied, `emojis` wins.
+- `big` — play the large animated reaction.
+- `remove` — clear all reactions on the message; `emoji`/`emojis` are ignored.
+
 ## Resources
 
 - `tg://dialogs` — List of all dialogs (JSON)

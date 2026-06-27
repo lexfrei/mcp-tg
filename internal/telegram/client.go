@@ -38,7 +38,7 @@ type MessageClient interface {
 	DeleteHistory(ctx context.Context, peer InputPeer, revoke bool) error
 	ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int) ([]Message, error)
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error
-	SendReaction(ctx context.Context, peer InputPeer, msgID int, emoji string, remove bool) error
+	SendReaction(ctx context.Context, peer InputPeer, msgID int, opts ReactionOpts) error
 	MarkRead(ctx context.Context, peer InputPeer, maxID int) error
 }
 

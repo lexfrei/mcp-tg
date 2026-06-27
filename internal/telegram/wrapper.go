@@ -7,6 +7,8 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -440,20 +442,59 @@ func (w *Wrapper) PinMessage(ctx context.Context, peer InputPeer, msgID int, unp
 	return errors.Wrap(err, "updating pinned message")
 }
 
-// SendReaction adds or removes a reaction on a message.
-func (w *Wrapper) SendReaction(ctx context.Context, peer InputPeer, msgID int, emoji string, remove bool) error {
+// SendReaction adds or removes reactions on a message.
+//
+// A non-removing call sets every reaction in opts.Emojis at once; a removing
+// call sends an empty reaction list, which clears the message's reactions.
+func (w *Wrapper) SendReaction(ctx context.Context, peer InputPeer, msgID int, opts ReactionOpts) error {
 	var reactions []tg.ReactionClass
-	if !remove {
-		reactions = []tg.ReactionClass{&tg.ReactionEmoji{Emoticon: emoji}}
+
+	if !opts.Remove {
+		reactions = make([]tg.ReactionClass, 0, len(opts.Emojis))
+
+		for _, emoji := range opts.Emojis {
+			reaction, err := parseReaction(emoji)
+			if err != nil {
+				return err
+			}
+
+			reactions = append(reactions, reaction)
+		}
 	}
 
 	_, err := w.api.MessagesSendReaction(ctx, &tg.MessagesSendReactionRequest{
 		Peer:     InputPeerToTG(peer),
 		MsgID:    msgID,
 		Reaction: reactions,
+		Big:      opts.Big,
 	})
 
 	return errors.Wrap(err, "sending reaction")
+}
+
+// ValidateReactionString reports whether s is a well-formed reaction: a
+// standard unicode emoji or a "custom:<document_id>" with a numeric id.
+// Callers use it to reject malformed input before issuing the send RPC.
+func ValidateReactionString(s string) error {
+	_, err := parseReaction(s)
+
+	return err
+}
+
+// parseReaction turns a reaction string into the matching tg.ReactionClass.
+// A "custom:<document_id>" string maps to a premium custom-emoji reaction;
+// anything else is treated as a standard unicode emoji.
+func parseReaction(emoji string) (tg.ReactionClass, error) {
+	if rest, ok := strings.CutPrefix(emoji, ReactionCustomPrefix); ok {
+		id, err := strconv.ParseInt(rest, 10, 64)
+		if err != nil {
+			return nil, errors.Wrapf(err, "parsing custom emoji document id %q", rest)
+		}
+
+		return &tg.ReactionCustomEmoji{DocumentID: id}, nil
+	}
+
+	return &tg.ReactionEmoji{Emoticon: emoji}, nil
 }
 
 // MarkRead marks messages as read up to maxID.

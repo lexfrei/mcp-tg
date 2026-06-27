@@ -53,7 +53,7 @@ func (NoopClient) PinMessage(_ context.Context, _ telegram.InputPeer, _ int, _ b
 	return nil
 }
 
-func (NoopClient) SendReaction(_ context.Context, _ telegram.InputPeer, _ int, _ string, _ bool) error {
+func (NoopClient) SendReaction(_ context.Context, _ telegram.InputPeer, _ int, _ telegram.ReactionOpts) error {
 	return nil
 }
 

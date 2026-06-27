@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"mime"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -1313,7 +1314,7 @@ func reactionEmoji(reaction tg.ReactionClass) string {
 	case *tg.ReactionEmoji:
 		return typed.Emoticon
 	case *tg.ReactionCustomEmoji:
-		return fmt.Sprintf("custom:%d", typed.DocumentID)
+		return ReactionCustomPrefix + strconv.FormatInt(typed.DocumentID, 10)
 	default:
 		return ""
 	}

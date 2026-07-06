@@ -300,6 +300,20 @@ Point each client at the running daemon over HTTP instead of spawning its own pr
 claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 ```
 
+### Recovery — revoked session
+
+Telegram can invalidate a session's auth key server-side at any time — a session terminated from Settings → Devices, a password change, or another account security event. This is not something the server triggers, and it can happen mid-run on a long-lived daemon. Afterwards every Telegram API call answers `AUTH_KEY_UNREGISTERED` (or a sibling: `SESSION_REVOKED`, `AUTH_KEY_INVALID`, …).
+
+When this happens the server logs one `ERROR` line — `Telegram session revoked — re-login required in stdio mode` — instead of a stream of raw 401s, and every subsequent tool call fails fast with an explicit "session is no longer authorized" error rather than an opaque per-tool `AUTH_KEY_UNREGISTERED`. Read-only server-meta tools (`tg_server_version`) still answer, so a client can confirm the daemon itself is alive. A daemon started with a revoked or missing session exits with an authentication error.
+
+A headless daemon cannot re-authenticate on its own (it has no client session to elicit a login code through). To recover:
+
+1. Stop the daemon.
+2. Log in again in stdio mode to refresh `TELEGRAM_SESSION_FILE` (same flow as the first run — the client prompts for the code, and 2FA password if set).
+3. Start the daemon again; it reuses the refreshed session file.
+
+MTProto connection, migration, and auth-key lifecycle events are logged, so if a revocation recurs the daemon log carries the surrounding context.
+
 ## Usage
 
 ### With Claude Code (stdio via Docker)

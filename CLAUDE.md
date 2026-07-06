@@ -18,6 +18,7 @@ golangci-lint run
 cmd/mcp-tg/main.go          Entry point: telegram client → MCP server → transports
 cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td
+cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 internal/config/             Env var loading and validation
 internal/telegram/           Telegram abstraction layer
   types.go                   Domain types (Message, User, Dialog, etc.)
@@ -44,7 +45,7 @@ internal/tools/              MCP tool handlers (75 tools)
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
 internal/completions/        Argument autocompletion
-internal/middleware/         Auth guard, request logging, and bool-coercion middleware
+internal/middleware/         Auth guard, session guard (revoked-session fast-fail) + SessionHealth state, request logging, bool-coercion
 internal/testutil/           NoopClient for registration tests
 ```
 

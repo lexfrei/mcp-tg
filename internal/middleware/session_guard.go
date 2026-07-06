@@ -14,7 +14,7 @@ import (
 // raw MTProto 401 from every tool.
 var ErrSessionRevoked = errors.New(
 	"Telegram session is no longer authorized (auth key revoked) — " +
-		"the daemon must be re-logged-in in stdio mode; see README → Recovery",
+		"re-login with `mcp-tg login`; see README → Recovery",
 )
 
 // NewSessionGuard returns a middleware that fast-fails tool/resource/prompt

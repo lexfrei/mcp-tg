@@ -15,7 +15,8 @@ golangci-lint run
 ## Architecture
 
 ```text
-cmd/mcp-tg/main.go          Entry point: telegram client → MCP server → transports
+cmd/mcp-tg/main.go          Entry point: `login` subcommand dispatch, else telegram client → MCP server → transports
+cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes session file), credential-safe, no MCP surface
 cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td

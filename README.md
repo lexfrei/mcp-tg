@@ -270,6 +270,30 @@ Authentication uses a cascade: environment variable, then MCP elicitation (the c
 
 **Subsequent runs:** session file is loaded automatically, no auth needed.
 
+### Logging in
+
+The recommended way to create or refresh the session file is the `login` subcommand. It runs an interactive terminal login: the phone, the code, and the 2FA password are read straight from the TTY and never touch MCP, elicitation, a tool call, or any transcript. It writes `TELEGRAM_SESSION_FILE` and exits, and the server (any transport) then reuses that file.
+
+Native binary:
+
+```bash
+export TELEGRAM_APP_ID=12345
+export TELEGRAM_APP_HASH=your_app_hash
+./mcp-tg login
+```
+
+Container — note `-it` (an interactive TTY), unlike the `-i` used to run the server:
+
+```bash
+docker run --rm -it \
+  -e TELEGRAM_APP_ID=12345 \
+  -e TELEGRAM_APP_HASH=your_app_hash \
+  -v ~/.mcp-tg:/home/nobody/.mcp-tg \
+  ghcr.io/lexfrei/mcp-tg:latest login
+```
+
+The login code is delivered by Telegram at runtime, so login is inherently interactive: it needs a real terminal and refuses to run on piped stdin (`docker run` without `-t`). The server's own env → MCP-elicitation cascade still works for a stdio server that prompts through its connected client, but `mcp-tg login` is the only path that works for the headless HTTP daemon.
+
 **Session persistence in containers:** mount a volume for the session file:
 
 ```bash
@@ -284,7 +308,7 @@ To serve many MCP clients from a single process and a single Telegram connection
 
 Because all clients share that one MTProto connection, they also share its throughput: requests serialize through a single connection, and a FLOOD_WAIT triggered by one client's burst pauses the auto-retry for everyone until the server-specified delay elapses. The shared daemon trades per-client isolation for one connection and one session writer — a good trade for many lightly-used clients, less so for a few high-volume ones.
 
-Because a headless daemon has no client session to prompt through, it cannot complete an interactive login. Log in once in the normal (stdio) mode to create the session file, then start the daemon; it reuses that file. If the session is missing or expired, the daemon exits with an authentication error instead of hanging.
+Because a headless daemon has no client session to prompt through, it cannot complete an interactive login. Log in once with `mcp-tg login` to create the session file, then start the daemon; it reuses that file. If the session is missing or expired, the daemon exits with an authentication error instead of hanging.
 
 ```bash
 export TELEGRAM_APP_ID=12345
@@ -304,12 +328,12 @@ claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 
 Telegram can invalidate a session's auth key server-side at any time — a session terminated from Settings → Devices, a password change, or another account security event. This is not something the server triggers, and it can happen mid-run on a long-lived daemon. Afterwards every Telegram API call answers `AUTH_KEY_UNREGISTERED` (or a sibling: `SESSION_REVOKED`, `AUTH_KEY_INVALID`, …).
 
-When this happens the server logs one `ERROR` line — `Telegram session revoked — re-login required in stdio mode` — instead of a stream of raw 401s, and every subsequent tool call fails fast with an explicit "session is no longer authorized" error rather than an opaque per-tool `AUTH_KEY_UNREGISTERED`. Read-only server-meta tools (`tg_server_version`) still answer, so a client can confirm the daemon itself is alive. A daemon started with a revoked or missing session exits with an authentication error.
+When this happens the server logs one `ERROR` line — `Telegram session revoked — re-login required (run: mcp-tg login)` — instead of a stream of raw 401s, and every subsequent tool call fails fast with an explicit "session is no longer authorized" error rather than an opaque per-tool `AUTH_KEY_UNREGISTERED`. Read-only server-meta tools (`tg_server_version`) still answer, so a client can confirm the daemon itself is alive. A daemon started with a revoked or missing session exits with an authentication error.
 
 A headless daemon cannot re-authenticate on its own (it has no client session to elicit a login code through). To recover:
 
 1. Stop the daemon.
-2. Log in again in stdio mode to refresh `TELEGRAM_SESSION_FILE` (same flow as the first run — the client prompts for the code, and 2FA password if set).
+2. Run `mcp-tg login` to refresh `TELEGRAM_SESSION_FILE` (interactive terminal — it prompts for the phone, the code, and the 2FA password if set).
 3. Start the daemon again; it reuses the refreshed session file.
 
 MTProto connection, migration, and auth-key lifecycle events are logged, so if a revocation recurs the daemon log carries the surrounding context.

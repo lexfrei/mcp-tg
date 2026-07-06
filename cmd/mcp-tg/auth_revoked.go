@@ -45,7 +45,7 @@ func newAuthRevokedMiddleware(health *middleware.SessionHealth, logger *slog.Log
 			}
 
 			if code, ok := revokedCode(err); ok && health.MarkRevoked(code) {
-				logger.Error("Telegram session revoked — re-login required in stdio mode", "code", code)
+				logger.Error("Telegram session revoked — re-login required (run: mcp-tg login)", "code", code)
 			}
 
 			return err //nolint:wrapcheck // pass-through: middleware must return the original API error.

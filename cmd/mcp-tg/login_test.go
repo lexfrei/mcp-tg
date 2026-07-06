@@ -1,0 +1,93 @@
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"strings"
+	"testing"
+
+	"github.com/cockroachdb/errors"
+)
+
+func TestLoginRequested(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"no args", []string{"mcp-tg"}, false},
+		{"login subcommand", []string{"mcp-tg", "login"}, true},
+		{"login with extra", []string{"mcp-tg", "login", "--verbose"}, true},
+		{"other subcommand", []string{"mcp-tg", "serve"}, false},
+		{"empty", []string{}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := loginRequested(tc.args); got != tc.want {
+				t.Errorf("loginRequested(%v) = %v, want %v", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
+func newTestAuthenticator(input, password string) *ttyAuthenticator {
+	return &ttyAuthenticator{
+		in:       bufio.NewReader(strings.NewReader(input)),
+		out:      &bytes.Buffer{},
+		readPass: func() (string, error) { return password, nil },
+	}
+}
+
+func TestTTYAuthenticator_PhoneAndCodeReadTrimmedLines(t *testing.T) {
+	aut := newTestAuthenticator("  +12025550123 \n  54321 \n", "")
+
+	phone, err := aut.Phone(t.Context())
+	if err != nil {
+		t.Fatalf("Phone: %v", err)
+	}
+
+	if phone != "+12025550123" {
+		t.Errorf("Phone = %q, want %q", phone, "+12025550123")
+	}
+
+	code, err := aut.Code(t.Context(), nil)
+	if err != nil {
+		t.Fatalf("Code: %v", err)
+	}
+
+	if code != "54321" {
+		t.Errorf("Code = %q, want %q", code, "54321")
+	}
+}
+
+func TestTTYAuthenticator_PasswordUsesHiddenReaderAndTrims(t *testing.T) {
+	aut := newTestAuthenticator("", "  s3cret \n")
+
+	pwd, err := aut.Password(t.Context())
+	if err != nil {
+		t.Fatalf("Password: %v", err)
+	}
+
+	if pwd != "s3cret" {
+		t.Errorf("Password = %q, want %q", pwd, "s3cret")
+	}
+}
+
+func TestTTYAuthenticator_SignUpUnsupported(t *testing.T) {
+	aut := newTestAuthenticator("", "")
+
+	_, err := aut.SignUp(t.Context())
+	if err == nil {
+		t.Error("SignUp should be unsupported (existing accounts only)")
+	}
+}
+
+func TestRunLogin_RequiresTTY(t *testing.T) {
+	// go test runs with stdin detached from any terminal, so runLogin must
+	// bail out before touching config or the network.
+	err := runLogin()
+	if !errors.Is(err, errNotATTY) {
+		t.Errorf("runLogin without a TTY = %v, want errNotATTY", err)
+	}
+}

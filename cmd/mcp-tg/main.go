@@ -46,6 +46,15 @@ var (
 )
 
 func main() {
+	if loginRequested(os.Args) {
+		if loginErr := runLogin(); loginErr != nil {
+			log.Printf("login error: %v", loginErr)
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	err := run()
 	if err != nil {
 		log.Printf("server error: %v", err)

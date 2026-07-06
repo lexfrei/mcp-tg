@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -69,7 +70,7 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 	authDone := make(chan struct{})
 	close(authDone) // simulate completed auth so the guard lets calls through
 
-	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone)
+	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth())
 
 	for i := range 2 {
 		ct, st := mcp.NewInMemoryTransports()
@@ -96,6 +97,56 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 		_ = cs.Close()
 		ss.Wait()
 	}
+}
+
+// TestHeadlessServer_RevokedSessionBlocksToolsOverMCP drives the full receiving
+// middleware chain through the real mcp.Server over the in-memory transport.
+// With the session marked revoked, a Telegram-touching tool call must come back
+// as the explicit "no longer authorized" error rather than a raw 401, while the
+// allowlisted server-meta tool (tg_server_version) still answers so a client can
+// confirm the daemon is alive.
+func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
+	ctx := context.Background()
+
+	authDone := make(chan struct{})
+	close(authDone) // auth completed
+
+	health := middleware.NewSessionHealth()
+	health.Arm()
+	health.MarkRevoked("AUTH_KEY_UNREGISTERED")
+
+	server := buildServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, health, nil)
+
+	ct, st := mcp.NewInMemoryTransports()
+
+	ss, connErr := server.Connect(ctx, st, nil)
+	if connErr != nil {
+		t.Fatalf("server connect: %v", connErr)
+	}
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test-client", Version: "0"}, nil)
+
+	cs, clientErr := client.Connect(ctx, ct, nil)
+	if clientErr != nil {
+		t.Fatalf("client connect: %v", clientErr)
+	}
+
+	_, callErr := cs.CallTool(ctx, &mcp.CallToolParams{Name: "tg_dialogs_list"})
+	if callErr == nil || !strings.Contains(callErr.Error(), "no longer authorized") {
+		t.Fatalf("revoked tool call must return the explicit auth error, got: %v", callErr)
+	}
+
+	res, verErr := cs.CallTool(ctx, &mcp.CallToolParams{Name: tools.ServerVersionToolName})
+	if verErr != nil {
+		t.Fatalf("server-version tool must stay reachable when revoked, got: %v", verErr)
+	}
+
+	if res.IsError {
+		t.Fatal("server-version tool returned an error result while revoked")
+	}
+
+	_ = cs.Close()
+	ss.Wait()
 }
 
 func assertToolPresent(t *testing.T, res *mcp.ListToolsResult, name string) {

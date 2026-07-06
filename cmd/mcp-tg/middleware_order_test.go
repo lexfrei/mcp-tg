@@ -8,6 +8,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/tools"
 )
 
@@ -31,7 +32,7 @@ func TestReceivingMiddlewares_LogsAuthGuardRejections(t *testing.T) {
 	authDone := make(chan struct{}) // never closed: auth still pending
 
 	handler := chainMiddlewares(
-		receivingMiddlewares(logger, tools.BoolFieldRegistry{}, authDone),
+		receivingMiddlewares(logger, tools.BoolFieldRegistry{}, authDone, middleware.NewSessionHealth()),
 		func(_ context.Context, _ string, _ mcp.Request) (mcp.Result, error) {
 			return &mcp.CallToolResult{}, nil
 		},

@@ -16,7 +16,6 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/log/logzap"
-	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"go.uber.org/zap"
@@ -78,8 +77,13 @@ func run() error {
 	logger := newLogger()
 	health := mcpmw.NewSessionHealth()
 
+	storage, storageErr := newSessionStorage(cfg, cfg.InsecureStorage)
+	if storageErr != nil {
+		return storageErr
+	}
+
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
-		SessionStorage: &session.FileStorage{Path: cfg.SessionFile},
+		SessionStorage: storage,
 		Logger:         logzap.New(newGotdLogger()),
 		Middlewares: []telegram.Middleware{
 			newFloodWaitMiddleware(),

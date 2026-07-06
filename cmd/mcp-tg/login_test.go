@@ -31,6 +31,39 @@ func TestLoginRequested(t *testing.T) {
 	}
 }
 
+func TestSessionDestination(t *testing.T) {
+	secure := sessionDestination(false, "/home/x/.mcp-tg/session.json")
+	if !strings.Contains(secure, "keychain") || strings.Contains(secure, "file ") {
+		t.Errorf("secure destination = %q, want a keychain description without a file path", secure)
+	}
+
+	insecure := sessionDestination(true, "/home/x/.mcp-tg/session.json")
+	if insecure != "file /home/x/.mcp-tg/session.json" {
+		t.Errorf("insecure destination = %q, want the file path", insecure)
+	}
+}
+
+func TestHasInsecureFlag(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{"absent", []string{"mcp-tg", "login"}, false},
+		{"present", []string{"mcp-tg", "login", "--insecure-storage"}, true},
+		{"present with other flags", []string{"mcp-tg", "login", "-x", "--insecure-storage"}, true},
+		{"lookalike not matched", []string{"mcp-tg", "login", "--insecure"}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := hasInsecureFlag(tc.args); got != tc.want {
+				t.Errorf("hasInsecureFlag(%v) = %v, want %v", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
 func newTestAuthenticator(input, password string) *ttyAuthenticator {
 	return &ttyAuthenticator{
 		in:       bufio.NewReader(strings.NewReader(input)),

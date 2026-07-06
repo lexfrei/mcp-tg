@@ -6,6 +6,7 @@ require (
 	github.com/cockroachdb/errors v1.14.0
 	github.com/gotd/log/logzap v0.1.1
 	github.com/gotd/td v0.159.0
+	github.com/lexfrei/keychain v1.1.1
 	github.com/modelcontextprotocol/go-sdk v1.6.1
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.21.0
@@ -20,6 +21,7 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
+	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect
@@ -27,6 +29,7 @@ require (
 	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-faster/xor v1.0.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect

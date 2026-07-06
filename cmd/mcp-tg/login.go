@@ -7,10 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/gotd/td/session"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
@@ -32,6 +32,13 @@ var errNotATTY = errors.New(
 // loginRequested reports whether the process was invoked as `mcp-tg login`.
 func loginRequested(args []string) bool {
 	return len(args) > 1 && args[1] == loginCommand
+}
+
+const insecureStorageFlag = "--insecure-storage"
+
+// hasInsecureFlag reports whether `--insecure-storage` was passed to `login`.
+func hasInsecureFlag(args []string) bool {
+	return slices.Contains(args, insecureStorageFlag)
 }
 
 // ttyAuthenticator implements auth.UserAuthenticator by reading credentials from
@@ -101,12 +108,20 @@ func runLogin() error {
 		return errors.Wrap(cfgErr, "invalid configuration")
 	}
 
-	mkdirErr := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700)
-	if mkdirErr != nil {
-		return errors.Wrap(mkdirErr, "creating session directory")
+	insecure := cfg.InsecureStorage || hasInsecureFlag(os.Args)
+
+	storage, storageErr := newSessionStorage(cfg, insecure)
+	if storageErr != nil {
+		return storageErr
 	}
 
-	ensureSessionPerms(cfg.SessionFile)
+	if insecure {
+		if mkdirErr := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700); mkdirErr != nil {
+			return errors.Wrap(mkdirErr, "creating session directory")
+		}
+
+		ensureSessionPerms(cfg.SessionFile)
+	}
 
 	authenticator := &ttyAuthenticator{
 		in:  bufio.NewReader(os.Stdin),
@@ -119,7 +134,7 @@ func runLogin() error {
 	}
 
 	client := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
-		SessionStorage: &session.FileStorage{Path: cfg.SessionFile},
+		SessionStorage: storage,
 	})
 
 	return errors.Wrap(client.Run(context.Background(), func(ctx context.Context) error {
@@ -134,10 +149,21 @@ func runLogin() error {
 		}
 
 		fmt.Fprintf(os.Stderr, "Logged in as %s (id %d). Session saved to %s\n",
-			loginDisplayName(self), self.ID, cfg.SessionFile)
+			loginDisplayName(self), self.ID, sessionDestination(insecure, cfg.SessionFile))
 
 		return nil
 	}), "login")
+}
+
+// sessionDestination describes where the session was written, for the login
+// success line. In secure mode the session lives in the OS keychain (the file
+// path is only its lookup key, not a file); in insecure mode it is the file.
+func sessionDestination(insecure bool, sessionFile string) string {
+	if insecure {
+		return "file " + sessionFile
+	}
+
+	return "the OS keychain (service " + keychainService + ")"
 }
 
 func loginDisplayName(self *tg.User) string {

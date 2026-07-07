@@ -1,6 +1,9 @@
 package telegram
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Client defines the Telegram operations used by MCP tools.
 //
@@ -32,6 +35,7 @@ type MessageClient interface {
 	SearchGlobal(ctx context.Context, query string, limit int) ([]Message, error)
 	GetScheduledMessages(ctx context.Context, peer InputPeer) ([]Message, error)
 	GetReactions(ctx context.Context, peer InputPeer, msgID int, limit int) ([]ReactionUser, error)
+	TranscribeAudio(ctx context.Context, peer InputPeer, msgID int, wait time.Duration) (*Transcription, error)
 	SendMessage(ctx context.Context, peer InputPeer, text string, opts SendOpts) (*Message, error)
 	EditMessage(ctx context.Context, peer InputPeer, msgID int, text string, parseMode string) (*Message, error)
 	DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error

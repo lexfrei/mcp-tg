@@ -3,6 +3,7 @@ package testutil
 
 import (
 	"context"
+	"time"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
@@ -59,6 +60,12 @@ func (NoopClient) SendReaction(_ context.Context, _ telegram.InputPeer, _ int, _
 
 func (NoopClient) MarkRead(_ context.Context, _ telegram.InputPeer, _ int) error {
 	return nil
+}
+
+func (NoopClient) TranscribeAudio(
+	_ context.Context, _ telegram.InputPeer, _ int, _ time.Duration,
+) (*telegram.Transcription, error) {
+	return nil, nil
 }
 
 func (NoopClient) SendFile(_ context.Context, _ telegram.InputPeer, _, _ string, _ telegram.SendOpts) (*telegram.Message, error) {

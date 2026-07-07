@@ -90,6 +90,20 @@ var ErrUnknownParseMode = errors.New(
 	"unknown parseMode; allowed: '' (plain), 'commonmark', 'markdown' (alias for commonmark), 'html', 'markdownv2'",
 )
 
+// ErrUnknownMessageType is returned when a messages_list type filter is
+// not one of the message types emitted in MessageItem.type.
+var ErrUnknownMessageType = errors.New(
+	"unknown message type; allowed: text, photo, voice, video_note, video, audio, sticker, animation, document, " +
+		"contact, location, venue, poll, webpage, game, invoice, unsupported",
+)
+
+// ErrInvalidWaitSeconds is returned when a waitSeconds value is outside
+// the supported range for a bounded MCP request.
+var ErrInvalidWaitSeconds = errors.New("waitSeconds must be between 0 and 120")
+
+// ErrEmptyTranscriptionResult is returned when the transcription client returns no result and no error.
+var ErrEmptyTranscriptionResult = errors.New("empty transcription result")
+
 // ErrParseModeNotImplemented is returned when parseMode is a valid value
 // whose implementation is not yet available.
 var ErrParseModeNotImplemented = errors.New(

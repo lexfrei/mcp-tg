@@ -42,7 +42,7 @@ func formatTimestamp(unix int) string {
 //	reply to: <parentId>                              (same-chat reply)
 //	reply to: <parentId> in <Name [@username]>        (cross-chat reply)
 //	quote: «<QuoteText>»
-//	media: <type>
+//	type: <message type>
 //	text:
 //	<msg.Text>
 //
@@ -62,9 +62,7 @@ func formatMessage(msg *telegram.Message) string {
 	writeForwardLine(&buf, msg.Forward)
 	writeReplyLines(&buf, msg.ReplyTo)
 
-	if msg.MediaType != "" {
-		fmt.Fprintf(&buf, "media: %s\n", msg.MediaType)
-	}
+	fmt.Fprintf(&buf, "type: %s\n", messageTypeOrText(msg.Type))
 
 	if msg.Text != "" {
 		buf.WriteString("text:\n")
@@ -72,6 +70,14 @@ func formatMessage(msg *telegram.Message) string {
 	}
 
 	return strings.TrimRight(buf.String(), "\n")
+}
+
+func messageTypeOrText(messageType string) string {
+	if messageType == "" {
+		return telegram.MessageTypeText
+	}
+
+	return messageType
 }
 
 func writeSenderLine(buf *strings.Builder, msg *telegram.Message) {

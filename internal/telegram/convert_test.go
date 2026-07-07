@@ -69,6 +69,10 @@ func TestConvertMessage(t *testing.T) {
 	if got.Date != 1700000000 {
 		t.Errorf("Date = %d, want 1700000000", got.Date)
 	}
+
+	if got.Type != "text" {
+		t.Errorf("Type = %q, want text", got.Type)
+	}
 }
 
 func TestConvertMessage_WithPeerID(t *testing.T) {
@@ -126,29 +130,56 @@ func TestConvertMessage_WithoutTopic(t *testing.T) {
 	}
 }
 
-func TestMessageMediaType(t *testing.T) {
+func TestMessageType(t *testing.T) {
+	voice := &tg.DocumentAttributeAudio{}
+	voice.SetVoice(true)
+	roundVideo := &tg.DocumentAttributeVideo{}
+	roundVideo.SetRoundMessage(true)
+
 	tests := []struct {
-		name  string
-		media tg.MessageMediaClass
-		want  string
+		name string
+		raw  *tg.Message
+		want string
 	}{
-		{name: "photo", media: &tg.MessageMediaPhoto{}, want: "photo"},
-		{name: "document", media: &tg.MessageMediaDocument{}, want: "document"},
-		{name: "geo", media: &tg.MessageMediaGeo{}, want: "geo"},
-		{name: "contact", media: &tg.MessageMediaContact{}, want: "contact"},
-		{name: "venue", media: &tg.MessageMediaVenue{}, want: "venue"},
-		{name: "webpage", media: &tg.MessageMediaWebPage{}, want: "webpage"},
-		{name: "poll", media: &tg.MessageMediaPoll{}, want: "poll"},
-		{name: "nil", media: nil, want: ""},
+		{name: "text", raw: &tg.Message{}, want: "text"},
+		{name: "photo", raw: &tg.Message{Media: &tg.MessageMediaPhoto{}}, want: "photo"},
+		{name: "voice", raw: &tg.Message{Media: documentWithAttributes(voice)}, want: "voice"},
+		{name: "video_note", raw: &tg.Message{Media: documentWithAttributes(roundVideo)}, want: "video_note"},
+		{name: "video", raw: &tg.Message{Media: documentWithAttributes(&tg.DocumentAttributeVideo{})}, want: "video"},
+		{name: "audio", raw: &tg.Message{Media: documentWithAttributes(&tg.DocumentAttributeAudio{})}, want: "audio"},
+		{name: "sticker", raw: &tg.Message{Media: documentWithAttributes(&tg.DocumentAttributeSticker{})}, want: "sticker"},
+		{name: "animation", raw: &tg.Message{Media: documentWithAttributes(&tg.DocumentAttributeAnimated{})}, want: "animation"},
+		{name: "document", raw: &tg.Message{Media: &tg.MessageMediaDocument{}}, want: "document"},
+		{name: "location", raw: &tg.Message{Media: &tg.MessageMediaGeo{}}, want: "location"},
+		{name: "live_location", raw: &tg.Message{Media: &tg.MessageMediaGeoLive{}}, want: "location"},
+		{name: "contact", raw: &tg.Message{Media: &tg.MessageMediaContact{}}, want: "contact"},
+		{name: "venue", raw: &tg.Message{Media: &tg.MessageMediaVenue{}}, want: "venue"},
+		{
+			name: "text_with_webpage_preview",
+			raw:  &tg.Message{Message: "https://example.com", Media: &tg.MessageMediaWebPage{}},
+			want: "text",
+		},
+		{name: "webpage", raw: &tg.Message{Media: &tg.MessageMediaWebPage{}}, want: "webpage"},
+		{name: "poll", raw: &tg.Message{Media: &tg.MessageMediaPoll{}}, want: "poll"},
+		{name: "game", raw: &tg.Message{Media: &tg.MessageMediaGame{}}, want: "game"},
+		{name: "invoice", raw: &tg.Message{Media: &tg.MessageMediaInvoice{}}, want: "invoice"},
+		{name: "unsupported", raw: &tg.Message{Media: &tg.MessageMediaUnsupported{}}, want: "unsupported"},
+		{name: "nil", raw: nil, want: ""},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := MessageMediaType(tt.media)
+			got := MessageType(tt.raw)
 			if got != tt.want {
-				t.Errorf("MessageMediaType() = %q, want %q", got, tt.want)
+				t.Errorf("MessageType() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func documentWithAttributes(attrs ...tg.DocumentAttributeClass) *tg.MessageMediaDocument {
+	return &tg.MessageMediaDocument{
+		Document: &tg.Document{Attributes: attrs},
 	}
 }
 

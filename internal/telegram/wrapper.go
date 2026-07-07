@@ -35,13 +35,14 @@ type cachedServerConfig struct {
 
 // Wrapper implements Client using gotd/td.
 type Wrapper struct {
-	api      *tg.Client
-	up       *uploader.Uploader
-	down     *downloader.Downloader
-	cache    *PeerCache
-	warmedAt atomic.Int64
-	cfg      atomic.Pointer[cachedServerConfig]
-	cfgSF    singleflight.Group
+	api            *tg.Client
+	up             *uploader.Uploader
+	down           *downloader.Downloader
+	cache          *PeerCache
+	transcriptions *TranscriptionBroker
+	warmedAt       atomic.Int64
+	cfg            atomic.Pointer[cachedServerConfig]
+	cfgSF          singleflight.Group
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -74,11 +75,22 @@ func cryptoRandIDs(count int) ([]int64, error) {
 
 // NewWrapper creates a new Wrapper around gotd/td client primitives.
 func NewWrapper(api *tg.Client) *Wrapper {
+	return NewWrapperWithTranscriptionBroker(api, NewTranscriptionBroker())
+}
+
+// NewWrapperWithTranscriptionBroker creates a Wrapper sharing the same
+// transcription broker as the gotd update dispatcher.
+func NewWrapperWithTranscriptionBroker(api *tg.Client, broker *TranscriptionBroker) *Wrapper {
+	if broker == nil {
+		broker = NewTranscriptionBroker()
+	}
+
 	return &Wrapper{
-		api:   api,
-		up:    uploader.NewUploader(api),
-		down:  downloader.NewDownloader(),
-		cache: NewPeerCache(),
+		api:            api,
+		up:             uploader.NewUploader(api),
+		down:           downloader.NewDownloader(),
+		cache:          NewPeerCache(),
+		transcriptions: broker,
 	}
 }
 

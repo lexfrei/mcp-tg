@@ -51,13 +51,34 @@ type Message struct {
 	TopicID      int          `json:"topicId,omitempty"`
 	Date         int          `json:"date"`
 	Text         string       `json:"text"`
-	MediaType    string       `json:"mediaType,omitempty"`
+	Type         string       `json:"type"`
 	ReplyTo      *ReplyToInfo `json:"replyTo,omitempty"`
 	Forward      *ForwardInfo `json:"forward,omitempty"`
 	Entities     []Entity     `json:"entities,omitempty"`
 	Views        int          `json:"views,omitempty"`
 	Forwards     int          `json:"forwards,omitempty"`
 	EditDate     int          `json:"editDate,omitempty"`
+}
+
+// Transcription status values returned by Telegram audio transcription tools.
+const (
+	TranscriptionStatusCompleted        = "completed"
+	TranscriptionStatusPending          = "pending"
+	TranscriptionStatusPremiumRequired  = "premium_required"
+	TranscriptionStatusNotTranscribable = "not_transcribable"
+	TranscriptionStatusFailed           = "failed"
+)
+
+// Transcription represents Telegram's audio transcription state.
+type Transcription struct {
+	Status                string `json:"status"`
+	MessageID             int    `json:"messageId"`
+	Type                  string `json:"type,omitempty"`
+	Pending               bool   `json:"pending,omitempty"`
+	TranscriptionID       int64  `json:"transcriptionId,omitempty"`
+	Text                  string `json:"text,omitempty"`
+	TrialRemainsNum       int    `json:"trialRemainsNum,omitempty"`
+	TrialRemainsUntilDate int    `json:"trialRemainsUntilDate,omitempty"`
 }
 
 // ReplyToInfo captures Telegram MessageReplyHeader fields relevant for

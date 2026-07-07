@@ -1208,6 +1208,73 @@ func TestMessagesListHandler_WithTopicID(t *testing.T) {
 	}
 }
 
+func TestMessagesListHandler_TypeFilterPaginatesUntilLimit(t *testing.T) {
+	limit := 2
+	mock := &mockClient{
+		getHistoryFn: func(_ telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error) {
+			switch opts.OffsetID {
+			case 0:
+				return []telegram.Message{
+					{ID: 100, Date: 1000, Text: "plain", Type: "text"},
+					{ID: 99, Date: 999, Text: "caption", Type: "photo"},
+				}, 4, nil
+			case 99:
+				return []telegram.Message{
+					{ID: 98, Date: 998, Type: "voice"},
+					{ID: 97, Date: 997, Type: "voice"},
+				}, 4, nil
+			default:
+				return nil, 4, nil
+			}
+		},
+	}
+	handler := NewMessagesListHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesListParams{
+		Peer:  "@chat",
+		Limit: &limit,
+		Type:  "voice",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Count != 2 {
+		t.Fatalf("Count = %d, want 2", res.Count)
+	}
+
+	for _, msg := range res.Messages {
+		if msg.Type != "voice" {
+			t.Errorf("returned message type = %q, want voice", msg.Type)
+		}
+	}
+
+	if mock.getHistoryCalls != 2 {
+		t.Fatalf("GetHistory calls = %d, want 2", mock.getHistoryCalls)
+	}
+
+	if got := mock.getHistoryOpts[1].OffsetID; got != 99 {
+		t.Errorf("second page OffsetID = %d, want 99", got)
+	}
+}
+
+func TestMessagesListHandler_RejectsUnknownTypeFilter(t *testing.T) {
+	mock := &mockClient{peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1}}
+	handler := NewMessagesListHandler(mock)
+
+	result, _, err := handler(context.Background(), nil, MessagesListParams{
+		Peer: "@chat",
+		Type: "unknown_kind",
+	})
+	if err == nil {
+		t.Fatal("expected validation error for unknown type")
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}
+
 func TestMessagesListHandler_EmptyPeer(t *testing.T) {
 	mock := &mockClient{}
 	handler := NewMessagesListHandler(mock)

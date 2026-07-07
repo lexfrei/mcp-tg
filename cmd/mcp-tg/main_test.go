@@ -92,6 +92,7 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 		}
 
 		assertToolPresent(t, res, tools.ServerVersionToolName)
+		assertToolPresent(t, res, tools.MessagesTranscribeAudioTool().Name)
 
 		_ = cs.Close()
 		ss.Wait()

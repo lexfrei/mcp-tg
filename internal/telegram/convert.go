@@ -1,6 +1,10 @@
 package telegram
 
-import "github.com/gotd/td/tg"
+import (
+	"slices"
+
+	"github.com/gotd/td/tg"
+)
 
 // ConvertUser converts a tg.User to our domain User.
 func ConvertUser(raw *tg.User) User {
@@ -25,13 +29,13 @@ func ConvertMessage(raw *tg.Message) Message {
 	}
 
 	msg := Message{
-		ID:        raw.ID,
-		Date:      raw.Date,
-		Text:      raw.Message,
-		Views:     raw.Views,
-		Forwards:  raw.Forwards,
-		EditDate:  raw.EditDate,
-		MediaType: MessageMediaType(raw.Media),
+		ID:       raw.ID,
+		Date:     raw.Date,
+		Text:     raw.Message,
+		Type:     MessageType(raw),
+		Views:    raw.Views,
+		Forwards: raw.Forwards,
+		EditDate: raw.EditDate,
 	}
 
 	msg.PeerID = extractPeerID(raw.PeerID)
@@ -220,42 +224,186 @@ func extractTopicID(reply tg.MessageReplyHeaderClass) int {
 	return 0
 }
 
-// Media type labels returned by MessageMediaType. Exported because tests
-// reference the same string constants.
+// Message type labels returned by MessageType. Exported because tests
+// and tools share the same stable API values.
 const (
-	MediaTypePhoto    = "photo"
-	MediaTypeDocument = "document"
-	MediaTypeGeo      = "geo"
-	MediaTypeContact  = "contact"
-	MediaTypeVenue    = "venue"
-	MediaTypeWebpage  = "webpage"
-	MediaTypePoll     = "poll"
-	MediaTypeOther    = "other"
+	MessageTypeText        = "text"
+	MessageTypePhoto       = "photo"
+	MessageTypeVoice       = "voice"
+	MessageTypeVideoNote   = "video_note"
+	MessageTypeVideo       = "video"
+	MessageTypeAudio       = "audio"
+	MessageTypeSticker     = "sticker"
+	MessageTypeAnimation   = "animation"
+	MessageTypeDocument    = "document"
+	MessageTypeContact     = "contact"
+	MessageTypeLocation    = "location"
+	MessageTypeVenue       = "venue"
+	MessageTypePoll        = "poll"
+	MessageTypeWebpage     = "webpage"
+	MessageTypeGame        = "game"
+	MessageTypeInvoice     = "invoice"
+	MessageTypeUnsupported = "unsupported"
 )
 
-// MessageMediaType returns a string label for a message media type.
-func MessageMediaType(media tg.MessageMediaClass) string {
-	if media == nil {
+func messageTypes() []string {
+	return []string{
+		MessageTypeText,
+		MessageTypePhoto,
+		MessageTypeVoice,
+		MessageTypeVideoNote,
+		MessageTypeVideo,
+		MessageTypeAudio,
+		MessageTypeSticker,
+		MessageTypeAnimation,
+		MessageTypeDocument,
+		MessageTypeContact,
+		MessageTypeLocation,
+		MessageTypeVenue,
+		MessageTypePoll,
+		MessageTypeWebpage,
+		MessageTypeGame,
+		MessageTypeInvoice,
+		MessageTypeUnsupported,
+	}
+}
+
+// IsMessageType reports whether messageType is one of the public type
+// labels emitted by MessageType.
+func IsMessageType(messageType string) bool {
+	return slices.Contains(messageTypes(), messageType)
+}
+
+// MessageType returns a stable, machine-readable type label for a
+// Telegram message. It does not download media; document-like messages
+// are classified from MTProto document attributes.
+func MessageType(raw *tg.Message) string {
+	if raw == nil {
 		return ""
 	}
 
+	if raw.Message != "" && isWebpagePreview(raw.Media) {
+		return MessageTypeText
+	}
+
+	return MessagePayloadType(raw.Media)
+}
+
+// MessagePayloadType returns a stable type label for a message media
+// payload. A nil media payload is still a regular text message.
+func MessagePayloadType(media tg.MessageMediaClass) string {
+	if media == nil {
+		return MessageTypeText
+	}
+
+	if typed, ok := media.(*tg.MessageMediaDocument); ok {
+		return documentMessageType(typed)
+	}
+
+	if messageType, ok := simpleMediaMessageType(media); ok {
+		return messageType
+	}
+
+	return MessageTypeUnsupported
+}
+
+func isWebpagePreview(media tg.MessageMediaClass) bool {
+	_, ok := media.(*tg.MessageMediaWebPage)
+
+	return ok
+}
+
+func simpleMediaMessageType(media tg.MessageMediaClass) (string, bool) {
 	switch media.(type) {
 	case *tg.MessageMediaPhoto:
-		return MediaTypePhoto
-	case *tg.MessageMediaDocument:
-		return MediaTypeDocument
-	case *tg.MessageMediaGeo:
-		return MediaTypeGeo
+		return MessageTypePhoto, true
+	case *tg.MessageMediaGeo, *tg.MessageMediaGeoLive:
+		return MessageTypeLocation, true
 	case *tg.MessageMediaContact:
-		return MediaTypeContact
+		return MessageTypeContact, true
 	case *tg.MessageMediaVenue:
-		return MediaTypeVenue
+		return MessageTypeVenue, true
 	case *tg.MessageMediaWebPage:
-		return MediaTypeWebpage
+		return MessageTypeWebpage, true
 	case *tg.MessageMediaPoll:
-		return MediaTypePoll
+		return MessageTypePoll, true
+	case *tg.MessageMediaGame:
+		return MessageTypeGame, true
+	case *tg.MessageMediaInvoice:
+		return MessageTypeInvoice, true
 	default:
-		return MediaTypeOther
+		return "", false
+	}
+}
+
+func documentMessageType(media *tg.MessageMediaDocument) string {
+	if media == nil {
+		return MessageTypeDocument
+	}
+
+	doc, ok := media.Document.(*tg.Document)
+	if !ok {
+		return MessageTypeDocument
+	}
+
+	return documentAttributesType(doc.Attributes)
+}
+
+func documentAttributesType(attrs []tg.DocumentAttributeClass) string {
+	var flags documentAttributeFlags
+
+	for _, attr := range attrs {
+		messageType, terminal := classifyDocumentAttribute(attr, &flags)
+		if terminal {
+			return messageType
+		}
+	}
+
+	return documentAttributeFlagsType(flags)
+}
+
+type documentAttributeFlags struct {
+	sawAudio    bool
+	sawVideo    bool
+	sawAnimated bool
+}
+
+func classifyDocumentAttribute(
+	attr tg.DocumentAttributeClass,
+	flags *documentAttributeFlags,
+) (string, bool) {
+	switch typed := attr.(type) {
+	case *tg.DocumentAttributeSticker:
+		return MessageTypeSticker, true
+	case *tg.DocumentAttributeAudio:
+		if typed.GetVoice() {
+			return MessageTypeVoice, true
+		}
+
+		flags.sawAudio = true
+	case *tg.DocumentAttributeVideo:
+		if typed.GetRoundMessage() {
+			return MessageTypeVideoNote, true
+		}
+
+		flags.sawVideo = true
+	case *tg.DocumentAttributeAnimated:
+		flags.sawAnimated = true
+	}
+
+	return "", false
+}
+
+func documentAttributeFlagsType(flags documentAttributeFlags) string {
+	switch {
+	case flags.sawAnimated:
+		return MessageTypeAnimation
+	case flags.sawVideo:
+		return MessageTypeVideo
+	case flags.sawAudio:
+		return MessageTypeAudio
+	default:
+		return MessageTypeDocument
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 
 	"github.com/cockroachdb/errors"
@@ -72,24 +73,50 @@ func newKeychainStorage(store secretStore, service, account string) (session.Sto
 	return &keychainStorage{store: store, service: service, account: account}, nil
 }
 
-// freshLoginStorage forces `mcp-tg login` to authenticate from scratch: its
+// freshLoginStorage makes `mcp-tg login` authenticate from scratch while
+// protecting any existing working session from a failed attempt.
+//
 // LoadSession always reports no session, so gotd's auth flow runs in full and
-// never reuses a stale or revoked key. That matters because some revoked states
-// (notably AUTH_KEY_DUPLICATED) break a connection that tries to reuse the key,
-// which would fail the login before it could prompt. StoreSession still writes
-// the freshly minted session through to the real backend.
+// never reuses a stale or revoked key — some revoked states (notably
+// AUTH_KEY_DUPLICATED) break a connection that reuses the key and would fail the
+// login before it could prompt.
+//
+// StoreSession does NOT write through. gotd persists the freshly minted MTProto
+// auth key as soon as the connection handshake completes — before the
+// interactive code/2FA step — so writing it straight to the backend would
+// replace the previous, still-authorized session with an unauthorized key the
+// moment login is attempted; a wrong code or an abort would then leave the user
+// logged out. Instead the session is staged in memory and only flushed by
+// Commit, which the caller invokes after Auth().IfNecessary succeeds.
 type freshLoginStorage struct {
-	dst session.Storage
+	dst    session.Storage
+	staged []byte
+	dirty  bool
 }
 
-var _ session.Storage = freshLoginStorage{}
+var _ session.Storage = (*freshLoginStorage)(nil)
 
-func (freshLoginStorage) LoadSession(context.Context) ([]byte, error) {
+func (*freshLoginStorage) LoadSession(context.Context) ([]byte, error) {
 	return nil, session.ErrNotFound
 }
 
-func (f freshLoginStorage) StoreSession(ctx context.Context, data []byte) error {
-	return errors.Wrap(f.dst.StoreSession(ctx, data), "store fresh session")
+func (f *freshLoginStorage) StoreSession(_ context.Context, data []byte) error {
+	// Keep the latest bytes only; the real backend is untouched until Commit.
+	f.staged = bytes.Clone(data)
+	f.dirty = true
+
+	return nil
+}
+
+// Commit flushes the staged session to the real backend. The caller must invoke
+// it only after authentication has succeeded, so that a failed or aborted login
+// leaves the previous session intact. It is a no-op if nothing was staged.
+func (f *freshLoginStorage) Commit(ctx context.Context) error {
+	if !f.dirty {
+		return nil
+	}
+
+	return errors.Wrap(f.dst.StoreSession(ctx, f.staged), "store fresh session")
 }
 
 // newSessionStorage picks the session backend: the OS keychain by default, or a

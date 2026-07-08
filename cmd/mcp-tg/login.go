@@ -117,9 +117,11 @@ func runLogin() error {
 		return storageErr
 	}
 
-	// Always log in from scratch: never reuse a stale or revoked key (a
-	// AUTH_KEY_DUPLICATED key can fail the connection before we could prompt).
-	storage = freshLoginStorage{dst: storage}
+	// Always log in from scratch, and stage the new session so a failed attempt
+	// cannot overwrite the previous working one: never reuse a stale or revoked
+	// key (a AUTH_KEY_DUPLICATED key can fail the connection before we prompt),
+	// and only persist once authentication has succeeded (see freshLoginStorage).
+	staged := &freshLoginStorage{dst: storage}
 
 	if dirErr := ensureFileStorageDir(cfg, insecure); dirErr != nil {
 		return dirErr
@@ -136,7 +138,7 @@ func runLogin() error {
 	}
 
 	client := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
-		SessionStorage: storage,
+		SessionStorage: staged,
 		Device:         mcpDevice(),
 	})
 
@@ -144,6 +146,12 @@ func runLogin() error {
 		flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
 		if authErr := client.Auth().IfNecessary(ctx, flow); authErr != nil {
 			return errors.Wrap(authErr, "authentication failed")
+		}
+
+		// Authentication succeeded — now it is safe to replace any previous
+		// session. A failed login returns above, leaving the old session intact.
+		if commitErr := staged.Commit(ctx); commitErr != nil {
+			return commitErr
 		}
 
 		self, selfErr := client.Self(ctx)

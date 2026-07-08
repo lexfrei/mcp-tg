@@ -70,29 +70,71 @@ func TestKeychainStorage_EmptyReturnsSessionErrNotFound(t *testing.T) {
 	}
 }
 
-func TestFreshLoginStorage_AlwaysFreshButStoresThrough(t *testing.T) {
+func TestFreshLoginStorage_StagesUntilCommit(t *testing.T) {
 	backing := newFakeStore()
-	backing.data["svc/acct"] = []byte("old-revoked-session")
+	backing.data["svc/acct"] = []byte("old-working-session")
 
 	inner, err := newKeychainStorage(backing, "svc", "acct")
 	if err != nil {
 		t.Fatalf("newKeychainStorage: %v", err)
 	}
 
-	fresh := freshLoginStorage{dst: inner}
+	fresh := &freshLoginStorage{dst: inner}
 
-	// A full login must run even though a (possibly revoked) session exists.
+	// A full login must run even though a session exists.
 	if _, loadErr := fresh.LoadSession(t.Context()); !errors.Is(loadErr, session.ErrNotFound) {
 		t.Errorf("LoadSession = %v, want session.ErrNotFound (always fresh)", loadErr)
 	}
 
-	// The freshly minted session must be written through to the real backend.
+	// gotd persists the new key mid-login (before auth completes); that must NOT
+	// touch the backend yet, or a failed login would clobber the old session.
 	if storeErr := fresh.StoreSession(t.Context(), []byte("new-session")); storeErr != nil {
 		t.Fatalf("StoreSession: %v", storeErr)
 	}
 
+	if got := string(backing.data["svc/acct"]); got != "old-working-session" {
+		t.Errorf("backend overwritten before commit: %q", got)
+	}
+
+	// Commit (only after successful auth) flushes the staged session through.
+	if commitErr := fresh.Commit(t.Context()); commitErr != nil {
+		t.Fatalf("Commit: %v", commitErr)
+	}
+
 	if got := string(backing.data["svc/acct"]); got != "new-session" {
-		t.Errorf("backing store has %q, want the new session written through", got)
+		t.Errorf("backend after commit = %q, want the new session", got)
+	}
+}
+
+func TestFreshLoginStorage_FailedLoginKeepsOldSession(t *testing.T) {
+	backing := newFakeStore()
+	backing.data["svc/acct"] = []byte("old-working-session")
+
+	inner, err := newKeychainStorage(backing, "svc", "acct")
+	if err != nil {
+		t.Fatalf("newKeychainStorage: %v", err)
+	}
+
+	fresh := &freshLoginStorage{dst: inner}
+
+	// A failed login: gotd stages a new unauthorized key, but auth fails so the
+	// caller never calls Commit. The previous working session must survive.
+	if storeErr := fresh.StoreSession(t.Context(), []byte("unauthorized-key")); storeErr != nil {
+		t.Fatalf("StoreSession: %v", storeErr)
+	}
+
+	if got := string(backing.data["svc/acct"]); got != "old-working-session" {
+		t.Errorf("failed login clobbered the session: %q", got)
+	}
+
+	// Commit with nothing staged is a no-op and never errors.
+	empty := &freshLoginStorage{dst: inner}
+	if commitErr := empty.Commit(t.Context()); commitErr != nil {
+		t.Errorf("Commit with nothing staged: %v", commitErr)
+	}
+
+	if got := string(backing.data["svc/acct"]); got != "old-working-session" {
+		t.Errorf("no-op commit changed the backend: %q", got)
 	}
 }
 

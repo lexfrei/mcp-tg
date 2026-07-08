@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 75 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 76 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -34,7 +34,7 @@ internal/telegram/           Telegram abstraction layer
   markdown.go                Markdown → Telegram entities parser (entry point)
   markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
   markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal
-internal/tools/              MCP tool handlers (75 tools)
+internal/tools/              MCP tool handlers (76 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
@@ -69,7 +69,7 @@ internal/testutil/           NoopClient for registration tests
 
 - `readOnlyAnnotations()` — tools that only read data (29 tools)
 - `idempotentAnnotations()` — tools that modify state but are safe to retry (27 tools)
-- `writeAnnotations()` — tools that create new entities, not idempotent (9 tools)
+- `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
 ### Peer resolution
@@ -142,7 +142,7 @@ Username resolution for `messages_*` piggybacks on the `Users[]`/`Chats[]` array
 
 ### Multi-line text output
 
-Each message in `output` is a block of `key: value` lines (`from:`, `forwarded from:`, `reply to:`, `quote:`, `media:`) followed by the body under `text:`. Blocks are separated by a literal `---` line so a message body containing its own blank lines (Telegram bodies routinely have paragraph breaks) stays unambiguous. Long bodies are emitted verbatim — no truncation in the human-readable string. The single-line `[ID ↩parent] ts sender: text` form was removed; do NOT reintroduce it or grep for `↩`.
+Each message in `output` is a block of `key: value` lines (`from:`, `forwarded from:`, `reply to:`, `quote:`, always-present `type:`) followed by the body under `text:`. Blocks are separated by a literal `---` line so a message body containing its own blank lines (Telegram bodies routinely have paragraph breaks) stays unambiguous. Long bodies are emitted verbatim — no truncation in the human-readable string. The single-line `[ID ↩parent] ts sender: text` form was removed; do NOT reintroduce it or grep for `↩`. Use `MessageItem.type` / `type:` for message kind; do NOT reintroduce `mediaType` / `media:`.
 
 ### Message entities (formatting on read)
 

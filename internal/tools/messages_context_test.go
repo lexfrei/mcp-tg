@@ -26,6 +26,7 @@ func TestFormatContextMessages_TargetMarkerOnEveryLine(t *testing.T) {
 	wantLines := []string{
 		"> [100] 2023-11-14T22:13:21Z",
 		"> from: Alice [user:1]",
+		"> type: text",
 		"> text:",
 		"> first line of body",
 		"> second line of body",
@@ -48,7 +49,7 @@ func TestFormatContextMessages_NonTargetBlocksUnmarked(t *testing.T) {
 	got := formatContextMessages(msgs, 100)
 
 	// Non-target block must NOT be prefixed.
-	if !strings.Contains(got, "[99] 2023-11-14T22:13:20Z\ntext:\nearlier") {
+	if !strings.Contains(got, "[99] 2023-11-14T22:13:20Z\ntype: text\ntext:\nearlier") {
 		t.Errorf("non-target block was altered, got:\n%s", got)
 	}
 

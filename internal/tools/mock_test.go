@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"time"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
@@ -12,6 +13,7 @@ type mockClient struct {
 	messages       []telegram.Message
 	parentMessages []telegram.Message // see getMessages for selection rules
 	getMessagesFn  func(ids []int) []telegram.Message
+	getHistoryFn   func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
 	message        *telegram.Message
 	total          int
 	dialogs        []telegram.Dialog
@@ -33,9 +35,11 @@ type mockClient struct {
 	link           string
 	filePath       string
 	peer           telegram.InputPeer
+	transcription  *telegram.Transcription
 
 	// Error to return
-	err error
+	err           error
+	transcribeErr error
 
 	// Last call tracking
 	lastPeer         telegram.InputPeer
@@ -46,6 +50,10 @@ type mockClient struct {
 	lastReactionOpts telegram.ReactionOpts
 	getMessagesCalls int
 	getMessagesIDs   []int
+	getHistoryCalls  int
+	getHistoryOpts   []telegram.HistoryOpts
+	lastTranscribeID int
+	lastWait         time.Duration
 	groupInfoCalls   int
 }
 
@@ -98,8 +106,14 @@ func requestedMatchesParents(ids []int, parents []telegram.Message) bool {
 	return true
 }
 
-func (m *mockClient) GetHistory(_ context.Context, peer telegram.InputPeer, _ telegram.HistoryOpts) ([]telegram.Message, int, error) {
+func (m *mockClient) GetHistory(_ context.Context, peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error) {
 	m.lastPeer = peer
+	m.getHistoryCalls++
+	m.getHistoryOpts = append(m.getHistoryOpts, opts)
+
+	if m.getHistoryFn != nil {
+		return m.getHistoryFn(peer, opts)
+	}
 
 	return m.messages, m.total, m.err
 }
@@ -166,6 +180,16 @@ func (m *mockClient) MarkRead(_ context.Context, peer telegram.InputPeer, _ int)
 	m.lastPeer = peer
 
 	return m.err
+}
+
+func (m *mockClient) TranscribeAudio(
+	_ context.Context, peer telegram.InputPeer, msgID int, wait time.Duration,
+) (*telegram.Transcription, error) {
+	m.lastPeer = peer
+	m.lastTranscribeID = msgID
+	m.lastWait = wait
+
+	return m.transcription, m.transcribeErr
 }
 
 func (m *mockClient) SendFile(_ context.Context, peer telegram.InputPeer, _, _ string, opts telegram.SendOpts) (*telegram.Message, error) {

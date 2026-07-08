@@ -18,6 +18,7 @@ import (
 	"github.com/gotd/log/logzap"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
+	"github.com/gotd/td/tg"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
@@ -81,10 +82,15 @@ func run() error {
 
 	device := mcpDevice()
 
+	transcriptionBroker := tgclient.NewTranscriptionBroker()
+	dispatcher := tg.NewUpdateDispatcher()
+	dispatcher.OnTranscribedAudio(transcriptionBroker.HandleUpdate)
+
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: storage,
 		Logger:         logzap.New(newGotdLogger()),
 		Device:         device,
+		UpdateHandler:  dispatcher,
 		Middlewares: []telegram.Middleware{
 			newFloodWaitMiddleware(),
 			newConnReinitMiddleware(cfg.AppID, &device),
@@ -98,15 +104,15 @@ func run() error {
 	setupSignalHandler(ctx, cancel)
 
 	return revokedExitError(tgClient.Run(ctx, func(ctx context.Context) error {
-		return startServer(ctx, cancel, tgClient, cfg, health)
+		return startServer(ctx, cancel, tgClient, transcriptionBroker, cfg, health)
 	}))
 }
 
 func startServer(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	cfg *config.Config, health *mcpmw.SessionHealth,
+	transcriptionBroker *tgclient.TranscriptionBroker, cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
-	wrapper := tgclient.NewWrapper(tgClient.API())
+	wrapper := tgclient.NewWrapperWithTranscriptionBroker(tgClient.API(), transcriptionBroker)
 
 	if cfg.HTTPOnly {
 		return startHeadless(ctx, tgClient, wrapper, cfg, health)
@@ -487,6 +493,7 @@ func registerTools(server *mcp.Server, client tgclient.Client, registry tools.Bo
 	tools.AddTool(server, registry, tools.MessagesPinTool(), tools.NewMessagesPinHandler(client))
 	tools.AddTool(server, registry, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
 	tools.AddTool(server, registry, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
+	tools.AddTool(server, registry, tools.MessagesTranscribeAudioTool(), tools.NewMessagesTranscribeAudioHandler(client))
 
 	// Phase 2: Contacts, Users, Groups, Chat management tools.
 	tools.AddTool(server, registry, tools.ContactsGetTool(), tools.NewContactsGetHandler(client))

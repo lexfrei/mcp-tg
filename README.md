@@ -1,6 +1,6 @@
 # mcp-tg
 
-MCP server for Telegram Client API (MTProto). Provides 75 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
+MCP server for Telegram Client API (MTProto). Provides 76 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
 
 Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **user account** client, not a bot.
 
@@ -8,7 +8,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 | Feature | Status |
 | --- | --- |
-| Tools | 75 tools with annotations (read-only / idempotent / write / destructive) |
+| Tools | 76 tools with annotations (read-only / idempotent / write / destructive) |
 | Resources | 4 (dialogs, profile, chat info, chat messages) |
 | Prompts | 3 (reply, summarize, search and reply) |
 | Completions | Peer argument autocompletion from dialogs |
@@ -26,18 +26,19 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **FLOOD_WAIT retry** — automatic sleep and retry (up to 3 times) when Telegram rate-limits the client
 - **Connection re-init** — when the server forgets a long-lived connection's `initConnection` state and answers `CONNECTION_LAYER_INVALID` / `CONNECTION_NOT_INITED`, the request is retried once wrapped in `initConnection`, recovering the connection in place
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
-- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history
+- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`
 
-## Tools (75 registered; 64 listed below)
+## Tools (76 registered; 65 listed below)
 
-The categorised list below documents 64 of the 75 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
+The categorised list below documents 65 of the 76 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
 
-### Messages (11)
+### Messages (12)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
 - `tg_messages_context` — Get messages around a specific message
 - `tg_messages_search` — Search messages in a chat
+- `tg_messages_transcribe_audio` — Transcribe a Telegram voice message or video note by message ID
 - `tg_messages_send` — Send a text message
 - `tg_messages_edit` — Edit an existing message
 - `tg_messages_delete` — Delete messages
@@ -152,8 +153,8 @@ This applies uniformly across:
 
 **Breaking changes in this release.** Both text and JSON outputs change shape.
 
-- **Text** — `output` is no longer a one-line-per-message string with a `[ID ↩parent] ts sender: text` shape. Each message is now a multi-line block separated by a `---` line. The `↩<parent>` marker and the `[<media>]` inline prefix are gone — reply targets land on a dedicated `reply to:` line and media type on a dedicated `media:` line. Dialog rows in `tg_dialogs_*` switch from `[type] Title` to the unified `Title [@username/user:N/...]` identifier shape.
-- **JSON** — `MessageItem` gains `fromType`, `fromUsername`, and `forward`. `DialogItem` gains `username`. `ParticipantItem` gains `type` and `username`. `ReactionUserItem.userName` is removed in favour of separate `name` and `username` fields. `ContactStatusItem` gains the same `name`/`username` slots (currently empty pending a follow-up upstream lookup). `InputPeer.accessHash` becomes `omitempty` — a zero value (the common case for peers from forwarded-message headers or numeric IDs) now disappears from JSON rather than serializing as `"accessHash":0`.
+- **Text** — `output` is no longer a one-line-per-message string with a `[ID ↩parent] ts sender: text` shape. Each message is now a multi-line block separated by a `---` line. The `↩<parent>` marker and the `[<media>]` inline prefix are gone — reply targets land on a dedicated `reply to:` line and every message carries a dedicated `type:` line. Dialog rows in `tg_dialogs_*` switch from `[type] Title` to the unified `Title [@username/user:N/...]` identifier shape.
+- **JSON** — `MessageItem` gains `type`, `fromType`, `fromUsername`, and `forward`; the legacy `mediaType` field is removed. `DialogItem` gains `username`. `ParticipantItem` gains `type` and `username`. `ReactionUserItem.userName` is removed in favour of separate `name` and `username` fields. `ContactStatusItem` gains the same `name`/`username` slots (currently empty pending a follow-up upstream lookup). `InputPeer.accessHash` becomes `omitempty` — a zero value (the common case for peers from forwarded-message headers or numeric IDs) now disappears from JSON rather than serializing as `"accessHash":0`.
 
 Any consumer that parsed the previous formats must be updated.
 
@@ -167,12 +168,14 @@ forwarded from channel: Title [@username] #<post> by "<author>" at <ISO-timestam
 reply to: <parentId>
 reply to: <parentId> in Display Name [@username]
 quote: «<quoted fragment>»
-media: <type>
+type: <message type>
 text:
 <message body, multi-line preserved>
 ```
 
-Lines are emitted only when their underlying field is populated. A message body that contains a literal `---` line on its own (rare — typically a Markdown horizontal rule) collides with the block separator, so parse-back from `output` is not strictly round-trip safe. The same caveat applies to **adversarial content**: peer names and usernames are sanitized to stop newline-injection from forging fake `from:` / `reply to:` lines, but the body itself is rendered verbatim. A user can craft a body containing `\n---\n[999] ts\nfrom: Admin\ntext:\nfake` and the rendered output will look like two messages. The JSON `messages` array is the authoritative shape — body verbatim preservation is a deliberate UX choice for code blocks and quoted text, not a security property. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
+The `type:` line is always emitted. Values are `text`, `photo`, `voice`, `video_note`, `video`, `audio`, `sticker`, `animation`, `document`, `contact`, `location`, `venue`, `poll`, `webpage`, `game`, `invoice`, or `unsupported`. `tg_messages_list` accepts the same values in optional `type` to return only matching messages; it paginates internally until the requested `limit` of matching messages is reached or history ends.
+
+Lines other than `type:` are emitted only when their underlying field is populated. A message body that contains a literal `---` line on its own (rare — typically a Markdown horizontal rule) collides with the block separator, so parse-back from `output` is not strictly round-trip safe. The same caveat applies to **adversarial content**: peer names and usernames are sanitized to stop newline-injection from forging fake `from:` / `reply to:` lines, but the body itself is rendered verbatim. A user can craft a body containing `\n---\n[999] ts\nfrom: Admin\ntext:\nfake` and the rendered output will look like two messages. The JSON `messages` array is the authoritative shape — body verbatim preservation is a deliberate UX choice for code blocks and quoted text, not a security property. Every peer reference — sender, forwarded-from origin, cross-chat reply target — uses the same identifier shape:
 
 - `Display Name [@username]` — public username available; the numeric ID is dropped from the text form for brevity (it's still in the JSON `messages[].fromId`, `forward.from.peer.id`, etc.)
 - `Display Name [user:N]` / `[channel:N]` / `[group:N]` — username not exposed, only ID (labels match `participants[].type` and `fromType` exactly)

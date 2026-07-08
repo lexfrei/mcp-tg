@@ -217,7 +217,7 @@ func TestMessageItemFieldShape(t *testing.T) {
 		"FromName":       "fromName,omitempty",
 		"FromUsername":   "fromUsername,omitempty",
 		"TopicID":        "topicId,omitempty",
-		"MediaType":      "mediaType,omitempty",
+		"Type":           "type",
 		"Entities":       "entities,omitempty",
 		"ReplyTo":        "replyTo,omitempty",
 		"ReplyToMessage": "replyToMessage,omitempty",
@@ -261,6 +261,16 @@ func TestMessageToItem_PeerIDPopulated(t *testing.T) {
 	if item.PeerID != host {
 		t.Errorf("item.PeerID = %+v, want %+v — host peer must surface in MessageItem JSON",
 			item.PeerID, host)
+	}
+}
+
+func TestMessageToItem_CopiesType(t *testing.T) {
+	msg := &telegram.Message{ID: 7, Date: 1700000000, Text: "voice caption", Type: "voice"}
+
+	item := messageToItem(msg)
+
+	if item.Type != "voice" {
+		t.Errorf("item.Type = %q, want voice", item.Type)
 	}
 }
 

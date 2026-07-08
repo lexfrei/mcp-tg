@@ -28,7 +28,7 @@ func TestFormatTimestamp_Zero(t *testing.T) {
 func TestFormatMessage_TextOnly(t *testing.T) {
 	msg := &telegram.Message{ID: 42, Date: 1700000000, Text: "hello"}
 	got := formatMessage(msg)
-	want := "[42] 2023-11-14T22:13:20Z\ntext:\nhello"
+	want := "[42] 2023-11-14T22:13:20Z\ntype: text\ntext:\nhello"
 
 	if got != want {
 		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
@@ -161,7 +161,7 @@ func TestFormatMessage_WithSenderUsername(t *testing.T) {
 	}
 
 	got := formatMessage(msg)
-	want := "[7] 2023-11-14T22:13:20Z\nfrom: Alice [@alice]\ntext:\nhi"
+	want := "[7] 2023-11-14T22:13:20Z\nfrom: Alice [@alice]\ntype: text\ntext:\nhi"
 
 	if got != want {
 		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
@@ -177,34 +177,34 @@ func TestFormatMessage_WithReply(t *testing.T) {
 	}
 
 	got := formatMessage(msg)
-	want := "[26154] 2023-11-14T22:13:20Z\nreply to: 26150\ntext:\npunchline"
+	want := "[26154] 2023-11-14T22:13:20Z\nreply to: 26150\ntype: text\ntext:\npunchline"
 
 	if got != want {
 		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
 	}
 }
 
-func TestFormatMessage_WithReplyAndMedia(t *testing.T) {
+func TestFormatMessage_WithReplyAndType(t *testing.T) {
 	msg := &telegram.Message{
-		ID:        100,
-		Date:      1700000000,
-		Text:      "caption",
-		MediaType: "photo",
-		ReplyTo:   &telegram.ReplyToInfo{MessageID: 99},
+		ID:      100,
+		Date:    1700000000,
+		Text:    "caption",
+		Type:    "photo",
+		ReplyTo: &telegram.ReplyToInfo{MessageID: 99},
 	}
 
 	got := formatMessage(msg)
-	want := "[100] 2023-11-14T22:13:20Z\nreply to: 99\nmedia: photo\ntext:\ncaption"
+	want := "[100] 2023-11-14T22:13:20Z\nreply to: 99\ntype: photo\ntext:\ncaption"
 
 	if got != want {
 		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
 	}
 }
 
-func TestFormatMessage_WithMedia(t *testing.T) {
-	msg := &telegram.Message{ID: 42, Date: 1700000000, Text: "caption", MediaType: "photo"}
+func TestFormatMessage_WithType(t *testing.T) {
+	msg := &telegram.Message{ID: 42, Date: 1700000000, Text: "caption", Type: "photo"}
 	got := formatMessage(msg)
-	want := "[42] 2023-11-14T22:13:20Z\nmedia: photo\ntext:\ncaption"
+	want := "[42] 2023-11-14T22:13:20Z\ntype: photo\ntext:\ncaption"
 
 	if got != want {
 		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
@@ -231,6 +231,7 @@ func TestFormatMessage_ForwardedFromUser(t *testing.T) {
 		"[7] 2023-11-14T22:16:40Z",
 		"from: Forwarder [@forw]",
 		"forwarded from: Origin [@orig] at 2023-11-14T22:13:20Z",
+		"type: text",
 		"text:",
 		"fwd body",
 	}, "\n")
@@ -262,6 +263,7 @@ func TestFormatMessage_ForwardedFromChannel_WithPostAuthor(t *testing.T) {
 		"[7] 2023-11-14T22:16:40Z",
 		"from: Forwarder [user:1]",
 		`forwarded from channel: Example Channel [@examplechan] #4567 by "Channel Signature" at 2023-11-14T22:13:20Z`,
+		"type: text",
 		"text:",
 		"body",
 	}, "\n")
@@ -391,6 +393,7 @@ func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
 		"[10] 2023-11-14T22:13:20Z",
 		"reply to: 698 in Other Author [@otherauthor]",
 		"quote: «key fragment»",
+		"type: text",
 		"text:",
 		"my reaction",
 	}, "\n")

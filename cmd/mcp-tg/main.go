@@ -82,12 +82,15 @@ func run() error {
 		return storageErr
 	}
 
+	device := mcpDevice()
+
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: storage,
 		Logger:         logzap.New(newGotdLogger()),
+		Device:         device,
 		Middlewares: []telegram.Middleware{
 			newFloodWaitMiddleware(),
-			newConnReinitMiddleware(cfg.AppID),
+			newConnReinitMiddleware(cfg.AppID, &device),
 			newAuthRevokedMiddleware(health, logger),
 		},
 	})
@@ -343,6 +346,22 @@ func newGotdLogger() *zap.Logger {
 	}
 
 	return logger
+}
+
+// mcpDevice is the client identity sent to Telegram in initConnection and shown
+// in the account's Devices list. Without it gotd fills defaults that read as
+// "go1.26.4" (the Go version, as device model) and gotd's own version — this
+// names the client mcp-tg instead. SetDefaults only fills empty fields, so the
+// values set here are preserved and the language codes are filled in.
+func mcpDevice() telegram.DeviceConfig {
+	device := telegram.DeviceConfig{
+		DeviceModel:   serverName,
+		SystemVersion: runtime.GOOS + "/" + runtime.GOARCH,
+		AppVersion:    version + "+" + revision,
+	}
+	device.SetDefaults()
+
+	return device
 }
 
 func newServerOptions(client tgclient.Client) *mcp.ServerOptions {

@@ -135,6 +135,7 @@ func runLogin() error {
 
 	client := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: storage,
+		Device:         mcpDevice(),
 	})
 
 	return errors.Wrap(client.Run(context.Background(), func(ctx context.Context) error {

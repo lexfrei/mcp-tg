@@ -32,7 +32,8 @@ func (r *recordingInvoker) Invoke(_ context.Context, input bin.Encoder, _ bin.De
 func invokeWithReinit(t *testing.T, next *recordingInvoker) error {
 	t.Helper()
 
-	mw := newConnReinitMiddleware(testAppID)
+	device := mcpDevice()
+	mw := newConnReinitMiddleware(testAppID, &device)
 	handler := mw(next)
 
 	return handler(context.Background(), &tg.ContactsResolveUsernameRequest{Username: "example"}, nil)
@@ -121,7 +122,8 @@ func (encoderOnly) Encode(_ *bin.Buffer) error { return nil }
 func TestConnReinit_NonObjectInputReturnsOriginalError(t *testing.T) {
 	next := &recordingInvoker{errs: []error{tgerr.New(400, "CONNECTION_LAYER_INVALID")}}
 
-	mw := newConnReinitMiddleware(testAppID)
+	device := mcpDevice()
+	mw := newConnReinitMiddleware(testAppID, &device)
 	handler := mw(next)
 
 	err := handler(context.Background(), encoderOnly{}, nil)

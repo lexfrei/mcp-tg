@@ -277,23 +277,21 @@ func headlessLoginRequired(cause error) error {
 
 // loginWouldFix reports whether a headless startup auth failure is one that
 // `mcp-tg login` can actually resolve — a missing session (the authenticator
-// asks for credentials none of which are configured) or an unauthorized/revoked
-// key. A transient failure (network, 5xx, DC migration) is none of these, so it
-// must surface unchanged rather than as misleading "run mcp-tg login" guidance.
+// asks for credentials none of which are configured) or a revoked auth key from
+// the known-fixable set. It deliberately does not treat every 401 as fixable:
+// terminal account states (USER_DEACTIVATED / _BAN) are also 401 but re-login
+// cannot fix them, so — like authRevokedCodes — they must surface unchanged
+// rather than as misleading "run mcp-tg login" guidance. Transient failures
+// (network, 5xx, DC migration) likewise surface as-is.
 func loginWouldFix(err error) bool {
-	switch {
-	case errors.Is(err, tgclient.ErrPhoneRequired),
-		errors.Is(err, tgclient.ErrPasswordRequired),
-		errors.Is(err, tgclient.ErrNoAuthCode),
-		errors.Is(err, tgclient.ErrElicitDeclined):
-		return true
-	}
-
 	if _, revoked := revokedCode(err); revoked {
 		return true
 	}
 
-	return auth.IsUnauthorized(err)
+	return errors.Is(err, tgclient.ErrPhoneRequired) ||
+		errors.Is(err, tgclient.ErrPasswordRequired) ||
+		errors.Is(err, tgclient.ErrNoAuthCode) ||
+		errors.Is(err, tgclient.ErrElicitDeclined)
 }
 
 // revokedExitError wraps the error tgClient.Run returns when the connection ends.

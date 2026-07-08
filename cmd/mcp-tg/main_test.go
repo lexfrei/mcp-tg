@@ -187,7 +187,6 @@ func TestLoginWouldFix(t *testing.T) {
 		tgclient.ErrNoAuthCode,
 		tgclient.ErrElicitDeclined,
 		errors.Wrap(tgerr.New(401, codeAuthKeyUnregistered), "authentication failed"),
-		tgerr.New(401, "SOME_OTHER_401"), // any 401 UNAUTHORIZED means log in
 	}
 	for _, err := range fixable {
 		if !loginWouldFix(err) {
@@ -199,6 +198,11 @@ func TestLoginWouldFix(t *testing.T) {
 		errors.New("dial tcp: i/o timeout"),
 		tgerr.New(500, "INTERNAL"),
 		errors.Wrap(tgerr.New(303, "NETWORK_MIGRATE_2"), "authentication failed"),
+		// Terminal account states are also 401, but re-login cannot fix a ban —
+		// they must NOT be classified as "run mcp-tg login", matching the
+		// deliberate exclusion from authRevokedCodes.
+		tgerr.New(401, "USER_DEACTIVATED_BAN"),
+		tgerr.New(401, "SOME_OTHER_401"),
 	}
 	for _, err := range unfixable {
 		if loginWouldFix(err) {

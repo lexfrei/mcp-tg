@@ -15,10 +15,12 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/gotd/td/session"
+	"github.com/gotd/log/logzap"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/lexfrei/mcp-tg/internal/completions"
@@ -44,6 +46,15 @@ var (
 )
 
 func main() {
+	if loginRequested(os.Args) {
+		if loginErr := runLogin(); loginErr != nil {
+			log.Printf("login error: %v", loginErr)
+			os.Exit(1)
+		}
+
+		return
+	}
+
 	err := run()
 	if err != nil {
 		log.Printf("server error: %v", err)
@@ -57,23 +68,33 @@ func run() error {
 		return errors.Wrap(cfgErr, "invalid configuration")
 	}
 
-	mkdirErr := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700)
-	if mkdirErr != nil {
-		return errors.Wrap(mkdirErr, "creating session directory")
+	if dirErr := ensureFileStorageDir(cfg, cfg.InsecureStorage); dirErr != nil {
+		return dirErr
 	}
 
-	ensureSessionPerms(cfg.SessionFile)
+	logger := newLogger()
+	health := mcpmw.NewSessionHealth()
+
+	storage, storageErr := newSessionStorage(cfg, cfg.InsecureStorage)
+	if storageErr != nil {
+		return storageErr
+	}
+
+	device := mcpDevice()
 
 	transcriptionBroker := tgclient.NewTranscriptionBroker()
 	dispatcher := tg.NewUpdateDispatcher()
 	dispatcher.OnTranscribedAudio(transcriptionBroker.HandleUpdate)
 
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
-		SessionStorage: &session.FileStorage{Path: cfg.SessionFile},
+		SessionStorage: storage,
+		Logger:         logzap.New(newGotdLogger()),
+		Device:         device,
 		UpdateHandler:  dispatcher,
 		Middlewares: []telegram.Middleware{
 			newFloodWaitMiddleware(),
-			newConnReinitMiddleware(cfg.AppID),
+			newConnReinitMiddleware(cfg.AppID, &device),
+			newAuthRevokedMiddleware(health, logger),
 		},
 	})
 
@@ -82,22 +103,22 @@ func run() error {
 
 	setupSignalHandler(ctx, cancel)
 
-	return errors.Wrap(tgClient.Run(ctx, func(ctx context.Context) error {
-		return startServer(ctx, cancel, tgClient, transcriptionBroker, cfg)
-	}), "telegram client stopped")
+	return revokedExitError(tgClient.Run(ctx, func(ctx context.Context) error {
+		return startServer(ctx, cancel, tgClient, transcriptionBroker, cfg, health)
+	}))
 }
 
 func startServer(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	transcriptionBroker *tgclient.TranscriptionBroker, cfg *config.Config,
+	transcriptionBroker *tgclient.TranscriptionBroker, cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
 	wrapper := tgclient.NewWrapperWithTranscriptionBroker(tgClient.API(), transcriptionBroker)
 
 	if cfg.HTTPOnly {
-		return startHeadless(ctx, tgClient, wrapper, cfg)
+		return startHeadless(ctx, tgClient, wrapper, cfg, health)
 	}
 
-	return startStdio(ctx, cancel, tgClient, wrapper, cfg)
+	return startStdio(ctx, cancel, tgClient, wrapper, cfg, health)
 }
 
 // startStdio runs the server with stdio as the primary transport (the default
@@ -106,12 +127,12 @@ func startServer(
 // complete an interactive login.
 func startStdio(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	wrapper tgclient.Client, cfg *config.Config,
+	wrapper tgclient.Client, cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
 	initDone := make(chan struct{})
 	authDone := make(chan struct{})
 
-	server := buildServer(wrapper, cfg.DownloadDir, authDone, func() { close(initDone) })
+	server := buildServer(wrapper, cfg.DownloadDir, authDone, health, func() { close(initDone) })
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -129,6 +150,10 @@ func startStdio(
 		return authErr
 	}
 
+	// Arm revocation tracking only now: the IfNecessary probe above answers
+	// AUTH_KEY_UNREGISTERED for a fresh or revoked session, and that expected
+	// pre-login 401 must not be mistaken for a revocation of this new session.
+	health.Arm()
 	close(authDone)
 
 	return waitForTransports(ctx, cancel, server, stdioSession, cfg)
@@ -139,19 +164,30 @@ func startStdio(
 // clients — the shared-daemon mode.
 //
 // Auth cannot elicit interactively here (there is no client session to prompt),
-// so it relies on a valid persisted session file or env-var credentials. Log in
-// once in stdio mode to create the session, then run headless.
+// so it relies on a session persisted by an earlier `mcp-tg login` — in the OS
+// keychain by default, or a plaintext file under --insecure-storage. If none is
+// valid it fails fast via headlessLoginRequired, pointing at `mcp-tg login`.
 func startHeadless(
-	ctx context.Context, tgClient *telegram.Client, wrapper tgclient.Client, cfg *config.Config,
+	ctx context.Context, tgClient *telegram.Client, wrapper tgclient.Client,
+	cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
 	authDone := make(chan struct{})
-	server := newHeadlessServer(wrapper, cfg.DownloadDir, authDone)
+	server := newHeadlessServer(wrapper, cfg.DownloadDir, authDone, health)
 
 	authErr := authenticate(ctx, tgClient, cfg, nil)
 	if authErr != nil {
+		if loginWouldFix(authErr) {
+			return headlessLoginRequired(authErr)
+		}
+
+		// A transient failure (network, 5xx, DC migration) that re-login cannot
+		// fix — surface it as-is instead of the misleading login-required message.
 		return authErr
 	}
 
+	// See startStdio: arm only after the initial auth succeeds so the startup
+	// probe's expected AUTH_KEY_UNREGISTERED does not trip the revocation guard.
+	health.Arm()
 	close(authDone)
 
 	log.Printf("starting in HTTP-only headless mode (shared daemon)")
@@ -166,15 +202,18 @@ func startHeadless(
 // onInit must stay nil: headless HTTP serves many clients, and a hook that
 // closes a shared channel would panic on the second client's initialize (close
 // of a closed channel). Wiring such a hook here trips the multi-client test.
-func newHeadlessServer(client tgclient.Client, downloadDir string, authDone chan struct{}) *mcp.Server {
-	return buildServer(client, downloadDir, authDone, nil)
+func newHeadlessServer(
+	client tgclient.Client, downloadDir string, authDone chan struct{}, health *mcpmw.SessionHealth,
+) *mcp.Server {
+	return buildServer(client, downloadDir, authDone, health, nil)
 }
 
 // buildServer constructs the MCP server with all tools, resources, prompts, and
 // middleware. onInit, when non-nil, runs after a client completes the MCP
 // initialize handshake; pass nil when no single client owns the lifecycle.
 func buildServer(
-	client tgclient.Client, downloadDir string, authDone chan struct{}, onInit func(),
+	client tgclient.Client, downloadDir string, authDone chan struct{},
+	health *mcpmw.SessionHealth, onInit func(),
 ) *mcp.Server {
 	opts := newServerOptions(client)
 	if onInit != nil {
@@ -195,7 +234,7 @@ func buildServer(
 	registerTools(server, client, boolFields, downloadDir)
 	resources.Register(server, client)
 	prompts.Register(server, client)
-	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone)...)
+	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone, health)...)
 
 	return server
 }
@@ -206,11 +245,13 @@ func buildServer(
 // still pending) show up in the request log too.
 func receivingMiddlewares(
 	logger *slog.Logger, boolFields tools.BoolFieldRegistry, authDone chan struct{},
+	health *mcpmw.SessionHealth,
 ) []mcp.Middleware {
 	return []mcp.Middleware{
 		mcpmw.NewLogging(logger),
 		mcpmw.NewBoolCoercer(boolFields),
 		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
+		mcpmw.NewSessionGuard(health, []string{tools.ServerVersionToolName}),
 	}
 }
 
@@ -228,6 +269,52 @@ func authenticate(
 	flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
 
 	return errors.Wrap(tgClient.Auth().IfNecessary(ctx, flow), "authentication failed")
+}
+
+// headlessLoginRequired turns a headless startup auth failure into an
+// actionable message. The underlying gotd error is typically "TELEGRAM_PHONE is
+// required", which misleads toward setting an env var; the real fix is an
+// interactive login the headless daemon cannot perform itself.
+func headlessLoginRequired(cause error) error {
+	return errors.Wrap(cause,
+		"no valid Telegram session and the headless daemon cannot log in by itself — "+
+			"run `mcp-tg login` in a terminal (outside any MCP client), then restart the daemon")
+}
+
+// loginWouldFix reports whether a headless startup auth failure is one that
+// `mcp-tg login` can actually resolve — a missing session (the authenticator
+// asks for credentials none of which are configured) or a revoked auth key from
+// the known-fixable set. It deliberately does not treat every 401 as fixable:
+// terminal account states (USER_DEACTIVATED / _BAN) are also 401 but re-login
+// cannot fix them, so — like authRevokedCodes — they must surface unchanged
+// rather than as misleading "run mcp-tg login" guidance. Transient failures
+// (network, 5xx, DC migration) likewise surface as-is.
+func loginWouldFix(err error) bool {
+	if _, revoked := revokedCode(err); revoked {
+		return true
+	}
+
+	return errors.Is(err, tgclient.ErrPhoneRequired) ||
+		errors.Is(err, tgclient.ErrPasswordRequired) ||
+		errors.Is(err, tgclient.ErrNoAuthCode) ||
+		errors.Is(err, tgclient.ErrElicitDeclined)
+}
+
+// revokedExitError wraps the error tgClient.Run returns when the connection ends.
+// Some revoked-session codes (notably AUTH_KEY_DUPLICATED) are classified by gotd
+// as permanent *connection* errors, so they tear down the client instead of
+// surfacing through the invoker middleware — the daemon exits here rather than
+// staying up and fast-failing tool calls. Point the operator at `mcp-tg login`
+// with the same guidance as the invoker path; otherwise fall back to the generic
+// stop message. A nil error (clean shutdown) stays nil.
+func revokedExitError(err error) error {
+	if code, ok := revokedCode(err); ok {
+		return errors.Wrapf(err,
+			"Telegram session revoked (%s) — the daemon cannot recover on its own; "+
+				"run `mcp-tg login` in a terminal, then restart the daemon", code)
+	}
+
+	return errors.Wrap(err, "telegram client stopped")
 }
 
 func waitForTransports(
@@ -271,6 +358,24 @@ func ensureSessionPerms(path string) {
 	_ = os.Chmod(path, sessionFilePerms)
 }
 
+// ensureFileStorageDir prepares the session-file directory, but only for
+// insecure/file storage. Keychain mode writes no file — TELEGRAM_SESSION_FILE is
+// just the keychain account key there — so it must not create or require any
+// filesystem path.
+func ensureFileStorageDir(cfg *config.Config, insecure bool) error {
+	if !insecure {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700); err != nil {
+		return errors.Wrap(err, "creating session directory")
+	}
+
+	ensureSessionPerms(cfg.SessionFile)
+
+	return nil
+}
+
 func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -286,10 +391,73 @@ func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
 	}()
 }
 
-func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+// newLogger builds the structured logger used for MCP request logging and the
+// invoker middlewares. Text handler to stderr, which launchd routes into the
+// daemon log.
+func newLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
+}
+
+// newGotdLogger builds the zap logger handed to gotd so MTProto connection,
+// migration, and auth-key lifecycle events land in the daemon log. Without it
+// gotd defaults to a nop logger and an incident leaves no client-side trace —
+// exactly what made the last AUTH_KEY_UNREGISTERED hard to explain.
+//
+// It uses the console encoder with ISO8601 timestamps so gotd lines read as
+// plain text alongside the slog output on the same stderr stream, rather than
+// JSON amid key=value. Falls back to a nop logger if zap construction fails,
+// never blocking startup.
+func newGotdLogger() *zap.Logger {
+	cfg := zap.NewProductionConfig()
+	cfg.Encoding = "console"
+	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+
+	// This is a diagnostic logger whose whole point is to preserve the context of
+	// a connection/auth incident. Production sampling would thin out repeated
+	// lines (e.g. "Restarting connection") during exactly the reconnect storm we
+	// want fully logged, so disable it.
+	cfg.Sampling = nil
+
+	logger, err := cfg.Build()
+	if err != nil {
+		return zap.NewNop()
+	}
+
+	return logger
+}
+
+// mcpDevice is the client identity sent to Telegram in initConnection and shown
+// in the account's Devices list. Without it gotd fills defaults that read as
+// "go1.26.4" (the Go version, as device model) and gotd's own version — this
+// names the client mcp-tg instead. SetDefaults only fills empty fields, so the
+// values set here are preserved and the language codes are filled in.
+func mcpDevice() telegram.DeviceConfig {
+	device := telegram.DeviceConfig{
+		DeviceModel:   serverName,
+		SystemVersion: runtime.GOOS + "/" + runtime.GOARCH,
+		AppVersion:    version + "+" + shortRevision(revision),
+	}
+	device.SetDefaults()
+
+	return device
+}
+
+// shortRevisionLen bounds the git SHA shown in the Devices list; a release
+// revision is a full 40-char SHA, which is noise in that UI.
+const shortRevisionLen = 8
+
+func shortRevision(revision string) string {
+	if len(revision) > shortRevisionLen {
+		return revision[:shortRevisionLen]
+	}
+
+	return revision
+}
+
+func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
+	logger := newLogger()
 
 	return &mcp.ServerOptions{
 		Instructions: "MCP server for Telegram Client API (MTProto, user account, not bot). " +

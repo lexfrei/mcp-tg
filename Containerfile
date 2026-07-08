@@ -22,6 +22,10 @@ COPY --from=builder --chmod=555 /build/mcp-tg /mcp-tg
 COPY --from=builder --chown=65534:65534 /home/nobody/.mcp-tg /home/nobody/.mcp-tg
 
 ENV TELEGRAM_SESSION_FILE=/home/nobody/.mcp-tg/session.json
+# A scratch container has no OS keychain (no Secret Service), so the secure
+# default cannot work here — force the plaintext file backend on the mounted
+# volume. The native binary, built without this env, stays secure-by-default.
+ENV TELEGRAM_SESSION_INSECURE=true
 
 USER 65534
 ENTRYPOINT ["/mcp-tg"]

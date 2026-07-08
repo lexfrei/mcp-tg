@@ -18,13 +18,10 @@ import (
 // re-learns the connection state (gotd adds the outer invokeWithLayer to
 // every request already).
 //
-// The device parameters must match what the client sends on connect; the
-// client is built without a custom telegram.Options.Device, so the gotd
-// defaults replicated here stay in sync by construction.
-func newConnReinitMiddleware(appID int) telegram.MiddlewareFunc {
-	var device telegram.DeviceConfig
-	device.SetDefaults()
-
+// The device must match what the client sends on connect, so the caller passes
+// the same telegram.Options.Device DeviceConfig; a re-init then advertises
+// identical connection parameters instead of gotd's defaults.
+func newConnReinitMiddleware(appID int, device *telegram.DeviceConfig) telegram.MiddlewareFunc {
 	return func(next tg.Invoker) telegram.InvokeFunc {
 		return func(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
 			err := next.Invoke(ctx, input, output)

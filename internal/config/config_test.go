@@ -160,6 +160,48 @@ func TestLoad_HTTPOnlyInvalidValueFails(t *testing.T) {
 	}
 }
 
+// TestLoadForLogin_IgnoresTransportEnv pins that the login path is not blocked
+// by server-only transport settings: an env that fails Load() (HTTP-only with
+// no port) must still load cleanly for login, since login never starts HTTP.
+func TestLoadForLogin_IgnoresTransportEnv(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("MCP_HTTP_ONLY", "true")
+	t.Setenv("MCP_HTTP_PORT", "")
+
+	_, loadErr := config.Load()
+	if loadErr == nil {
+		t.Fatal("precondition: Load() must reject HTTP-only without a port")
+	}
+
+	cfg, err := config.LoadForLogin()
+	if err != nil {
+		t.Fatalf("LoadForLogin must ignore transport env, got: %v", err)
+	}
+
+	if cfg.AppID != 12345 || cfg.AppHash != "testhash" {
+		t.Errorf("LoadForLogin credentials = %d/%q, want 12345/testhash", cfg.AppID, cfg.AppHash)
+	}
+}
+
+// TestLoadForLogin_InvalidHTTPPortIgnored pins that even a malformed
+// MCP_HTTP_PORT (which Load() rejects) does not block the login path.
+func TestLoadForLogin_InvalidHTTPPortIgnored(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("MCP_HTTP_PORT", "not-a-port")
+
+	_, loadErr := config.Load()
+	if loadErr == nil {
+		t.Fatal("precondition: Load() must reject an invalid MCP_HTTP_PORT")
+	}
+
+	_, err := config.LoadForLogin()
+	if err != nil {
+		t.Fatalf("LoadForLogin must ignore an invalid MCP_HTTP_PORT, got: %v", err)
+	}
+}
+
 func TestHasPassword(t *testing.T) {
 	cfg := &config.Config{}
 	if cfg.HasPassword() {
@@ -169,5 +211,46 @@ func TestHasPassword(t *testing.T) {
 	cfg.Password = "test"
 	if !cfg.HasPassword() {
 		t.Error("HasPassword() = false, want true")
+	}
+}
+
+func TestLoad_InsecureStorageDefaultsFalse(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("TELEGRAM_SESSION_INSECURE", "")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.InsecureStorage {
+		t.Error("InsecureStorage = true, want false when TELEGRAM_SESSION_INSECURE is unset")
+	}
+}
+
+func TestLoad_InsecureStorageTrue(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("TELEGRAM_SESSION_INSECURE", "true")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !cfg.InsecureStorage {
+		t.Error("InsecureStorage = false, want true when TELEGRAM_SESSION_INSECURE=true")
+	}
+}
+
+func TestLoad_InsecureStorageInvalidFails(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "12345")
+	t.Setenv("TELEGRAM_APP_HASH", "testhash")
+	t.Setenv("TELEGRAM_SESSION_INSECURE", "maybe")
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for invalid TELEGRAM_SESSION_INSECURE value")
 	}
 }

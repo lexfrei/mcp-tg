@@ -251,7 +251,8 @@ Peers resolved by username include a valid access hash. Numeric IDs use a cached
 | `TELEGRAM_APP_HASH` | API app_hash from my.telegram.org | — | Yes |
 | `TELEGRAM_PHONE` | Phone number (E.164 format) | — | No (prompted via elicitation) |
 | `TELEGRAM_PASSWORD` | 2FA password | — | No (prompted via elicitation) |
-| `TELEGRAM_SESSION_FILE` | Session file path | `~/.mcp-tg/session.json` | No |
+| `TELEGRAM_SESSION_FILE` | Session location: keychain account key by default, file path with insecure storage | `~/.mcp-tg/session.json` | No |
+| `TELEGRAM_SESSION_INSECURE` | Store the session in a plaintext file instead of the OS keychain | `false` | No |
 | `TELEGRAM_AUTH_CODE` | One-time auth code | — | No (prompted via elicitation) |
 | `TELEGRAM_DOWNLOAD_DIR` | Media download directory | `/tmp/mcp-tg/downloads` | No |
 | `MCP_HTTP_PORT` | HTTP/SSE transport port | disabled | No |
@@ -269,25 +270,55 @@ Authentication uses a cascade: environment variable, then MCP elicitation (the c
 3. Telegram sends a code to your device
 4. Optionally set `TELEGRAM_AUTH_CODE` — if not set, the server asks via elicitation
 5. If 2FA is enabled, optionally set `TELEGRAM_PASSWORD` — or the server asks
-6. Session is saved to `TELEGRAM_SESSION_FILE`
+6. The session is saved to the OS keychain (or a file with insecure storage — see below)
 
-**Subsequent runs:** session file is loaded automatically, no auth needed.
+**Subsequent runs:** the stored session is loaded automatically, no auth needed.
 
-**Session persistence in containers:** mount a volume for the session file:
+### Session storage
+
+By default the session is stored in the **OS keychain** — macOS Keychain, Linux/\*BSD Secret Service, or Windows Credential Manager — via [github.com/lexfrei/keychain](https://github.com/lexfrei/keychain). No plaintext session file is written. The session is a bearer credential (full account access, already past 2FA), so keeping it out of a loose file protects it from backups, cloud sync, and disk theft. In keychain mode `TELEGRAM_SESSION_FILE` is only the keychain **account key** (its value still distinguishes multiple sessions), not a file that gets created. Because it is the lookup key, `mcp-tg login` and the server must resolve the same value — pin `TELEGRAM_SESSION_FILE` explicitly if their environments might otherwise differ, so both address the same keychain item.
+
+One macOS deployment caveat: a `launchd` **LaunchDaemon** runs in the system security context and reads the *System* keychain, not the *login* keychain that `mcp-tg login` (run as you) writes to — so a system daemon will not find the session no matter how the account key is set. Run the daemon as a **LaunchAgent** (user context, the same login keychain), or use `TELEGRAM_SESSION_INSECURE=true` with a file.
+
+On macOS the item is written through `security(1)` into the stable `apple-tool` access partition, so an unsigned, frequently rebuilt binary — and the headless daemon — keep reading what `mcp-tg login` wrote, with no prompt. Any process of the same user can read it (the same trade `go-keyring` makes): it protects data-at-rest, not against code already running as you.
+
+Where no keychain is reachable — a container, or a headless Linux host with no Secret Service — opt into a plaintext file with `--insecure-storage` (on `mcp-tg login`) or `TELEGRAM_SESSION_INSECURE=true` (for the server/daemon). The two modes must match: an item written to the keychain cannot be read from a file, or vice versa. Without the opt-in, an unreachable keychain fails fast with a clear error instead of silently writing plaintext.
+
+**Upgrading from a file-based session:** earlier versions kept the session in the `~/.mcp-tg/session.json` file. This version reads the keychain by default, so an existing file is no longer picked up — either set `TELEGRAM_SESSION_INSECURE=true` (and pass `--insecure-storage` to `mcp-tg login`) to keep using the file, or run `mcp-tg login` once to move the session into the keychain.
+
+### Logging in
+
+The recommended way to create or refresh the session is the `login` subcommand. It runs an interactive terminal login: the phone, the code, and the 2FA password are read straight from the TTY and never touch MCP, elicitation, a tool call, or any transcript. It writes the session (to the keychain by default) and exits; the server then reuses it.
+
+Native binary:
 
 ```bash
--v ~/.mcp-tg:/home/nobody/.mcp-tg
+export TELEGRAM_APP_ID=12345
+export TELEGRAM_APP_HASH=your_app_hash
+./mcp-tg login
 ```
 
-**Multiple sessions:** by default each Claude Code (or other MCP) client starts its own stdio process — that is how the stdio transport works. This is fine for one or two clients, but every process opens its own MTProto connection on the same auth key and shares write access to the session file. Running many at once (5+) wastes connections and risks a write race on the session file when Telegram triggers a re-auth or DC migration. To share one process across many clients, run the headless HTTP-only daemon described below.
+Container — note `-it` (an interactive TTY, unlike the `-i` used to run the server). The image defaults to the file backend (a container has no keychain), so the session lands in the mounted volume:
+
+```bash
+docker run --rm -it \
+  -e TELEGRAM_APP_ID=12345 \
+  -e TELEGRAM_APP_HASH=your_app_hash \
+  -v ~/.mcp-tg:/home/nobody/.mcp-tg \
+  ghcr.io/lexfrei/mcp-tg:latest login
+```
+
+The login code is delivered by Telegram at runtime, so login is inherently interactive: it needs a real terminal and refuses to run on piped stdin (`docker run` without `-t`). The server's own env → MCP-elicitation cascade still works for a stdio server that prompts through its connected client, but `mcp-tg login` is the only path that works for the headless HTTP daemon.
+
+**Multiple sessions:** by default each Claude Code (or other MCP) client starts its own stdio process — that is how the stdio transport works. This is fine for one or two clients, but every process opens its own MTProto connection on the same auth key and shares the one stored session. Running many at once (5+) wastes connections and risks Telegram flagging the auth key. To share one process across many clients, run the headless HTTP-only daemon described below.
 
 ### Shared daemon (HTTP-only)
 
-To serve many MCP clients from a single process and a single Telegram connection, run the server as a headless HTTP-only daemon. Set `MCP_HTTP_ONLY=true` together with `MCP_HTTP_PORT`. In this mode the server skips the stdio transport entirely and listens only on HTTP, multiplexing every connecting client onto the same Telegram session — so the session file has exactly one writer and the connection count stays at one regardless of how many clients attach.
+To serve many MCP clients from a single process and a single Telegram connection, run the server as a headless HTTP-only daemon. Set `MCP_HTTP_ONLY=true` together with `MCP_HTTP_PORT`. In this mode the server skips the stdio transport entirely and listens only on HTTP, multiplexing every connecting client onto the same Telegram session — one MTProto connection and one writer of the stored session regardless of how many clients attach.
 
-Because all clients share that one MTProto connection, they also share its throughput: requests serialize through a single connection, and a FLOOD_WAIT triggered by one client's burst pauses the auto-retry for everyone until the server-specified delay elapses. The shared daemon trades per-client isolation for one connection and one session writer — a good trade for many lightly-used clients, less so for a few high-volume ones.
+Because all clients share that one MTProto connection, they also share its throughput: requests serialize through a single connection, and a FLOOD_WAIT triggered by one client's burst pauses the auto-retry for everyone until the server-specified delay elapses. A good trade for many lightly-used clients, less so for a few high-volume ones.
 
-Because a headless daemon has no client session to prompt through, it cannot complete an interactive login. Log in once in the normal (stdio) mode to create the session file, then start the daemon; it reuses that file. If the session is missing or expired, the daemon exits with an authentication error instead of hanging.
+A headless daemon has no client to prompt through, so it cannot log in itself. Run `mcp-tg login` once, then start the daemon; it reuses the stored session. If the session is missing or revoked, the daemon exits with a message telling you to run `mcp-tg login` — it does not hang or silently fall back to plaintext.
 
 ```bash
 export TELEGRAM_APP_ID=12345
@@ -303,6 +334,22 @@ Point each client at the running daemon over HTTP instead of spawning its own pr
 claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 ```
 
+### Recovery — revoked session
+
+Telegram can invalidate a session's auth key server-side at any time — an account security event, or anti-abuse against a user-API session whose exit IP moved (a VPN switch, for example). This is not something the server triggers, and it can happen mid-run on a long-lived daemon. Afterwards every Telegram API call answers `AUTH_KEY_UNREGISTERED` (or a sibling: `SESSION_REVOKED`, `AUTH_KEY_INVALID`, …).
+
+When this happens the server logs one `ERROR` line — `Telegram session revoked — re-login required (run: mcp-tg login)` — instead of a stream of raw 401s, and every subsequent tool call fails fast with an explicit "logged out … run `mcp-tg login`" error rather than an opaque per-tool `AUTH_KEY_UNREGISTERED`. Read-only server-meta tools (`tg_server_version`) still answer, so a client can confirm the daemon itself is alive.
+
+A revoked key can also surface as a fatal connection error rather than a per-call reply — `AUTH_KEY_DUPLICATED` (the same key seen from two places) always does, and the others can when the failure lands during a reconnect. The connection cannot continue, so instead of staying up the daemon exits with the same `run mcp-tg login` guidance; under a supervisor (launchd/systemd) it restarts and exits again until you re-login. Either way the same code list is recognised and the fix is identical.
+
+The daemon cannot re-authenticate itself, and it cannot be fixed from the MCP client — the `/mcp` re-authenticate action does not apply, since this server implements no OAuth. To recover:
+
+1. Stop the daemon.
+2. Run `mcp-tg login` in a terminal to refresh the stored session (it prompts for the phone, the code, and the 2FA password if set).
+3. Start the daemon again; it reuses the refreshed session.
+
+MTProto connection, migration, and auth-key lifecycle events are logged, so if a revocation recurs the daemon log carries the surrounding context.
+
 ## Usage
 
 ### With Claude Code (stdio via Docker)
@@ -314,6 +361,8 @@ claude mcp add mcp-tg -- docker run --rm -i \
   -v ~/.mcp-tg:/home/nobody/.mcp-tg \
   ghcr.io/lexfrei/mcp-tg:latest
 ```
+
+A container has no OS keychain, so the image defaults to the plaintext file backend and reads the session from the mounted volume — the one `mcp-tg login` wrote there (see [Logging in](#logging-in)).
 
 ### Direct binary
 

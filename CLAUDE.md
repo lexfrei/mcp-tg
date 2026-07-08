@@ -15,10 +15,11 @@ golangci-lint run
 ## Architecture
 
 ```text
-cmd/mcp-tg/main.go          Entry point: `login` subcommand dispatch, else telegram client → MCP server → transports
-cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes session file), credential-safe, no MCP surface
+cmd/mcp-tg/main.go          Entry point: `login` subcommand dispatch, else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
+cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes the session, keychain or file), credential-safe, no MCP surface
+cmd/mcp-tg/storage.go       Session backend factory: OS keychain (lexfrei/keychain) by default, plaintext file on --insecure-storage/TELEGRAM_SESSION_INSECURE
 cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
-cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td
+cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 internal/config/             Env var loading and validation
 internal/telegram/           Telegram abstraction layer
@@ -89,11 +90,17 @@ Both are handled transparently. Wrapper checks `peer.Type == PeerChannel` and us
 
 ### Auth flow
 
-Cascade: env var → MCP elicitation → error. No stdin fallback (stdin = MCP protocol).
+Two entry points. The server auth uses a cascade: env var → MCP elicitation → error (no stdin fallback — stdin is the MCP protocol). The `mcp-tg login` subcommand (`login.go`) is a separate interactive TTY login (phone/code/2FA read from the terminal, no MCP surface) — the only way to log in a headless daemon, which cannot elicit. On a headless startup with no valid session the auth error is rewritten (`headlessLoginRequired`) to point at `mcp-tg login` instead of gotd's misleading "TELEGRAM_PHONE is required".
 
-Auth guard middleware blocks tool/resource/prompt calls until auth completes.
+Auth guard middleware blocks tool/resource/prompt calls until auth completes. After auth, a revoked session (`AUTH_KEY_UNREGISTERED` and friends, detected by `auth_revoked.go`) trips `SessionHealth`, and `NewSessionGuard` fast-fails tool calls with `ErrSessionRevoked` (explicit: logged out, run `mcp-tg login`, not fixable from the MCP client).
 
-Session persistence: volume mount `-v ~/.mcp-tg:/home/nobody/.mcp-tg`.
+### Session storage (`storage.go`)
+
+Secure by default: the session lives in the OS keychain via `github.com/lexfrei/keychain` behind gotd's `session.Storage`. macOS uses `WithSecurityCLI` (stable `apple-tool` partition → rebuild-stable for an unsigned daemon). Plaintext file only on explicit opt-in: `--insecure-storage` (login) or `TELEGRAM_SESSION_INSECURE=true` (server); both must match. An unreachable keychain (container / headless Linux) errors with guidance instead of silently writing plaintext. `TELEGRAM_SESSION_FILE` is the keychain account key in secure mode, the file path in insecure mode.
+
+### Client identity
+
+`mcpDevice()` sets `telegram.Options.Device` so the account's Devices list names the client `mcp-tg` (not gotd's default "go1.26.4" device model). The same `DeviceConfig` is passed to `newConnReinitMiddleware` so a connection re-init advertises identical parameters. App-name (from api_id) and Telegram's platform icon are not ours to set.
 
 ### Transport modes
 
@@ -174,4 +181,6 @@ Strict config in `.golangci.yml`:
 - `github.com/gotd/td` — Telegram MTProto client
 - `github.com/cockroachdb/errors` — Error wrapping
 - `github.com/modelcontextprotocol/go-sdk` — MCP protocol SDK
+- `github.com/lexfrei/keychain` — cgo-free OS secret store (macOS Keychain / Linux Secret Service / Windows Credential Manager) for the default session backend; pulls `purego` + `godbus/dbus` indirectly
 - `golang.org/x/sync` — errgroup for concurrent transports
+- `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`

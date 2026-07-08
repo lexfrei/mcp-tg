@@ -18,7 +18,10 @@ const (
 // defaultAppID and defaultAppHash are the built-in Telegram application
 // credentials, injected at build time via -ldflags. They are low-sensitivity
 // app-level identifiers (not per-user secrets); an explicit TELEGRAM_APP_ID /
-// TELEGRAM_APP_HASH env var overrides them. Empty in a plain `go build`.
+// TELEGRAM_APP_HASH env var overrides them. Empty in a plain `go build`, and the
+// public release leaves them empty too (so TELEGRAM_APP_ID/HASH stay required) —
+// this is a hook for downstream or private builds that want to bake in their own
+// registration rather than ship the maintainer's.
 //
 //nolint:gochecknoglobals // ldflags -X injection targets must be package-level string vars.
 var (

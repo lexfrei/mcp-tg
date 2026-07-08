@@ -67,12 +67,9 @@ func run() error {
 		return errors.Wrap(cfgErr, "invalid configuration")
 	}
 
-	mkdirErr := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700)
-	if mkdirErr != nil {
-		return errors.Wrap(mkdirErr, "creating session directory")
+	if dirErr := ensureFileStorageDir(cfg, cfg.InsecureStorage); dirErr != nil {
+		return dirErr
 	}
-
-	ensureSessionPerms(cfg.SessionFile)
 
 	logger := newLogger()
 	health := mcpmw.NewSessionHealth()
@@ -312,6 +309,24 @@ func ensureSessionPerms(path string) {
 	_ = os.Chmod(path, sessionFilePerms)
 }
 
+// ensureFileStorageDir prepares the session-file directory, but only for
+// insecure/file storage. Keychain mode writes no file — TELEGRAM_SESSION_FILE is
+// just the keychain account key there — so it must not create or require any
+// filesystem path.
+func ensureFileStorageDir(cfg *config.Config, insecure bool) error {
+	if !insecure {
+		return nil
+	}
+
+	if err := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700); err != nil {
+		return errors.Wrap(err, "creating session directory")
+	}
+
+	ensureSessionPerms(cfg.SessionFile)
+
+	return nil
+}
+
 func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -367,11 +382,23 @@ func mcpDevice() telegram.DeviceConfig {
 	device := telegram.DeviceConfig{
 		DeviceModel:   serverName,
 		SystemVersion: runtime.GOOS + "/" + runtime.GOARCH,
-		AppVersion:    version + "+" + revision,
+		AppVersion:    version + "+" + shortRevision(revision),
 	}
 	device.SetDefaults()
 
 	return device
+}
+
+// shortRevisionLen bounds the git SHA shown in the Devices list; a release
+// revision is a full 40-char SHA, which is noise in that UI.
+const shortRevisionLen = 8
+
+func shortRevision(revision string) string {
+	if len(revision) > shortRevisionLen {
+		return revision[:shortRevisionLen]
+	}
+
+	return revision
 }
 
 func newServerOptions(client tgclient.Client) *mcp.ServerOptions {

@@ -70,6 +70,26 @@ func TestKeychainStorage_EmptyReturnsSessionErrNotFound(t *testing.T) {
 	}
 }
 
+func TestNewSessionStorage_SecureByDefault(t *testing.T) {
+	cfg := &config.Config{SessionFile: "/tmp/mcp-tg/session.json"}
+
+	store, err := newSessionStorage(cfg, false)
+	if err != nil {
+		// A host with no reachable keychain (headless CI) returns
+		// errKeychainUnavailable — acceptable: the secure default never silently
+		// falls back to a plaintext file.
+		if !errors.Is(err, errKeychainUnavailable) {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		return
+	}
+
+	if _, isFile := store.(*session.FileStorage); isFile {
+		t.Error("secure default must not use the plaintext FileStorage")
+	}
+}
+
 func TestNewSessionStorage_InsecureUsesFile(t *testing.T) {
 	cfg := &config.Config{SessionFile: "/tmp/mcp-tg/session.json"}
 

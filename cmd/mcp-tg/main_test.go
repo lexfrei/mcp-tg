@@ -4,10 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/lexfrei/mcp-tg/internal/config"
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/lexfrei/mcp-tg/internal/tools"
@@ -169,6 +172,39 @@ func TestHeadlessLoginRequired_ActionableMessage(t *testing.T) {
 
 	if !strings.Contains(msg, "terminal") {
 		t.Errorf("message must say it needs a terminal, got: %s", msg)
+	}
+}
+
+// TestEnsureFileStorageDir pins that the session-file directory is created only
+// for insecure/file storage — keychain mode must not touch the filesystem.
+func TestEnsureFileStorageDir(t *testing.T) {
+	base := t.TempDir()
+	cfg := &config.Config{SessionFile: filepath.Join(base, "sub", "session.json")}
+
+	if err := ensureFileStorageDir(cfg, false); err != nil {
+		t.Fatalf("secure mode returned an error: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(base, "sub")); !os.IsNotExist(err) {
+		t.Error("secure (keychain) mode must not create the session directory")
+	}
+
+	if err := ensureFileStorageDir(cfg, true); err != nil {
+		t.Fatalf("insecure mode: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(base, "sub")); err != nil {
+		t.Errorf("insecure (file) mode must create the session directory: %v", err)
+	}
+}
+
+func TestShortRevision(t *testing.T) {
+	if got := shortRevision("abcdef"); got != "abcdef" {
+		t.Errorf("short revision = %q, want it unchanged", got)
+	}
+
+	if got := shortRevision("0123456789abcdef0123456789abcdef01234567"); got != "01234567" {
+		t.Errorf("long revision = %q, want the first %d chars", got, shortRevisionLen)
 	}
 }
 

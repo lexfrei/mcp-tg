@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 
@@ -115,12 +114,8 @@ func runLogin() error {
 		return storageErr
 	}
 
-	if insecure {
-		if mkdirErr := os.MkdirAll(filepath.Dir(cfg.SessionFile), 0o700); mkdirErr != nil {
-			return errors.Wrap(mkdirErr, "creating session directory")
-		}
-
-		ensureSessionPerms(cfg.SessionFile)
+	if dirErr := ensureFileStorageDir(cfg, insecure); dirErr != nil {
+		return dirErr
 	}
 
 	authenticator := &ttyAuthenticator{

@@ -59,6 +59,12 @@ func TestSessionDestination(t *testing.T) {
 		t.Errorf("secure destination = %q, want a keychain description without a file path", secure)
 	}
 
+	// The path is the keychain account key; the success line must name it so a
+	// user running multiple sessions can tell which item was written.
+	if !strings.Contains(secure, "/home/x/.mcp-tg/session.json") {
+		t.Errorf("secure destination = %q, want the account key included", secure)
+	}
+
 	insecure := sessionDestination(true, "/home/x/.mcp-tg/session.json")
 	if insecure != "file /home/x/.mcp-tg/session.json" {
 		t.Errorf("insecure destination = %q, want the file path", insecure)

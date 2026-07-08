@@ -163,7 +163,7 @@ func sessionDestination(insecure bool, sessionFile string) string {
 		return "file " + sessionFile
 	}
 
-	return "the OS keychain (service " + keychainService + ")"
+	return "the OS keychain (service " + keychainService + ", account " + sessionFile + ")"
 }
 
 func loginDisplayName(self *tg.User) string {

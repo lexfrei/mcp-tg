@@ -158,8 +158,9 @@ func startStdio(
 // clients — the shared-daemon mode.
 //
 // Auth cannot elicit interactively here (there is no client session to prompt),
-// so it relies on a valid persisted session file or env-var credentials. Log in
-// once in stdio mode to create the session, then run headless.
+// so it relies on a session persisted by an earlier `mcp-tg login` — in the OS
+// keychain by default, or a plaintext file under --insecure-storage. If none is
+// valid it fails fast via headlessLoginRequired, pointing at `mcp-tg login`.
 func startHeadless(
 	ctx context.Context, tgClient *telegram.Client, wrapper tgclient.Client,
 	cfg *config.Config, health *mcpmw.SessionHealth,

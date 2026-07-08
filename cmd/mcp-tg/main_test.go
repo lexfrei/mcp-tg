@@ -13,6 +13,7 @@ import (
 	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/config"
 	"github.com/lexfrei/mcp-tg/internal/middleware"
+	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -173,6 +174,36 @@ func TestHeadlessLoginRequired_ActionableMessage(t *testing.T) {
 
 	if !strings.Contains(msg, "terminal") {
 		t.Errorf("message must say it needs a terminal, got: %s", msg)
+	}
+}
+
+// TestLoginWouldFix pins which headless startup auth failures map to the
+// "run mcp-tg login" guidance (missing session / unauthorized) versus which
+// surface unchanged (transient network / server errors re-login cannot fix).
+func TestLoginWouldFix(t *testing.T) {
+	fixable := []error{
+		tgclient.ErrPhoneRequired,
+		tgclient.ErrPasswordRequired,
+		tgclient.ErrNoAuthCode,
+		tgclient.ErrElicitDeclined,
+		errors.Wrap(tgerr.New(401, codeAuthKeyUnregistered), "authentication failed"),
+		tgerr.New(401, "SOME_OTHER_401"), // any 401 UNAUTHORIZED means log in
+	}
+	for _, err := range fixable {
+		if !loginWouldFix(err) {
+			t.Errorf("loginWouldFix(%v) = false, want true", err)
+		}
+	}
+
+	unfixable := []error{
+		errors.New("dial tcp: i/o timeout"),
+		tgerr.New(500, "INTERNAL"),
+		errors.Wrap(tgerr.New(303, "NETWORK_MIGRATE_2"), "authentication failed"),
+	}
+	for _, err := range unfixable {
+		if loginWouldFix(err) {
+			t.Errorf("loginWouldFix(%v) = true, want false", err)
+		}
 	}
 }
 

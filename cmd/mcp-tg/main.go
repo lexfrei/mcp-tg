@@ -170,7 +170,13 @@ func startHeadless(
 
 	authErr := authenticate(ctx, tgClient, cfg, nil)
 	if authErr != nil {
-		return headlessLoginRequired(authErr)
+		if loginWouldFix(authErr) {
+			return headlessLoginRequired(authErr)
+		}
+
+		// A transient failure (network, 5xx, DC migration) that re-login cannot
+		// fix — surface it as-is instead of the misleading login-required message.
+		return authErr
 	}
 
 	// See startStdio: arm only after the initial auth succeeds so the startup
@@ -267,6 +273,27 @@ func headlessLoginRequired(cause error) error {
 	return errors.Wrap(cause,
 		"no valid Telegram session and the headless daemon cannot log in by itself — "+
 			"run `mcp-tg login` in a terminal (outside any MCP client), then restart the daemon")
+}
+
+// loginWouldFix reports whether a headless startup auth failure is one that
+// `mcp-tg login` can actually resolve — a missing session (the authenticator
+// asks for credentials none of which are configured) or an unauthorized/revoked
+// key. A transient failure (network, 5xx, DC migration) is none of these, so it
+// must surface unchanged rather than as misleading "run mcp-tg login" guidance.
+func loginWouldFix(err error) bool {
+	switch {
+	case errors.Is(err, tgclient.ErrPhoneRequired),
+		errors.Is(err, tgclient.ErrPasswordRequired),
+		errors.Is(err, tgclient.ErrNoAuthCode),
+		errors.Is(err, tgclient.ErrElicitDeclined):
+		return true
+	}
+
+	if _, revoked := revokedCode(err); revoked {
+		return true
+	}
+
+	return auth.IsUnauthorized(err)
 }
 
 // revokedExitError wraps the error tgClient.Run returns when the connection ends.

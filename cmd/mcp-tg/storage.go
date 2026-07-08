@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"sync"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/session"
@@ -89,7 +90,11 @@ func newKeychainStorage(store secretStore, service, account string) (session.Sto
 // logged out. Instead the session is staged in memory and only flushed by
 // Commit, which the caller invokes after Auth().IfNecessary succeeds.
 type freshLoginStorage struct {
-	dst    session.Storage
+	dst session.Storage
+
+	// mu guards staged/dirty: gotd may call StoreSession from a background
+	// goroutine (e.g. a salt refresh) while the caller runs Commit.
+	mu     sync.Mutex
 	staged []byte
 	dirty  bool
 }
@@ -100,10 +105,13 @@ func (*freshLoginStorage) LoadSession(context.Context) ([]byte, error) {
 	return nil, session.ErrNotFound
 }
 
-func (f *freshLoginStorage) StoreSession(_ context.Context, data []byte) error {
+func (fresh *freshLoginStorage) StoreSession(_ context.Context, data []byte) error {
 	// Keep the latest bytes only; the real backend is untouched until Commit.
-	f.staged = bytes.Clone(data)
-	f.dirty = true
+	fresh.mu.Lock()
+	defer fresh.mu.Unlock()
+
+	fresh.staged = bytes.Clone(data)
+	fresh.dirty = true
 
 	return nil
 }
@@ -111,12 +119,19 @@ func (f *freshLoginStorage) StoreSession(_ context.Context, data []byte) error {
 // Commit flushes the staged session to the real backend. The caller must invoke
 // it only after authentication has succeeded, so that a failed or aborted login
 // leaves the previous session intact. It is a no-op if nothing was staged.
-func (f *freshLoginStorage) Commit(ctx context.Context) error {
-	if !f.dirty {
+func (fresh *freshLoginStorage) Commit(ctx context.Context) error {
+	fresh.mu.Lock()
+	staged, dirty := fresh.staged, fresh.dirty
+	fresh.mu.Unlock()
+
+	if !dirty {
 		return nil
 	}
 
-	return errors.Wrap(f.dst.StoreSession(ctx, f.staged), "store fresh session")
+	// staged is an owned bytes.Clone; StoreSession replaces the field with a new
+	// slice rather than mutating this one, so using the snapshot after unlock is
+	// safe and the backend write does not hold the lock.
+	return errors.Wrap(fresh.dst.StoreSession(ctx, staged), "store fresh session")
 }
 
 // newSessionStorage picks the session backend: the OS keychain by default, or a

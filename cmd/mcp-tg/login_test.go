@@ -149,6 +149,40 @@ func TestTTYAuthenticator_SignUpUnsupported(t *testing.T) {
 	}
 }
 
+// errReader fails every Read, to drive the non-EOF read-error branch of line().
+type errReader struct{ err error }
+
+func (e errReader) Read([]byte) (int, error) { return 0, e.err }
+
+func TestTTYAuthenticator_PasswordReadErrorWrapped(t *testing.T) {
+	errBoom := errors.New("tty read failed")
+	aut := &ttyAuthenticator{
+		in:       bufio.NewReader(strings.NewReader("")),
+		out:      &bytes.Buffer{},
+		readPass: func() (string, error) { return "", errBoom },
+	}
+
+	_, err := aut.Password(t.Context())
+	if !errors.Is(err, errBoom) {
+		t.Errorf("Password error = %v, want wrapped %v", err, errBoom)
+	}
+}
+
+func TestTTYAuthenticator_LineReadErrorWrapped(t *testing.T) {
+	errBoom := errors.New("stdin broke")
+	aut := &ttyAuthenticator{
+		in:       bufio.NewReader(errReader{err: errBoom}),
+		out:      &bytes.Buffer{},
+		readPass: func() (string, error) { return "", nil },
+	}
+
+	// Phone() reads a line; a non-EOF read error must surface (EOF is tolerated).
+	_, err := aut.Phone(t.Context())
+	if !errors.Is(err, errBoom) {
+		t.Errorf("Phone error = %v, want wrapped %v", err, errBoom)
+	}
+}
+
 func TestRunLogin_RequiresTTY(t *testing.T) {
 	// go test runs with stdin detached from any terminal, so runLogin must
 	// bail out before touching config or the network.

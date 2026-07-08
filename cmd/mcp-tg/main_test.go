@@ -177,6 +177,22 @@ func TestHeadlessLoginRequired_ActionableMessage(t *testing.T) {
 	}
 }
 
+// TestMCPDevice_IdentifiesAsMCPTG pins the client-identity contract documented
+// in CLAUDE.md: the account's Devices list must show "mcp-tg", not gotd's
+// default device model (the Go runtime version). Cheap guard against a future
+// reorder with SetDefaults silently reverting to the default.
+func TestMCPDevice_IdentifiesAsMCPTG(t *testing.T) {
+	device := mcpDevice()
+
+	if device.DeviceModel != serverName {
+		t.Errorf("DeviceModel = %q, want %q", device.DeviceModel, serverName)
+	}
+
+	if device.AppVersion == "" {
+		t.Error("AppVersion must not be empty")
+	}
+}
+
 // TestLoginWouldFix pins which headless startup auth failures map to the
 // "run mcp-tg login" guidance (missing session / unauthorized) versus which
 // surface unchanged (transient network / server errors re-login cannot fix).

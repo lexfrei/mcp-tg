@@ -293,14 +293,14 @@ export TELEGRAM_APP_HASH=your_app_hash
 ./mcp-tg login
 ```
 
-Container — note `-it` (an interactive TTY, unlike the `-i` used to run the server) and `--insecure-storage` (a container has no keychain, so the session must go to the mounted file):
+Container — note `-it` (an interactive TTY, unlike the `-i` used to run the server). The image defaults to the file backend (a container has no keychain), so the session lands in the mounted volume:
 
 ```bash
 docker run --rm -it \
   -e TELEGRAM_APP_ID=12345 \
   -e TELEGRAM_APP_HASH=your_app_hash \
   -v ~/.mcp-tg:/home/nobody/.mcp-tg \
-  ghcr.io/lexfrei/mcp-tg:latest login --insecure-storage
+  ghcr.io/lexfrei/mcp-tg:latest login
 ```
 
 The login code is delivered by Telegram at runtime, so login is inherently interactive: it needs a real terminal and refuses to run on piped stdin (`docker run` without `-t`). The server's own env → MCP-elicitation cascade still works for a stdio server that prompts through its connected client, but `mcp-tg login` is the only path that works for the headless HTTP daemon.
@@ -351,12 +351,11 @@ MTProto connection, migration, and auth-key lifecycle events are logged, so if a
 claude mcp add mcp-tg -- docker run --rm -i \
   -e TELEGRAM_APP_ID \
   -e TELEGRAM_APP_HASH \
-  -e TELEGRAM_SESSION_INSECURE=true \
   -v ~/.mcp-tg:/home/nobody/.mcp-tg \
   ghcr.io/lexfrei/mcp-tg:latest
 ```
 
-A container has no OS keychain, so it reads the session from the mounted file (`TELEGRAM_SESSION_INSECURE=true`) that `mcp-tg login --insecure-storage` wrote into the same volume.
+A container has no OS keychain, so the image defaults to the plaintext file backend and reads the session from the mounted volume — the one `mcp-tg login` wrote there (see [Logging in](#logging-in)).
 
 ### Direct binary
 
@@ -372,7 +371,6 @@ export TELEGRAM_APP_HASH=your_app_hash
 docker run --rm -i \
   -e TELEGRAM_APP_ID=12345 \
   -e TELEGRAM_APP_HASH=your_app_hash \
-  -e TELEGRAM_SESSION_INSECURE=true \
   -v ~/.mcp-tg:/home/nobody/.mcp-tg \
   ghcr.io/lexfrei/mcp-tg:latest
 ```

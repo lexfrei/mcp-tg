@@ -102,6 +102,25 @@ func TestAuthRevoked_LogsOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestRevokedCode(t *testing.T) {
+	// Every entry of the actual list must match — iterate the list itself so the
+	// test tracks it and no code literal is duplicated.
+	for _, code := range authRevokedCodes {
+		got, ok := revokedCode(tgerr.New(401, code))
+		if !ok || got != code {
+			t.Errorf("revokedCode(%s) = %q, %v; want %q, true", code, got, ok, code)
+		}
+	}
+
+	// Not revoked-session codes: a flood wait, and account-level bans that
+	// re-login cannot fix (deliberately excluded from the list).
+	for _, code := range []string{"FLOOD_WAIT_42", "USER_DEACTIVATED", "USER_DEACTIVATED_BAN"} {
+		if _, ok := revokedCode(tgerr.New(400, code)); ok {
+			t.Errorf("revokedCode(%s) should not match", code)
+		}
+	}
+}
+
 // TestAuthRevoked_PreAuthProbeDoesNotPoisonSession pins the interaction between
 // the startup auth flow and the guard. Auth().IfNecessary probes users.getUsers
 // on self before login, which answers AUTH_KEY_UNREGISTERED for a not-yet-

@@ -17,17 +17,17 @@ import (
 const codeAuthKeyUnregistered = "AUTH_KEY_UNREGISTERED"
 
 // authRevokedCodes are the MTProto errors that mean the session's auth key is
-// gone for good: the daemon cannot recover in headless mode, only a fresh
-// interactive login restores service. Kept broad on purpose — every code here
-// warrants the same "re-login required" operator signal.
+// gone but a fresh interactive login restores service — exactly the cases where
+// the "re-login required" signal is correct. Account-level terminal states
+// (USER_DEACTIVATED / USER_DEACTIVATED_BAN) are deliberately excluded: re-login
+// cannot fix a deactivated or banned account, so pointing the operator at
+// `mcp-tg login` there would mislead — those surface as their raw error instead.
 var authRevokedCodes = []string{
 	codeAuthKeyUnregistered,
 	"AUTH_KEY_INVALID",
 	"AUTH_KEY_PERM_EMPTY",
 	"SESSION_REVOKED",
 	"SESSION_EXPIRED",
-	"USER_DEACTIVATED",
-	"USER_DEACTIVATED_BAN",
 }
 
 // newAuthRevokedMiddleware watches every Telegram API call for a revoked-session

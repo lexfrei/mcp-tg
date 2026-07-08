@@ -44,3 +44,16 @@ func TestLoadAppHash_FallsBackToLdflagsDefault(t *testing.T) {
 		t.Errorf("loadAppHash() = %q, %v; want builtinhash (ldflags default)", hash, err)
 	}
 }
+
+func TestLoadAppHash_EnvOverridesLdflagsDefault(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_HASH", "envhash")
+
+	prev := defaultAppHash
+	defaultAppHash = "builtinhash"
+	t.Cleanup(func() { defaultAppHash = prev })
+
+	hash, err := loadAppHash()
+	if err != nil || hash != "envhash" {
+		t.Errorf("loadAppHash() = %q, %v; want envhash (env overrides ldflags default)", hash, err)
+	}
+}

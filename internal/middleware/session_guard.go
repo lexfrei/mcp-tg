@@ -24,7 +24,7 @@ var ErrSessionRevoked = errors.New(
 // calls with ErrSessionRevoked once health reports the session revoked, instead
 // of forwarding to a handler that would emit a raw AUTH_KEY_UNREGISTERED per
 // call. It shares requiresAuth/isBypassed with NewAuthGuard: protocol methods
-// and *_list calls always pass through, and bypassTools (server-meta tools that
+// and the `*/list` MCP methods always pass through, and bypassTools (server-meta tools that
 // never touch Telegram, e.g. build version) stay reachable so an operator can
 // still probe the daemon while it is locked out.
 func NewSessionGuard(health *SessionHealth, bypassTools []string) mcp.Middleware {

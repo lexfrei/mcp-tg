@@ -71,7 +71,10 @@ func (a *ttyAuthenticator) Password(_ context.Context) (string, error) {
 		return "", errors.Wrap(err, "reading password")
 	}
 
-	return strings.TrimSpace(pwd), nil
+	// Return the password exactly as typed — never trim. A Telegram 2FA password
+	// may intentionally begin or end with whitespace, and term.ReadPassword
+	// already strips the line terminator, so there is nothing safe to remove.
+	return pwd, nil
 }
 
 func (a *ttyAuthenticator) AcceptTermsOfService(_ context.Context, _ tg.HelpTermsOfService) error {

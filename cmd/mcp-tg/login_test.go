@@ -122,16 +122,21 @@ func TestTTYAuthenticator_PhoneAndCodeReadTrimmedLines(t *testing.T) {
 	}
 }
 
-func TestTTYAuthenticator_PasswordUsesHiddenReaderAndTrims(t *testing.T) {
-	aut := newTestAuthenticator("", "  s3cret \n")
+func TestTTYAuthenticator_PasswordReturnedExactly(t *testing.T) {
+	// A 2FA password must reach Telegram byte-for-byte: trimming would corrupt a
+	// password that intentionally has leading/trailing whitespace, and
+	// term.ReadPassword already returns it without the line terminator.
+	const secret = "  s3 cret  "
+
+	aut := newTestAuthenticator("", secret)
 
 	pwd, err := aut.Password(t.Context())
 	if err != nil {
 		t.Fatalf("Password: %v", err)
 	}
 
-	if pwd != "s3cret" {
-		t.Errorf("Password = %q, want %q", pwd, "s3cret")
+	if pwd != secret {
+		t.Errorf("Password = %q, want %q (no trimming)", pwd, secret)
 	}
 }
 

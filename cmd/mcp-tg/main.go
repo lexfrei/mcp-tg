@@ -172,7 +172,7 @@ func startHeadless(
 
 	authErr := authenticate(ctx, tgClient, cfg, nil)
 	if authErr != nil {
-		return authErr
+		return headlessLoginRequired(authErr)
 	}
 
 	// See startStdio: arm only after the initial auth succeeds so the startup
@@ -259,6 +259,16 @@ func authenticate(
 	flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
 
 	return errors.Wrap(tgClient.Auth().IfNecessary(ctx, flow), "authentication failed")
+}
+
+// headlessLoginRequired turns a headless startup auth failure into an
+// actionable message. The underlying gotd error is typically "TELEGRAM_PHONE is
+// required", which misleads toward setting an env var; the real fix is an
+// interactive login the headless daemon cannot perform itself.
+func headlessLoginRequired(cause error) error {
+	return errors.Wrap(cause,
+		"no valid Telegram session and the headless daemon cannot log in by itself — "+
+			"run `mcp-tg login` in a terminal (outside any MCP client), then restart the daemon")
 }
 
 func waitForTransports(

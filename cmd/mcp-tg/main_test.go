@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/lexfrei/mcp-tg/internal/tools"
@@ -147,6 +148,28 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 
 	_ = cs.Close()
 	ss.Wait()
+}
+
+// TestHeadlessLoginRequired_ActionableMessage pins that a headless startup auth
+// failure is reported with the interactive-login fix, not the misleading raw
+// "TELEGRAM_PHONE is required" that gotd surfaces.
+func TestHeadlessLoginRequired_ActionableMessage(t *testing.T) {
+	cause := errors.New("auth flow: get phone: TELEGRAM_PHONE is required for authentication")
+
+	err := headlessLoginRequired(cause)
+
+	if !errors.Is(err, cause) {
+		t.Error("wrapped error must preserve the cause for errors.Is")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "mcp-tg login") {
+		t.Errorf("message must point to `mcp-tg login`, got: %s", msg)
+	}
+
+	if !strings.Contains(msg, "terminal") {
+		t.Errorf("message must say it needs a terminal, got: %s", msg)
+	}
 }
 
 func assertToolPresent(t *testing.T, res *mcp.ListToolsResult, name string) {

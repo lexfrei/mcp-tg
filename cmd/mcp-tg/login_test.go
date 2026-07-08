@@ -7,7 +7,29 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/tg"
 )
+
+func TestLoginDisplayName(t *testing.T) {
+	cases := []struct {
+		name string
+		user *tg.User
+		want string
+	}{
+		{"full name", &tg.User{FirstName: "Ada", LastName: "Lovelace"}, "Ada Lovelace"},
+		{"first only", &tg.User{FirstName: "Ada"}, "Ada"},
+		{"username fallback", &tg.User{Username: "ada"}, "@ada"},
+		{"empty fallback", &tg.User{}, loginFallbackName},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := loginDisplayName(tc.user); got != tc.want {
+				t.Errorf("loginDisplayName = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestLoginRequested(t *testing.T) {
 	cases := []struct {

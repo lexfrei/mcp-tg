@@ -171,5 +171,8 @@ func loginDisplayName(self *tg.User) string {
 		return "@" + self.Username
 	}
 
-	return "your account"
+	return loginFallbackName
 }
+
+// loginFallbackName is shown when the account has neither a name nor a username.
+const loginFallbackName = "your account"

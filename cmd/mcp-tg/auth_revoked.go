@@ -25,6 +25,7 @@ const codeAuthKeyUnregistered = "AUTH_KEY_UNREGISTERED"
 var authRevokedCodes = []string{
 	codeAuthKeyUnregistered,
 	"AUTH_KEY_INVALID",
+	"AUTH_KEY_DUPLICATED", // same key used from two places, server killed it — the multi-client / IP-hop case the README warns about
 	"AUTH_KEY_PERM_EMPTY",
 	"SESSION_REVOKED",
 	"SESSION_EXPIRED",

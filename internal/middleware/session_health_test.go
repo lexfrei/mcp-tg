@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -67,20 +68,48 @@ func TestSessionHealth_MarkRevokedConcurrentSingleWinner(t *testing.T) {
 	health := NewSessionHealth()
 	health.Arm()
 
-	const goroutines = 32
-
-	var (
-		wg    sync.WaitGroup
-		mu    sync.Mutex
-		wins  int
-		start = make(chan struct{})
+	const (
+		writers = 32
+		readers = 8
 	)
 
-	wg.Add(goroutines)
+	var (
+		writeGroup sync.WaitGroup
+		readGroup  sync.WaitGroup
+		mu         sync.Mutex
+		wins       int
+		violation  atomic.Bool
+		stop       atomic.Bool
+		start      = make(chan struct{})
+	)
 
-	for range goroutines {
+	// Readers spin during the race and assert the invariant in the actual
+	// concurrent window: if Revoked() is ever observed true, Code() must already
+	// be non-empty (the winner stores the code before publishing revoked). A
+	// post-hoc check after Wait() cannot catch the transient window this rules out.
+	readGroup.Add(readers)
+
+	for range readers {
 		go func() {
-			defer wg.Done()
+			defer readGroup.Done()
+
+			<-start
+
+			for !stop.Load() {
+				if health.Revoked() && health.Code() == "" {
+					violation.Store(true)
+
+					return
+				}
+			}
+		}()
+	}
+
+	writeGroup.Add(writers)
+
+	for range writers {
+		go func() {
+			defer writeGroup.Done()
 
 			<-start
 
@@ -93,15 +122,18 @@ func TestSessionHealth_MarkRevokedConcurrentSingleWinner(t *testing.T) {
 	}
 
 	close(start)
-	wg.Wait()
+	writeGroup.Wait()
+	stop.Store(true)
+	readGroup.Wait()
 
 	if wins != 1 {
 		t.Errorf("exactly one goroutine should win the transition, got %d", wins)
 	}
 
-	// The winner publishes revoked only after storing the code, so once the
-	// session reads revoked it must also expose a non-empty code — never the
-	// transient Revoked()==true / Code()=="" window.
+	if violation.Load() {
+		t.Error("observed Revoked()==true with empty Code() during the race — code must be published before revoked")
+	}
+
 	if health.Revoked() && health.Code() == "" {
 		t.Error("Revoked() is true but Code() is empty — code must be published before revoked")
 	}

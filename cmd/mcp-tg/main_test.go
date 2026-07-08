@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/config"
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
@@ -172,6 +173,43 @@ func TestHeadlessLoginRequired_ActionableMessage(t *testing.T) {
 
 	if !strings.Contains(msg, "terminal") {
 		t.Errorf("message must say it needs a terminal, got: %s", msg)
+	}
+}
+
+// TestRevokedExitError covers the connection-death path: a revoked-session code
+// that gotd surfaces as a permanent connection error (ending tgClient.Run) must
+// be turned into the same actionable `mcp-tg login` guidance the invoker path
+// gives, while other stops keep the generic message and nil stays nil.
+func TestRevokedExitError(t *testing.T) {
+	if got := revokedExitError(nil); got != nil {
+		t.Errorf("clean shutdown must stay nil, got: %v", got)
+	}
+
+	revoked := tgerr.New(401, "AUTH_KEY_DUPLICATED")
+	err := revokedExitError(revoked)
+
+	if !errors.Is(err, revoked) {
+		t.Error("wrapped error must preserve the cause for errors.Is")
+	}
+
+	msg := err.Error()
+	if !strings.Contains(msg, "mcp-tg login") {
+		t.Errorf("revoked exit must point to `mcp-tg login`, got: %s", msg)
+	}
+
+	if !strings.Contains(msg, "AUTH_KEY_DUPLICATED") {
+		t.Errorf("revoked exit must name the code, got: %s", msg)
+	}
+
+	generic := errors.New("context canceled")
+	genericErr := revokedExitError(generic)
+
+	if !errors.Is(genericErr, generic) {
+		t.Error("generic stop must preserve the cause for errors.Is")
+	}
+
+	if gotMsg := genericErr.Error(); !strings.Contains(gotMsg, "telegram client stopped") {
+		t.Errorf("non-revoked stop must use the generic message, got: %s", gotMsg)
 	}
 }
 

@@ -22,10 +22,18 @@ const codeAuthKeyUnregistered = "AUTH_KEY_UNREGISTERED"
 // (USER_DEACTIVATED / USER_DEACTIVATED_BAN) are deliberately excluded: re-login
 // cannot fix a deactivated or banned account, so pointing the operator at
 // `mcp-tg login` there would mislead — those surface as their raw error instead.
+//
+// The list drives two detection paths, because gotd surfaces these codes in two
+// different ways: the invoker middleware (newAuthRevokedMiddleware) catches the
+// ones returned as an RPC error on a live connection (AUTH_KEY_UNREGISTERED),
+// and revokedExitError catches the ones gotd classifies as a permanent
+// *connection* error that ends tgClient.Run (AUTH_KEY_DUPLICATED and friends —
+// see gotd telegram.Client.isPermanentError). A given deployment may hit either.
 var authRevokedCodes = []string{
 	codeAuthKeyUnregistered,
 	"AUTH_KEY_INVALID",
-	"AUTH_KEY_DUPLICATED", // same key used from two places, server killed it — the multi-client / IP-hop case the README warns about
+	// same key from two places; gotd makes this a permanent connection error, so revokedExitError catches it (not the invoker)
+	"AUTH_KEY_DUPLICATED",
 	"AUTH_KEY_PERM_EMPTY",
 	"SESSION_REVOKED",
 	"SESSION_EXPIRED",

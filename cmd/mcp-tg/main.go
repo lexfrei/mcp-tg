@@ -97,9 +97,9 @@ func run() error {
 
 	setupSignalHandler(ctx, cancel)
 
-	return errors.Wrap(tgClient.Run(ctx, func(ctx context.Context) error {
+	return revokedExitError(tgClient.Run(ctx, func(ctx context.Context) error {
 		return startServer(ctx, cancel, tgClient, cfg, health)
-	}), "telegram client stopped")
+	}))
 }
 
 func startServer(
@@ -266,6 +266,23 @@ func headlessLoginRequired(cause error) error {
 	return errors.Wrap(cause,
 		"no valid Telegram session and the headless daemon cannot log in by itself — "+
 			"run `mcp-tg login` in a terminal (outside any MCP client), then restart the daemon")
+}
+
+// revokedExitError wraps the error tgClient.Run returns when the connection ends.
+// Some revoked-session codes (notably AUTH_KEY_DUPLICATED) are classified by gotd
+// as permanent *connection* errors, so they tear down the client instead of
+// surfacing through the invoker middleware — the daemon exits here rather than
+// staying up and fast-failing tool calls. Point the operator at `mcp-tg login`
+// with the same guidance as the invoker path; otherwise fall back to the generic
+// stop message. A nil error (clean shutdown) stays nil.
+func revokedExitError(err error) error {
+	if code, ok := revokedCode(err); ok {
+		return errors.Wrapf(err,
+			"Telegram session revoked (%s) — the daemon cannot recover on its own; "+
+				"run `mcp-tg login` in a terminal, then restart the daemon", code)
+	}
+
+	return errors.Wrap(err, "telegram client stopped")
 }
 
 func waitForTransports(

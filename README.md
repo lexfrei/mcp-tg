@@ -335,6 +335,8 @@ Telegram can invalidate a session's auth key server-side at any time — an acco
 
 When this happens the server logs one `ERROR` line — `Telegram session revoked — re-login required (run: mcp-tg login)` — instead of a stream of raw 401s, and every subsequent tool call fails fast with an explicit "logged out … run `mcp-tg login`" error rather than an opaque per-tool `AUTH_KEY_UNREGISTERED`. Read-only server-meta tools (`tg_server_version`) still answer, so a client can confirm the daemon itself is alive.
 
+Some revocations (notably `AUTH_KEY_DUPLICATED`, the same key seen from two places) are delivered by the protocol as a fatal connection error rather than a per-call reply. The connection cannot continue, so instead of staying up the daemon exits with the same `run mcp-tg login` guidance; under a supervisor (launchd/systemd) it restarts and exits again until you re-login. The fix is identical.
+
 The daemon cannot re-authenticate itself, and it cannot be fixed from the MCP client — the `/mcp` re-authenticate action does not apply, since this server implements no OAuth. To recover:
 
 1. Stop the daemon.

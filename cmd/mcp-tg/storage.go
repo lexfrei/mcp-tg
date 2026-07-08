@@ -72,6 +72,26 @@ func newKeychainStorage(store secretStore, service, account string) (session.Sto
 	return &keychainStorage{store: store, service: service, account: account}, nil
 }
 
+// freshLoginStorage forces `mcp-tg login` to authenticate from scratch: its
+// LoadSession always reports no session, so gotd's auth flow runs in full and
+// never reuses a stale or revoked key. That matters because some revoked states
+// (notably AUTH_KEY_DUPLICATED) break a connection that tries to reuse the key,
+// which would fail the login before it could prompt. StoreSession still writes
+// the freshly minted session through to the real backend.
+type freshLoginStorage struct {
+	dst session.Storage
+}
+
+var _ session.Storage = freshLoginStorage{}
+
+func (freshLoginStorage) LoadSession(context.Context) ([]byte, error) {
+	return nil, session.ErrNotFound
+}
+
+func (f freshLoginStorage) StoreSession(ctx context.Context, data []byte) error {
+	return errors.Wrap(f.dst.StoreSession(ctx, data), "store fresh session")
+}
+
 // newSessionStorage picks the session backend: the OS keychain by default, or a
 // plaintext file only when insecure storage was explicitly requested.
 //

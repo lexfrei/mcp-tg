@@ -70,6 +70,32 @@ func TestKeychainStorage_EmptyReturnsSessionErrNotFound(t *testing.T) {
 	}
 }
 
+func TestFreshLoginStorage_AlwaysFreshButStoresThrough(t *testing.T) {
+	backing := newFakeStore()
+	backing.data["svc/acct"] = []byte("old-revoked-session")
+
+	inner, err := newKeychainStorage(backing, "svc", "acct")
+	if err != nil {
+		t.Fatalf("newKeychainStorage: %v", err)
+	}
+
+	fresh := freshLoginStorage{dst: inner}
+
+	// A full login must run even though a (possibly revoked) session exists.
+	if _, loadErr := fresh.LoadSession(t.Context()); !errors.Is(loadErr, session.ErrNotFound) {
+		t.Errorf("LoadSession = %v, want session.ErrNotFound (always fresh)", loadErr)
+	}
+
+	// The freshly minted session must be written through to the real backend.
+	if storeErr := fresh.StoreSession(t.Context(), []byte("new-session")); storeErr != nil {
+		t.Fatalf("StoreSession: %v", storeErr)
+	}
+
+	if got := string(backing.data["svc/acct"]); got != "new-session" {
+		t.Errorf("backing store has %q, want the new session written through", got)
+	}
+}
+
 func TestNewSessionStorage_SecureByDefault(t *testing.T) {
 	cfg := &config.Config{SessionFile: "/tmp/mcp-tg/session.json"}
 

@@ -114,6 +114,10 @@ func runLogin() error {
 		return storageErr
 	}
 
+	// Always log in from scratch: never reuse a stale or revoked key (a
+	// AUTH_KEY_DUPLICATED key can fail the connection before we could prompt).
+	storage = freshLoginStorage{dst: storage}
+
 	if dirErr := ensureFileStorageDir(cfg, insecure); dirErr != nil {
 		return dirErr
 	}

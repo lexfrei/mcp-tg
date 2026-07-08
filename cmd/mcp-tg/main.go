@@ -408,6 +408,12 @@ func newGotdLogger() *zap.Logger {
 	cfg.Encoding = "console"
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 
+	// This is a diagnostic logger whose whole point is to preserve the context of
+	// a connection/auth incident. Production sampling would thin out repeated
+	// lines (e.g. "Restarting connection") during exactly the reconnect storm we
+	// want fully logged, so disable it.
+	cfg.Sampling = nil
+
 	logger, err := cfg.Build()
 	if err != nil {
 		return zap.NewNop()

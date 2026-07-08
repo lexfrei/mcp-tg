@@ -70,14 +70,10 @@ type Config struct {
 	InsecureStorage bool
 }
 
-// Load reads configuration from environment variables and returns a Config.
+// Load reads the full configuration from environment variables, including the
+// HTTP transport settings the server needs.
 func Load() (*Config, error) {
-	appID, err := loadAppID()
-	if err != nil {
-		return nil, err
-	}
-
-	appHash, err := loadAppHash()
+	cfg, err := loadCore()
 	if err != nil {
 		return nil, err
 	}
@@ -96,6 +92,35 @@ func Load() (*Config, error) {
 		return nil, ErrHTTPOnlyRequiresPort
 	}
 
+	cfg.HTTPPort = httpPort
+	cfg.HTTPHost = loadHTTPHost()
+	cfg.HTTPOnly = httpOnly
+
+	return cfg, nil
+}
+
+// LoadForLogin reads only what `mcp-tg login` needs — Telegram credentials and
+// session storage. It deliberately skips the HTTP transport settings so that
+// running login in a server or daemon environment (which may carry
+// MCP_HTTP_ONLY / MCP_HTTP_PORT, possibly invalid or without the other) cannot
+// fail the login for a reason that has nothing to do with logging in.
+func LoadForLogin() (*Config, error) {
+	return loadCore()
+}
+
+// loadCore loads the Telegram credential and session-storage fields shared by
+// every entry point, leaving the HTTP transport fields at their zero values.
+func loadCore() (*Config, error) {
+	appID, err := loadAppID()
+	if err != nil {
+		return nil, err
+	}
+
+	appHash, err := loadAppHash()
+	if err != nil {
+		return nil, err
+	}
+
 	insecureStorage, err := loadInsecureStorage()
 	if err != nil {
 		return nil, err
@@ -109,9 +134,6 @@ func Load() (*Config, error) {
 		SessionFile:     loadSessionFile(),
 		AuthCode:        os.Getenv("TELEGRAM_AUTH_CODE"),
 		DownloadDir:     loadDownloadDir(),
-		HTTPPort:        httpPort,
-		HTTPHost:        loadHTTPHost(),
-		HTTPOnly:        httpOnly,
 		InsecureStorage: insecureStorage,
 	}, nil
 }

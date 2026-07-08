@@ -105,7 +105,7 @@ func runLogin() error {
 		return errNotATTY
 	}
 
-	cfg, cfgErr := config.Load()
+	cfg, cfgErr := config.LoadForLogin()
 	if cfgErr != nil {
 		return errors.Wrap(cfgErr, "invalid configuration")
 	}

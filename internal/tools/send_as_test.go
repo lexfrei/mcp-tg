@@ -210,3 +210,38 @@ func TestExplainMTProtoCode_SendAsPeerInvalid(t *testing.T) {
 		t.Errorf("explanation %q must point at tg_chats_get_send_as", got)
 	}
 }
+
+// A channel reacts whenever it is the chat's default send-as identity.
+// Rendering it as [user:N] points the reader at the wrong id space.
+func TestMessagesGetReactionsHandler_ChannelReactor(t *testing.T) {
+	mock := &mockClient{
+		peer: destPeer(),
+		reactions: []telegram.ReactionUser{
+			{UserID: 20, PeerType: telegram.PeerChannel, Name: "My Channel", Username: "mychan", Emoji: "👍"},
+			{UserID: 10, PeerType: telegram.PeerUser, Name: "Alice", Emoji: "🔥"},
+		},
+	}
+
+	_, structured, err := NewMessagesGetReactionsHandler(mock)(
+		context.Background(), nil, MessagesGetReactionsParams{Peer: "@group", MessageID: 1},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.Reactions[0].Type != peerChannel {
+		t.Errorf("channel reactor type = %q, want %q", structured.Reactions[0].Type, peerChannel)
+	}
+
+	if structured.Reactions[1].Type != peerUser {
+		t.Errorf("user reactor type = %q, want %q", structured.Reactions[1].Type, peerUser)
+	}
+
+	if !strings.Contains(structured.Output, "My Channel [@mychan]") {
+		t.Errorf("output %q must render the channel reactor by name", structured.Output)
+	}
+
+	if !strings.Contains(structured.Output, "Alice [user:10]") {
+		t.Errorf("output %q must label the user reactor as a user", structured.Output)
+	}
+}

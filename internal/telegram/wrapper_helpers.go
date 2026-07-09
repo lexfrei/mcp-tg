@@ -1307,20 +1307,25 @@ func extractReactionUsers(
 		return nil
 	}
 
-	names := buildUserMap(result.Users)
+	users := buildUserRefs(result.Users)
+	chats := buildChatRefs(result.Chats)
 	items := make([]ReactionUser, 0, len(result.Reactions))
 
 	for idx := range result.Reactions {
 		reaction := &result.Reactions[idx]
+		peerID, peerType := extractFromIDAndType(reaction.PeerID)
+
 		item := ReactionUser{
-			UserID: extractFromID(reaction.PeerID),
-			Emoji:  reactionEmoji(reaction.Reaction),
+			UserID:   peerID,
+			PeerType: peerType,
+			Emoji:    reactionEmoji(reaction.Reaction),
 		}
 
-		if usr, ok := names[item.UserID]; ok {
-			item.Name = userDisplayName(usr)
-			item.Username = usr.Username
-		}
+		// A channel reactor's title lives in Chats, a user's name in
+		// Users; lookupRefByPeer picks the right one by kind.
+		ref, _ := lookupRefByPeer(InputPeer{Type: peerType, ID: peerID}, users, chats)
+		item.Name = ref.Name
+		item.Username = ref.Username
 
 		items = append(items, item)
 	}

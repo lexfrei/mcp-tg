@@ -232,11 +232,18 @@ type Folder struct {
 // peer-bearing JSON surface uses (sender, forward-author, participant)
 // so a downstream consumer can treat a reactor as a "Display Name
 // [@username]" identifier just like any other peer.
+// ReactionUser is one peer's reaction to a message.
+//
+// The reactor is not always a user: a channel reacts whenever it is the
+// chat's default send-as identity. UserID keeps its name for backwards
+// compatibility, but it holds a channel ID when PeerType says so, and
+// the two id spaces do not overlap.
 type ReactionUser struct {
-	UserID   int64  `json:"userId"`
-	Name     string `json:"name,omitempty"`
-	Username string `json:"username,omitempty"`
-	Emoji    string `json:"emoji"`
+	UserID   int64    `json:"userId"`
+	PeerType PeerType `json:"-"`
+	Name     string   `json:"name,omitempty"`
+	Username string   `json:"username,omitempty"`
+	Emoji    string   `json:"emoji"`
 }
 
 // ContactStatus represents the online status of a contact.

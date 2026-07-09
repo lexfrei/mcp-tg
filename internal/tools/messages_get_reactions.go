@@ -21,8 +21,13 @@ type MessagesGetReactionsParams struct {
 // Name and Username mirror the shape used by every other peer-bearing
 // JSON entry (sender, forward-author, participant) so a consumer can
 // render a reactor with the same "Display Name [@username]" identifier.
+//
+// Type says which id space UserID belongs to: a channel reacts whenever
+// it is the chat's default send-as identity, and a channel id collides
+// with an unrelated user id.
 type ReactionUserItem struct {
 	UserID   int64  `json:"userId"`
+	Type     string `json:"type"`
 	Name     string `json:"name,omitempty"`
 	Username string `json:"username,omitempty"`
 	Emoji    string `json:"emoji"`
@@ -108,6 +113,7 @@ func reactionUsersToItems(
 	for idx := range reactions {
 		items[idx] = ReactionUserItem{
 			UserID:   reactions[idx].UserID,
+			Type:     participantTypeLabel(reactions[idx].PeerType),
 			Name:     reactions[idx].Name,
 			Username: reactions[idx].Username,
 			Emoji:    reactions[idx].Emoji,
@@ -124,7 +130,7 @@ func formatReactionUsers(reactions []telegram.ReactionUser) string {
 		ref := formatPeerRef(
 			reactions[idx].Name,
 			reactions[idx].Username,
-			telegram.InputPeer{Type: telegram.PeerUser, ID: reactions[idx].UserID},
+			telegram.InputPeer{Type: reactions[idx].PeerType, ID: reactions[idx].UserID},
 		)
 		fmt.Fprintf(&buf, "%s %s\n", reactions[idx].Emoji, ref)
 	}

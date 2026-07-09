@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 76 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 78 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -24,7 +24,7 @@ cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection mi
 internal/config/             Env var loading and validation
 internal/telegram/           Telegram abstraction layer
   types.go                   Domain types (Message, User, Dialog, etc.)
-  client.go                  Client interface (13 sub-interfaces)
+  client.go                  Client interface (14 sub-interfaces)
   wrapper.go                 gotd/td implementation of Client
   wrapper_helpers.go         Helper functions for wrapper (extractors, converters)
   convert.go                 tg types → domain types conversion
@@ -34,7 +34,8 @@ internal/telegram/           Telegram abstraction layer
   markdown.go                Markdown → Telegram entities parser (entry point)
   markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
   markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal
-internal/tools/              MCP tool handlers (76 tools)
+  send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
+internal/tools/              MCP tool handlers (78 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
@@ -67,8 +68,8 @@ internal/testutil/           NoopClient for registration tests
 
 ### Tool annotations
 
-- `readOnlyAnnotations()` — tools that only read data (29 tools)
-- `idempotentAnnotations()` — tools that modify state but are safe to retry (27 tools)
+- `readOnlyAnnotations()` — tools that only read data (30 tools)
+- `idempotentAnnotations()` — tools that modify state but are safe to retry (28 tools)
 - `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
@@ -160,11 +161,23 @@ Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_f
 
 Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 
+### Send-as identity (posting as a channel)
+
+MTProto's `send_as` field appears on exactly five requests, which map onto six tools: `messages.sendMessage`, `messages.sendMedia` (backs both `tg_messages_send_file` and `tg_stickers_send`), `messages.sendMultiMedia`, `messages.forwardMessages`, `messages.createForumTopic`. All six take an optional `sendAs` string.
+
+Wiring: `SendOpts.SendAs *InputPeer` for the three methods that already had an options struct; a trailing `sendAs *InputPeer` argument for `ForwardMessages` / `CreateForumTopic` / `SendSticker`. `nil` means "post as the account itself" everywhere. `applySendAs(sendAs, req.SetSendAs)` (`wrapper_helpers.go`) sets the conditional field for all five request types via the method value — do NOT inline the `if sendAs != nil` check per call site, `dupl` will flag it.
+
+`resolveSendAs` (`tools/helpers.go`) resolves the string and rejects a `PeerChannel` whose `AccessHash` is 0. That state is reachable and silent: `resolveByID` returns it with a nil error for any numeric ID the client has never seen, and the resulting server error names neither the parameter nor the fix. `tg_chats_get_send_as` seeds the peer cache from the `Chats`/`Users` of its own reply, which is what makes numeric IDs work afterwards.
+
+`tg_chats_set_send_as` wraps `messages.saveDefaultSendAs`. Omitting `sendAs` there is not a missing argument — it resets the chat to the account (`&tg.InputPeerSelf{}` in the wrapper, since the domain `InputPeer` cannot express self). The default is account-wide server state and the only way to react or vote in a poll as a channel; `messages.sendReaction` and `messages.saveDraft` have no `send_as` field at all. `tg_groups_info` reports the current default from `ChannelFull.DefaultSendAs` at no extra RPC cost.
+
+Both new tools reject non-`PeerChannel` peers before the round trip (`telegram.ErrSendAsUnsupportedPeer`); the server's `CHANNEL_INVALID` explains nothing.
+
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
 - **FLOOD_WAIT**: gotd/td middleware auto-retries up to 3 times with server-specified delay
-- **Peer cache**: Access hashes from username resolution and dialog listing are cached in memory
+- **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
 ## Linter
 

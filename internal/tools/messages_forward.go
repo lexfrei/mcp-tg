@@ -10,9 +10,10 @@ import (
 
 // MessagesForwardParams defines the parameters for the tg_messages_forward tool.
 type MessagesForwardParams struct {
-	FromPeer string `json:"fromPeer" jsonschema:"Source: @username, t.me/ link, or numeric ID"`
-	ToPeer   string `json:"toPeer"   jsonschema:"Destination: @username, t.me/ link, or numeric ID"`
-	IDs      []int  `json:"ids"      jsonschema:"Message IDs to forward"`
+	FromPeer string  `json:"fromPeer"         jsonschema:"Source: @username, t.me/ link, or numeric ID"`
+	ToPeer   string  `json:"toPeer"           jsonschema:"Destination: @username, t.me/ link, or numeric ID"`
+	IDs      []int   `json:"ids"              jsonschema:"Message IDs to forward"`
+	SendAs   *string `json:"sendAs,omitempty" jsonschema:"Forward as this channel; see tg_chats_get_send_as. Omit to use the chat default"`
 }
 
 // MessagesForwardResult is the output of the tg_messages_forward tool.
@@ -57,10 +58,15 @@ func NewMessagesForwardHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 				telegramErr("failed to resolve destination peer", err)
 		}
 
-		msgs, err := client.ForwardMessages(ctx, from, dest, params.IDs)
+		sendAs, err := resolveSendAs(ctx, client, deref(params.SendAs))
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesForwardResult{}, err
+		}
+
+		msgs, err := client.ForwardMessages(ctx, from, dest, params.IDs, sendAs)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesForwardResult{},
-				telegramErr("failed to forward messages", err)
+				sendErr("failed to forward messages", err, sendAs)
 		}
 
 		return nil, MessagesForwardResult{

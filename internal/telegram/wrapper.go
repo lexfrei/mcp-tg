@@ -39,6 +39,7 @@ type Wrapper struct {
 	up             *uploader.Uploader
 	down           *downloader.Downloader
 	cache          *PeerCache
+	stickers       *StickerCache
 	transcriptions *TranscriptionBroker
 	warmedAt       atomic.Int64
 	cfg            atomic.Pointer[cachedServerConfig]
@@ -90,6 +91,7 @@ func NewWrapperWithTranscriptionBroker(api *tg.Client, broker *TranscriptionBrok
 		up:             uploader.NewUploader(api),
 		down:           downloader.NewDownloader(),
 		cache:          NewPeerCache(),
+		stickers:       NewStickerCache(),
 		transcriptions: broker,
 	}
 }
@@ -364,6 +366,8 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
 
+	applySendAs(opts.SendAs, req.SetSendAs)
+
 	result, err := w.api.MessagesSendMessage(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending message")
@@ -424,18 +428,24 @@ func (w *Wrapper) DeleteMessages(ctx context.Context, peer InputPeer, ids []int,
 }
 
 // ForwardMessages forwards messages from one chat to another.
-func (w *Wrapper) ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int) ([]Message, error) {
+func (w *Wrapper) ForwardMessages(
+	ctx context.Context, from, dest InputPeer, ids []int, sendAs *InputPeer,
+) ([]Message, error) {
 	randIDs, err := cryptoRandIDs(len(ids))
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := w.api.MessagesForwardMessages(ctx, &tg.MessagesForwardMessagesRequest{
+	req := &tg.MessagesForwardMessagesRequest{
 		FromPeer: InputPeerToTG(from),
 		ToPeer:   InputPeerToTG(dest),
 		ID:       ids,
 		RandomID: randIDs,
-	})
+	}
+
+	applySendAs(sendAs, req.SetSendAs)
+
+	result, err := w.api.MessagesForwardMessages(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "forwarding messages")
 	}
@@ -569,6 +579,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 	if opts.ScheduleDate > 0 {
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
+
+	applySendAs(opts.SendAs, req.SetSendAs)
 
 	result, err := w.api.MessagesSendMedia(ctx, req)
 	if err != nil {
@@ -1138,23 +1150,42 @@ func (w *Wrapper) GetStickerSet(ctx context.Context, name string) (*StickerSetFu
 		return nil, errors.New("unexpected sticker set type")
 	}
 
+	// The access hashes and file references only ever arrive here. A
+	// later SendSticker has no other way to address these documents.
+	w.stickers.StoreAll(stickerSet.Documents)
+
 	return convertStickerSetFull(stickerSet), nil
 }
 
 // SendSticker sends a sticker to a chat.
-func (w *Wrapper) SendSticker(ctx context.Context, peer InputPeer, stickerFileID int64) (*Message, error) {
+func (w *Wrapper) SendSticker(
+	ctx context.Context, peer InputPeer, stickerFileID int64, sendAs *InputPeer,
+) (*Message, error) {
+	doc, found := w.stickers.Lookup(stickerFileID)
+	if !found {
+		return nil, errors.Wrapf(ErrStickerNotCached, "sticker %d", stickerFileID)
+	}
+
 	randID, err := cryptoRandID()
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := w.api.MessagesSendMedia(ctx, &tg.MessagesSendMediaRequest{
+	req := &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaDocument{
-			ID: &tg.InputDocument{ID: stickerFileID},
+			ID: &tg.InputDocument{
+				ID:            doc.ID,
+				AccessHash:    doc.AccessHash,
+				FileReference: doc.FileReference,
+			},
 		},
 		RandomID: randID,
-	})
+	}
+
+	applySendAs(sendAs, req.SetSendAs)
+
+	result, err := w.api.MessagesSendMedia(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending sticker")
 	}
@@ -1453,21 +1484,22 @@ func (w *Wrapper) SetSlowMode(
 
 // CreateForumTopic creates a new forum topic.
 func (w *Wrapper) CreateForumTopic(
-	ctx context.Context, peer InputPeer, title string,
+	ctx context.Context, peer InputPeer, title string, sendAs *InputPeer,
 ) (*ForumTopic, error) {
 	randID, err := cryptoRandID()
 	if err != nil {
 		return nil, err
 	}
 
-	result, err := w.api.MessagesCreateForumTopic(
-		ctx,
-		&tg.MessagesCreateForumTopicRequest{
-			Peer:     InputPeerToTG(peer),
-			Title:    title,
-			RandomID: randID,
-		},
-	)
+	req := &tg.MessagesCreateForumTopicRequest{
+		Peer:     InputPeerToTG(peer),
+		Title:    title,
+		RandomID: randID,
+	}
+
+	applySendAs(sendAs, req.SetSendAs)
+
+	result, err := w.api.MessagesCreateForumTopic(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "creating forum topic")
 	}

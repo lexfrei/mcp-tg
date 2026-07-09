@@ -1,6 +1,6 @@
 # mcp-tg
 
-MCP server for Telegram Client API (MTProto). Provides 76 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
+MCP server for Telegram Client API (MTProto). Provides 78 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
 
 Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **user account** client, not a bot.
 
@@ -8,7 +8,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 | Feature | Status |
 | --- | --- |
-| Tools | 76 tools with annotations (read-only / idempotent / write / destructive) |
+| Tools | 78 tools with annotations (read-only / idempotent / write / destructive) |
 | Resources | 4 (dialogs, profile, chat info, chat messages) |
 | Prompts | 3 (reply, summarize, search and reply) |
 | Completions | Peer argument autocompletion from dialogs |
@@ -28,9 +28,9 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`
 
-## Tools (76 registered; 65 listed below)
+## Tools (78 registered; 67 listed below)
 
-The categorised list below documents 65 of the 76 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
+The categorised list below documents 67 of the 78 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
 
 ### Messages (12)
 
@@ -74,7 +74,7 @@ The categorised list below documents 65 of the 76 registered tools — the remai
 - `tg_groups_invite_link_get` — Get invite link
 - `tg_groups_invite_link_revoke` — Revoke invite link
 
-### Chat Management (8)
+### Chat Management (10)
 
 - `tg_chats_create` — Create a new group or channel
 - `tg_chats_archive` — Archive or unarchive a chat
@@ -84,6 +84,8 @@ The categorised list below documents 65 of the 76 registered tools — the remai
 - `tg_chats_set_description` — Set chat description
 - `tg_chats_get_admins` — List administrators (channels/supergroups)
 - `tg_chats_set_permissions` — Set default permissions
+- `tg_chats_get_send_as` — List the identities this account may post under in a chat
+- `tg_chats_set_send_as` — Set the identity this account posts under by default in a chat
 
 ### Media & Files (4)
 
@@ -108,7 +110,11 @@ The categorised list below documents 65 of the 76 registered tools — the remai
 
 - `tg_stickers_search` — Search sticker sets
 - `tg_stickers_get_set` — Get a sticker set
-- `tg_stickers_send` — Send a sticker
+- `tg_stickers_send` — Send a sticker (read its set first, see below)
+
+A sticker is addressed by three numbers, not one: an id, an access hash and a file reference. Only the id is stable and public; the other two arrive with the sticker set. So `tg_stickers_get_set` must be called before `tg_stickers_send` for that set — it caches what the send needs. Sending an id alone would answer `MEDIA_EMPTY`, a code that names neither the sticker nor the remedy, so an uncached sticker is rejected before the request leaves.
+
+`stickerFileId` is a **decimal string**, not a JSON number. The MCP SDK unmarshals tool arguments into `map[string]any` to apply schema defaults, then re-marshals them, so every JSON number round-trips through `float64`. A sticker document id needs 63 bits and a `float64` mantissa holds 53, which silently corrupts it — `5181593617004757506` arrives as `5181593617004758000`. Quote the id and it survives.
 
 ### Drafts (2)
 
@@ -204,12 +210,33 @@ The CommonMark subset supported via `parseMode: "commonmark"` covers most everyd
 - **Nested emphasis** (`**bold *italic***`). The inner italic is dropped and its asterisks are kept as literal characters. Implementing the full delimiter-run algorithm from CommonMark §6.4 would be a rewrite of the inline parser.
 - **Hard line breaks via two trailing spaces or `\`** (CommonMark §6.7). Telegram has no break entity; a plain `\n` already renders as a line break. Stripping the trailing whitespace would be silent data corruption when the user did not intend a hard break, so the parser passes both forms through unchanged.
 
+## Posting as a channel (`sendAs`)
+
+Telegram lets an account post into a supergroup under the identity of a channel it administrates, rather than under its own name. Six tools take an optional `sendAs` parameter for this: `tg_messages_send`, `tg_messages_send_file`, `tg_media_send_album`, `tg_messages_forward`, `tg_topics_create` and `tg_stickers_send`.
+
+Omitting `sendAs` does **not** force your own account — it lets the server apply the chat's saved default, exactly as the official clients do. That default is your account until `tg_chats_set_send_as` changes it, after which every send that omits `sendAs` posts as the saved identity. Pass `sendAs` explicitly when the identity matters.
+
+`tg_chats_get_send_as` lists the identities a chat will accept, together with a `premiumRequired` flag for the ones that need Telegram Premium. It is the authoritative answer — the server decides, not the client — and calling it also caches the access hashes, which is what lets a bare numeric ID be used as `sendAs` for a private channel afterwards. Until then, pass `@username`.
+
+`tg_chats_set_send_as` changes the identity the chat posts under by default, and `tg_groups_info` reports the current one as `defaultSendAs`. Treat the default as account-wide server state: it shows up in every Telegram client, survives restarts, silently changes what an omitted `sendAs` means, and in a shared daemon another caller sees it too. Prefer the per-call `sendAs` argument wherever it suffices.
+
+When Telegram refuses an identity it does not say so plainly. Posting as a channel you do not administrate answers `CHAT_ADMIN_REQUIRED`; naming a foreign user answers `CHAT_WRITE_FORBIDDEN`. Both read as "you may not write here" even though the destination was fine, so the send tools add the `sendAs` parameter as a suspect whenever one was given.
+
+What MTProto does not allow, and no amount of client code can add:
+
+- **Reactions and poll votes cannot name an identity per call.** `messages.sendReaction` has no `send_as` field, so those follow the chat default set through `tg_chats_set_send_as`. That is the only lever.
+- **Drafts always belong to the account.** `messages.saveDraft` has no `send_as` field, so `tg_drafts_set` is unaffected by any of this.
+- **Direct messages and legacy basic groups have no send-as at all.** Both new tools reject those peers before the round trip.
+- **Only identities the server offers.** You cannot post as a channel you do not administrate, and `premiumRequired` cannot be bypassed.
+
 ## Reactions
 
 `tg_messages_react` adds or removes reactions; `tg_messages_get_reactions` reads who reacted. Both share one encoding for a reaction:
 
 - A standard reaction is the unicode emoji itself (`"👍"`).
 - A premium custom-emoji reaction is encoded as `"custom:<document_id>"` (e.g. `"custom:5210952531676504517"`). `tg_messages_get_reactions` emits this exact form, so a reaction read from one message can be sent verbatim to another (read → send round-trip).
+
+A reactor is not always a user. When a chat's default identity is a channel (see `tg_chats_set_send_as`), reactions from this account are attributed to that channel. `tg_messages_get_reactions` reports each reactor's kind in `type` (`user` / `channel`), because a channel ID and a user ID with the same number are different peers.
 
 `tg_messages_react` parameters:
 

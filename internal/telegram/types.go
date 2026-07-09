@@ -155,16 +155,21 @@ type Dialog struct {
 	IsGroup     bool      `json:"isGroup,omitempty"`
 }
 
-// GroupInfo holds detailed information about a group or channel.
+// GroupInfo holds detailed information about a group, supergroup or channel.
+//
+// DefaultSendAs is the identity this account posts under by default, and
+// is nil unless one was chosen. Basic groups never have one — MTProto
+// only tracks the setting on channels.
 type GroupInfo struct {
-	Peer         InputPeer `json:"peer"`
-	Title        string    `json:"title"`
-	Username     string    `json:"username,omitempty"`
-	About        string    `json:"about,omitempty"`
-	MembersCount int       `json:"membersCount,omitempty"`
-	IsChannel    bool      `json:"isChannel,omitempty"`
-	IsSupergroup bool      `json:"isSupergroup,omitempty"`
-	IsForum      bool      `json:"isForum,omitempty"`
+	Peer          InputPeer     `json:"peer"`
+	Title         string        `json:"title"`
+	Username      string        `json:"username,omitempty"`
+	About         string        `json:"about,omitempty"`
+	MembersCount  int           `json:"membersCount,omitempty"`
+	IsChannel     bool          `json:"isChannel,omitempty"`
+	IsSupergroup  bool          `json:"isSupergroup,omitempty"`
+	IsForum       bool          `json:"isForum,omitempty"`
+	DefaultSendAs *SendAsOption `json:"defaultSendAs,omitempty"`
 }
 
 // PeerInfo holds basic metadata about any peer.
@@ -220,17 +225,23 @@ type Folder struct {
 	Peers []InputPeer `json:"peers,omitempty"`
 }
 
-// ReactionUser represents a user who reacted to a message.
+// ReactionUser is one peer's reaction to a message.
 //
-// The Name and Username fields mirror the shape every other
-// peer-bearing JSON surface uses (sender, forward-author, participant)
-// so a downstream consumer can treat a reactor as a "Display Name
-// [@username]" identifier just like any other peer.
+// The Name and Username fields mirror the shape every other peer-bearing
+// JSON surface uses (sender, forward-author, participant) so a downstream
+// consumer can treat a reactor as a "Display Name [@username]" identifier
+// just like any other peer.
+//
+// The reactor is not always a user: a channel reacts whenever it is the
+// chat's default send-as identity. UserID keeps its name for backwards
+// compatibility, but it holds a channel ID when PeerType says so, and
+// the two id spaces do not overlap.
 type ReactionUser struct {
-	UserID   int64  `json:"userId"`
-	Name     string `json:"name,omitempty"`
-	Username string `json:"username,omitempty"`
-	Emoji    string `json:"emoji"`
+	UserID   int64    `json:"userId"`
+	PeerType PeerType `json:"-"`
+	Name     string   `json:"name,omitempty"`
+	Username string   `json:"username,omitempty"`
+	Emoji    string   `json:"emoji"`
 }
 
 // ContactStatus represents the online status of a contact.
@@ -323,6 +334,12 @@ func IsCommonMarkParseMode(mode string) bool {
 type UploadProgress func(ctx context.Context, uploaded, total int64)
 
 // SendOpts configures message sending.
+//
+// SendAs names the identity the message is posted under. A nil value
+// leaves the choice to the server, which applies the chat's saved
+// default — the account itself unless SetDefaultSendAs changed it. Only
+// identities the server lists in GetSendAs are accepted; anything else
+// fails with SEND_AS_PEER_INVALID.
 type SendOpts struct {
 	ReplyTo      int
 	TopicID      int
@@ -330,6 +347,7 @@ type SendOpts struct {
 	Silent       bool
 	NoWebpage    bool
 	ScheduleDate int
+	SendAs       *InputPeer
 	Progress     UploadProgress
 }
 

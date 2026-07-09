@@ -14,6 +14,7 @@ type mockClient struct {
 	parentMessages []telegram.Message // see getMessages for selection rules
 	getMessagesFn  func(ids []int) []telegram.Message
 	getHistoryFn   func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
+	resolvePeerFn  func(identifier string) (telegram.InputPeer, error)
 	message        *telegram.Message
 	total          int
 	dialogs        []telegram.Dialog
@@ -55,10 +56,30 @@ type mockClient struct {
 	lastTranscribeID int
 	lastWait         time.Duration
 	groupInfoCalls   int
+	// lastSendAs records the identity passed to the send methods that
+	// take it as a trailing argument rather than through SendOpts.
+	lastSendAs *telegram.InputPeer
+	// lastSetSendAs records the identity SetDefaultSendAs was asked to
+	// store. A nil value is meaningful there: it resets the chat to the
+	// account itself, so setSendAsCalls disambiguates "not called".
+	lastSetSendAs   *telegram.InputPeer
+	setSendAsCalls  int
+	sendAsOptions   []telegram.SendAsOption
+	getSendAsCalls  int
+	resolvedQueries []string
+	lastStickerID   int64
 }
 
+// ResolvePeer answers with m.peer unless resolvePeerFn is set. Tools
+// that resolve two references per call — a destination and a send-as
+// identity — need the hook to tell the two apart.
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
 	m.lastQuery = identifier
+	m.resolvedQueries = append(m.resolvedQueries, identifier)
+
+	if m.resolvePeerFn != nil {
+		return m.resolvePeerFn(identifier)
+	}
 
 	return m.peer, m.err
 }
@@ -157,8 +178,11 @@ func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, 
 	return m.err
 }
 
-func (m *mockClient) ForwardMessages(_ context.Context, _, dest telegram.InputPeer, _ []int) ([]telegram.Message, error) {
+func (m *mockClient) ForwardMessages(
+	_ context.Context, _, dest telegram.InputPeer, _ []int, sendAs *telegram.InputPeer,
+) ([]telegram.Message, error) {
 	m.lastPeer = dest
+	m.lastSendAs = sendAs
 
 	return m.messages, m.err
 }
@@ -397,8 +421,12 @@ func (m *mockClient) GetStickerSet(_ context.Context, _ string) (*telegram.Stick
 	return m.setFull, m.err
 }
 
-func (m *mockClient) SendSticker(_ context.Context, peer telegram.InputPeer, _ int64) (*telegram.Message, error) {
+func (m *mockClient) SendSticker(
+	_ context.Context, peer telegram.InputPeer, stickerFileID int64, sendAs *telegram.InputPeer,
+) (*telegram.Message, error) {
 	m.lastPeer = peer
+	m.lastSendAs = sendAs
+	m.lastStickerID = stickerFileID
 
 	return m.message, m.err
 }
@@ -496,9 +524,10 @@ func (m *mockClient) SetSlowMode(_ context.Context, peer telegram.InputPeer, _ i
 }
 
 func (m *mockClient) CreateForumTopic(
-	_ context.Context, peer telegram.InputPeer, _ string,
+	_ context.Context, peer telegram.InputPeer, _ string, sendAs *telegram.InputPeer,
 ) (*telegram.ForumTopic, error) {
 	m.lastPeer = peer
+	m.lastSendAs = sendAs
 
 	return m.topic, m.err
 }
@@ -538,5 +567,22 @@ func (m *mockClient) DeleteHistory(_ context.Context, peer telegram.InputPeer, _
 }
 
 func (m *mockClient) ClearAllDrafts(_ context.Context) error {
+	return m.err
+}
+
+func (m *mockClient) GetSendAs(_ context.Context, peer telegram.InputPeer) ([]telegram.SendAsOption, error) {
+	m.lastPeer = peer
+	m.getSendAsCalls++
+
+	return m.sendAsOptions, m.err
+}
+
+func (m *mockClient) SetDefaultSendAs(
+	_ context.Context, peer telegram.InputPeer, sendAs *telegram.InputPeer,
+) error {
+	m.lastPeer = peer
+	m.lastSetSendAs = sendAs
+	m.setSendAsCalls++
+
 	return m.err
 }

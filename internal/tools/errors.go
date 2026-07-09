@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
 // ErrValidation indicates invalid parameters provided by the caller.
@@ -61,6 +62,14 @@ var ErrFolderIDRequired = errors.New("folder ID is required")
 // ErrStickerFileIDRequired is returned when a sticker file ID parameter is missing.
 var ErrStickerFileIDRequired = errors.New("sticker file ID is required")
 
+// ErrInvalidStickerFileID is returned when a sticker file ID is not a
+// decimal integer. It is a string rather than a number because the MCP
+// SDK round-trips tool arguments through float64, which cannot hold the
+// 63 bits a sticker document id needs.
+var ErrInvalidStickerFileID = errors.New(
+	"sticker file ID must be a decimal integer string, as printed by tg_stickers_get_set",
+)
+
 // ErrEmojiRequired is returned when an emoji parameter is missing.
 var ErrEmojiRequired = errors.New("emoji is required")
 
@@ -78,6 +87,16 @@ var ErrTooManyIDs = errors.New("too many IDs (max 100)")
 
 // ErrUserPeerRequired is returned when a user peer is needed but another type was provided.
 var ErrUserPeerRequired = errors.New("this operation requires a user peer, not a group or channel")
+
+// ErrSendAsUnresolved is returned when a sendAs reference names an
+// identity whose access hash is unknown — usually a channel, since your
+// own account always resolves. A bare numeric ID resolves to an access
+// hash of zero without erroring, and sending that on yields a server-side
+// PEER_ID_INVALID that reads as a problem with the destination instead.
+var ErrSendAsUnresolved = errors.New(
+	"sendAs identity has no known access hash; pass @username, " +
+		"or call tg_chats_get_send_as on the destination first",
+)
 
 // ErrInvalidSlowmode is returned when seconds is not an allowed Telegram slowmode value.
 var ErrInvalidSlowmode = errors.New(
@@ -125,6 +144,34 @@ func telegramErr(msg string, err error) error {
 	return errors.Mark(errors.Wrap(wrapTelegramError(err), msg), ErrTelegram)
 }
 
+// sendErr wraps a failed send, naming the send-as identity as a suspect
+// when one was requested.
+//
+// Telegram does not report a disallowed identity distinctly: posting as a
+// channel the account does not administrate answers CHAT_ADMIN_REQUIRED,
+// and naming a foreign user answers CHAT_WRITE_FORBIDDEN. Both read as
+// "you may not write here", which is false — the destination was fine and
+// the identity was not. SEND_AS_PEER_INVALID exists in the schema but the
+// server rarely reaches for it.
+func sendErr(msg string, err error, sendAs *telegram.InputPeer) error {
+	if sendAs != nil && rejectsIdentity(err) {
+		return telegramErr(msg+"; the sendAs identity may be the cause, call "+
+			toolGetSendAs+" on the destination for the allowed ones", err)
+	}
+
+	return telegramErr(msg, err)
+}
+
+// rejectsIdentity reports whether an RPC error is one of the codes
+// Telegram answers with when it refuses a send-as identity.
+func rejectsIdentity(err error) bool {
+	raw := err.Error()
+
+	return strings.Contains(raw, "CHAT_ADMIN_REQUIRED") ||
+		strings.Contains(raw, "CHAT_WRITE_FORBIDDEN") ||
+		strings.Contains(raw, "SEND_AS_PEER_INVALID")
+}
+
 // explainMTProtoCode returns a short human-readable explanation for a
 // well-known MTProto error code, or empty string if the code is not in
 // our translation table. Match is on substring of err.Error() because
@@ -147,12 +194,17 @@ func explainMTProtoCode(raw string) string {
 		return "this account is banned in the target channel"
 	case strings.Contains(raw, "CHAT_WRITE_FORBIDDEN"):
 		return "this account is not permitted to write in the target chat"
+	case strings.Contains(raw, "CHAT_ADMIN_REQUIRED"):
+		return "this action needs administrator rights this account does not have"
 	case strings.Contains(raw, "MESSAGE_TOO_LONG"):
 		return "the message text exceeds the server's length limit"
 	case strings.Contains(raw, "MEDIA_CAPTION_TOO_LONG"):
 		return "the caption exceeds the server's length limit"
 	case strings.Contains(raw, "SLOWMODE_WAIT"):
 		return "the chat has slow mode enabled and this account must wait before sending"
+	case strings.Contains(raw, "SEND_AS_PEER_INVALID"):
+		return "this account cannot post as the requested identity here; " +
+			"call tg_chats_get_send_as on the destination for the allowed ones"
 	default:
 		return ""
 	}

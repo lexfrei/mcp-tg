@@ -17,6 +17,7 @@ type MediaSendAlbumParams struct {
 	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption: '' plain; 'commonmark'/'markdown' subset"`
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
+	SendAs       *string  `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for chat default"`
 }
 
 // MediaSendAlbumResult is the output of the tg_media_send_album tool.
@@ -86,6 +87,11 @@ func sendAlbum(
 		return nil, validationErr(topicErr)
 	}
 
+	sendAs, err := resolveSendAs(ctx, client, deref(params.SendAs))
+	if err != nil {
+		return nil, err
+	}
+
 	fwd := newProgressForwarder(req.Session, token, "Uploading album")
 
 	opts := telegram.SendOpts{
@@ -93,12 +99,13 @@ func sendAlbum(
 		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
+		SendAs:       sendAs,
 		Progress:     fwd.callback(),
 	}
 
 	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption), opts)
 	if err != nil {
-		return nil, telegramErr("failed to send album", err)
+		return nil, sendErr("failed to send album", err, opts.SendAs)
 	}
 
 	fwd.done(ctx, "Album sent")

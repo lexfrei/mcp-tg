@@ -49,6 +49,44 @@ func validateTopicID(
 	return nil
 }
 
+// resolveSendAs resolves an optional send-as identity. An empty
+// reference yields a nil identity, which every send path treats as
+// "leave send_as unset" — the server then posts under the chat's saved
+// default, which is the account itself until tg_chats_set_send_as
+// changes it.
+//
+// An identity that resolves without an access hash is rejected here
+// rather than passed on: ResolvePeer returns AccessHash 0 and a nil error
+// for a numeric ID it has never seen, and the resulting
+// SEND_AS_PEER_INVALID or PEER_ID_INVALID from the server names neither
+// the parameter nor the remedy. Listing the chat's identities once seeds
+// the cache and makes the same numeric ID work.
+//
+// A legacy basic group has no access hash by design and can never be an
+// identity, so it is refused outright rather than blamed on the cache.
+func resolveSendAs(
+	ctx context.Context, client telegram.Client, sendAs string,
+) (*telegram.InputPeer, error) {
+	if sendAs == "" {
+		return nil, nil //nolint:nilnil // a nil identity is the documented "use the chat default".
+	}
+
+	peer, err := client.ResolvePeer(ctx, sendAs)
+	if err != nil {
+		return nil, telegramErr("failed to resolve the sendAs identity", err)
+	}
+
+	if peer.Type == telegram.PeerChat {
+		return nil, validationErr(telegram.ErrSendAsUnsupportedPeer)
+	}
+
+	if peer.AccessHash == 0 {
+		return nil, validationErr(ErrSendAsUnresolved)
+	}
+
+	return &peer, nil
+}
+
 // normalizeParseMode lowercases the input so callers can pass
 // "Markdown", "COMMONMARK" etc. without getting a validation error.
 func normalizeParseMode(mode string) string {

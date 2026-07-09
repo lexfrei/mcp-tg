@@ -17,6 +17,7 @@ type MessagesSendFileParams struct {
 	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Caption format: '' plain; 'commonmark'/'markdown' (subset, see README)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
+	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
 }
 
 // MessagesSendFileResult is the output of the tg_messages_send_file tool.
@@ -50,7 +51,7 @@ func NewMessagesSendFileHandler(
 				validationErr(pmErr)
 		}
 
-		msg, err := uploadAndSendFile(ctx, client, req, params)
+		msg, err := uploadAndSendFile(ctx, client, req, &params)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{}, err
 		}
@@ -68,7 +69,7 @@ func NewMessagesSendFileHandler(
 }
 
 func uploadAndSendFile(
-	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params MessagesSendFileParams,
+	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params *MessagesSendFileParams,
 ) (*telegram.Message, error) {
 	rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
 	if rootErr != nil {
@@ -88,6 +89,11 @@ func uploadAndSendFile(
 		return nil, validationErr(topicErr)
 	}
 
+	sendAs, err := resolveSendAs(ctx, client, deref(params.SendAs))
+	if err != nil {
+		return nil, err
+	}
+
 	fwd := newProgressForwarder(req.Session, token, "Uploading file")
 
 	opts := telegram.SendOpts{
@@ -95,12 +101,13 @@ func uploadAndSendFile(
 		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
+		SendAs:       sendAs,
 		Progress:     fwd.callback(),
 	}
 
 	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption), opts)
 	if err != nil {
-		return nil, telegramErr("failed to send file", err)
+		return nil, sendErr("failed to send file", err, opts.SendAs)
 	}
 
 	fwd.done(ctx, "File sent")

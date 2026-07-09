@@ -161,7 +161,28 @@ func buildMultiMediaRequest(
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
 
+	applySendAs(opts.SendAs, req.SetSendAs)
+
 	return req
+}
+
+// applySendAs sets the conditional send_as field on an outgoing request
+// when an identity was requested. Every gotd request that carries the
+// field exposes the same SetSendAs method value, so passing the method
+// keeps this one helper usable from sendMessage, sendMedia,
+// sendMultiMedia, forwardMessages and createForumTopic alike.
+//
+// A nil identity leaves the flag bit clear, which hands the choice to the
+// server: it posts under the chat's saved default, which is the account
+// itself until SetDefaultSendAs says otherwise. Verified against a live
+// account — an omitted send_as in a chat whose default is a channel
+// posts as that channel, exactly as the official clients do.
+func applySendAs(sendAs *InputPeer, set func(tg.InputPeerClass)) {
+	if sendAs == nil {
+		return
+	}
+
+	set(InputPeerToTG(*sendAs))
 }
 
 // buildReplyTo constructs an InputReplyToMessage from topic and reply IDs.
@@ -401,7 +422,14 @@ func (w *Wrapper) getChannelGroupInfo(ctx context.Context, peer InputPeer) (*Gro
 			if channelFull, ok := full.FullChat.(*tg.ChannelFull); ok {
 				info.About = channelFull.About
 				info.MembersCount = channelFull.ParticipantsCount
+				info.DefaultSendAs = defaultSendAsFrom(channelFull, full.Chats, full.Users)
 			}
+
+			// The reply carries access hashes for every peer it mentions,
+			// including the default send-as identity we just rendered as a
+			// numeric peer string. Without remembering them, handing that
+			// string back as sendAs resolves to access hash 0.
+			w.cachePeersOf(full.Chats, full.Users)
 
 			return info, nil
 		}
@@ -1288,20 +1316,25 @@ func extractReactionUsers(
 		return nil
 	}
 
-	names := buildUserMap(result.Users)
+	users := buildUserRefs(result.Users)
+	chats := buildChatRefs(result.Chats)
 	items := make([]ReactionUser, 0, len(result.Reactions))
 
 	for idx := range result.Reactions {
 		reaction := &result.Reactions[idx]
+		peerID, peerType := extractFromIDAndType(reaction.PeerID)
+
 		item := ReactionUser{
-			UserID: extractFromID(reaction.PeerID),
-			Emoji:  reactionEmoji(reaction.Reaction),
+			UserID:   peerID,
+			PeerType: peerType,
+			Emoji:    reactionEmoji(reaction.Reaction),
 		}
 
-		if usr, ok := names[item.UserID]; ok {
-			item.Name = userDisplayName(usr)
-			item.Username = usr.Username
-		}
+		// A channel reactor's title lives in Chats, a user's name in
+		// Users; lookupRefByPeer picks the right one by kind.
+		ref, _ := lookupRefByPeer(InputPeer{Type: peerType, ID: peerID}, users, chats)
+		item.Name = ref.Name
+		item.Username = ref.Username
 
 		items = append(items, item)
 	}

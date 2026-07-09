@@ -21,6 +21,7 @@ type Client interface {
 	DraftClient
 	FolderClient
 	StatusClient
+	SendAsClient
 	PeerResolver
 }
 
@@ -40,7 +41,7 @@ type MessageClient interface {
 	EditMessage(ctx context.Context, peer InputPeer, msgID int, text string, parseMode string) (*Message, error)
 	DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error
 	DeleteHistory(ctx context.Context, peer InputPeer, revoke bool) error
-	ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int) ([]Message, error)
+	ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int, sendAs *InputPeer) ([]Message, error)
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error
 	SendReaction(ctx context.Context, peer InputPeer, msgID int, opts ReactionOpts) error
 	MarkRead(ctx context.Context, peer InputPeer, maxID int) error
@@ -117,7 +118,7 @@ type UserClient interface {
 // TopicClient handles forum topic operations.
 type TopicClient interface {
 	GetForumTopics(ctx context.Context, peer InputPeer, opts TopicOpts) ([]ForumTopic, error)
-	CreateForumTopic(ctx context.Context, peer InputPeer, title string) (*ForumTopic, error)
+	CreateForumTopic(ctx context.Context, peer InputPeer, title string, sendAs *InputPeer) (*ForumTopic, error)
 	EditForumTopic(ctx context.Context, peer InputPeer, topicID int, title string) error
 }
 
@@ -125,7 +126,7 @@ type TopicClient interface {
 type StickerClient interface {
 	SearchStickerSets(ctx context.Context, query string) ([]StickerSet, error)
 	GetStickerSet(ctx context.Context, name string) (*StickerSetFull, error)
-	SendSticker(ctx context.Context, peer InputPeer, stickerFileID int64) (*Message, error)
+	SendSticker(ctx context.Context, peer InputPeer, stickerFileID int64, sendAs *InputPeer) (*Message, error)
 }
 
 // DraftClient handles draft message operations.
@@ -147,6 +148,12 @@ type FolderClient interface {
 type StatusClient interface {
 	SendTyping(ctx context.Context, peer InputPeer, action string) error
 	SetOnlineStatus(ctx context.Context, online bool) error
+}
+
+// SendAsClient handles the identities an account may post under.
+type SendAsClient interface {
+	GetSendAs(ctx context.Context, peer InputPeer) ([]SendAsOption, error)
+	SetDefaultSendAs(ctx context.Context, peer InputPeer, sendAs *InputPeer) error
 }
 
 // PeerResolver resolves string identifiers to InputPeer.

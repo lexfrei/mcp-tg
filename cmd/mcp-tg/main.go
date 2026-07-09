@@ -525,6 +525,8 @@ func registerTools(server *mcp.Server, client tgclient.Client, registry tools.Bo
 	tools.AddTool(server, registry, tools.ChatsDeleteTool(), tools.NewChatsDeleteHandler(client))
 	tools.AddTool(server, registry, tools.ChatsSetPhotoTool(), tools.NewChatsSetPhotoHandler(client))
 	tools.AddTool(server, registry, tools.ChatsSetDescriptionTool(), tools.NewChatsSetDescriptionHandler(client))
+	tools.AddTool(server, registry, tools.ChatsGetSendAsTool(), tools.NewChatsGetSendAsHandler(client))
+	tools.AddTool(server, registry, tools.ChatsSetSendAsTool(), tools.NewChatsSetSendAsHandler(client))
 	tools.AddTool(server, registry, tools.ProfileSetNameTool(), tools.NewProfileSetNameHandler(client))
 	tools.AddTool(server, registry, tools.ProfileSetBioTool(), tools.NewProfileSetBioHandler(client))
 	tools.AddTool(server, registry, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client))

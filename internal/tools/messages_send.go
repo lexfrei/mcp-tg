@@ -18,6 +18,7 @@ type MessagesSendParams struct {
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
+	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
 }
 
 // MessagesSendResult is the output of the tg_messages_send tool.
@@ -50,10 +51,17 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 				validationErr(topicErr)
 		}
 
-		msg, err := client.SendMessage(ctx, peer, params.Text, sendOptsFrom(&params))
+		opts := sendOptsFrom(&params)
+
+		opts.SendAs, err = resolveSendAs(ctx, client, deref(params.SendAs))
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{}, err
+		}
+
+		msg, err := client.SendMessage(ctx, peer, params.Text, opts)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
-				telegramErr("failed to send message", err)
+				sendErr("failed to send message", err, opts.SendAs)
 		}
 
 		msgID := 0

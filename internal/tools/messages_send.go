@@ -61,7 +61,7 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 		msg, err := client.SendMessage(ctx, peer, params.Text, opts)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendResult{},
-				telegramErr("failed to send message", err)
+				sendErr("failed to send message", err, opts.SendAs)
 		}
 
 		msgID := 0

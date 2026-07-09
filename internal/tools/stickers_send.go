@@ -52,7 +52,7 @@ func NewStickersSendHandler(client telegram.Client) mcp.ToolHandlerFor[StickersS
 		msg, err := client.SendSticker(ctx, peer, params.StickerFileID, sendAs)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, StickersSendResult{},
-				telegramErr("failed to send sticker", err)
+				sendErr("failed to send sticker", err, sendAs)
 		}
 
 		msgID := 0

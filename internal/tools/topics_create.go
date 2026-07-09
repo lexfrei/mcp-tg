@@ -53,7 +53,7 @@ func NewTopicsCreateHandler(
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},
 				TopicsCreateResult{},
-				telegramErr("failed to create forum topic", err)
+				sendErr("failed to create forum topic", err, sendAs)
 		}
 
 		if topic == nil {

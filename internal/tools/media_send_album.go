@@ -105,7 +105,7 @@ func sendAlbum(
 
 	msgs, err := client.SendAlbum(ctx, peer, params.Paths, deref(params.Caption), opts)
 	if err != nil {
-		return nil, telegramErr("failed to send album", err)
+		return nil, sendErr("failed to send album", err, opts.SendAs)
 	}
 
 	fwd.done(ctx, "Album sent")

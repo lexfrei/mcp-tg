@@ -173,6 +173,10 @@ Wiring: `SendOpts.SendAs *InputPeer` for the three methods that already had an o
 
 Both new tools reject non-`PeerChannel` peers before the round trip (`telegram.ErrSendAsUnsupportedPeer`); the server's `CHANNEL_INVALID` explains nothing.
 
+Verified against a live account: a rejected identity comes back as `CHAT_ADMIN_REQUIRED` (channel you don't administrate) or `CHAT_WRITE_FORBIDDEN` (foreign user), NOT `SEND_AS_PEER_INVALID` — that code exists in the schema but the server rarely reaches for it. Both read as a chat-permission problem, so `sendErr` (`tools/errors.go`) names `sendAs` as a suspect whenever one was supplied. Do not "simplify" the six send tools back to plain `telegramErr`.
+
+Also verified: a channel that is the chat default reacts as itself, and `messages.getMessageReactionsList` returns its title in `Chats`, not `Users` — `extractReactionUsers` reads both and carries `ReactionUser.PeerType`. Separately, `tg_stickers_send` is broken independently of send-as: `SendSticker` builds `InputDocument{ID}` with no access hash or file reference, so every call answers `MEDIA_EMPTY`.
+
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication

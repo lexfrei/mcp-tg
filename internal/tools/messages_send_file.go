@@ -107,7 +107,7 @@ func uploadAndSendFile(
 
 	msg, err := client.SendFile(ctx, peer, params.Path, deref(params.Caption), opts)
 	if err != nil {
-		return nil, telegramErr("failed to send file", err)
+		return nil, sendErr("failed to send file", err, opts.SendAs)
 	}
 
 	fwd.done(ctx, "File sent")

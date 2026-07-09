@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
 // ErrValidation indicates invalid parameters provided by the caller.
@@ -134,6 +135,34 @@ func telegramErr(msg string, err error) error {
 	return errors.Mark(errors.Wrap(wrapTelegramError(err), msg), ErrTelegram)
 }
 
+// sendErr wraps a failed send, naming the send-as identity as a suspect
+// when one was requested.
+//
+// Telegram does not report a disallowed identity distinctly: posting as a
+// channel the account does not administrate answers CHAT_ADMIN_REQUIRED,
+// and naming a foreign user answers CHAT_WRITE_FORBIDDEN. Both read as
+// "you may not write here", which is false — the destination was fine and
+// the identity was not. SEND_AS_PEER_INVALID exists in the schema but the
+// server rarely reaches for it.
+func sendErr(msg string, err error, sendAs *telegram.InputPeer) error {
+	if sendAs != nil && rejectsIdentity(err) {
+		return telegramErr(msg+"; the sendAs identity may be the cause, call "+
+			toolGetSendAs+" on the destination for the allowed ones", err)
+	}
+
+	return telegramErr(msg, err)
+}
+
+// rejectsIdentity reports whether an RPC error is one of the codes
+// Telegram answers with when it refuses a send-as identity.
+func rejectsIdentity(err error) bool {
+	raw := err.Error()
+
+	return strings.Contains(raw, "CHAT_ADMIN_REQUIRED") ||
+		strings.Contains(raw, "CHAT_WRITE_FORBIDDEN") ||
+		strings.Contains(raw, "SEND_AS_PEER_INVALID")
+}
+
 // explainMTProtoCode returns a short human-readable explanation for a
 // well-known MTProto error code, or empty string if the code is not in
 // our translation table. Match is on substring of err.Error() because
@@ -156,6 +185,8 @@ func explainMTProtoCode(raw string) string {
 		return "this account is banned in the target channel"
 	case strings.Contains(raw, "CHAT_WRITE_FORBIDDEN"):
 		return "this account is not permitted to write in the target chat"
+	case strings.Contains(raw, "CHAT_ADMIN_REQUIRED"):
+		return "this action needs administrator rights this account does not have"
 	case strings.Contains(raw, "MESSAGE_TOO_LONG"):
 		return "the message text exceeds the server's length limit"
 	case strings.Contains(raw, "MEDIA_CAPTION_TOO_LONG"):

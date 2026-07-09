@@ -245,3 +245,47 @@ func TestMessagesGetReactionsHandler_ChannelReactor(t *testing.T) {
 		t.Errorf("output %q must label the user reactor as a user", structured.Output)
 	}
 }
+
+// Telegram rejects a disallowed send-as identity with the same codes it
+// uses for chat-level permission failures, so the raw message blames the
+// destination. Verified against a live account: a channel the account
+// does not administrate yields CHAT_ADMIN_REQUIRED, a foreign user
+// yields CHAT_WRITE_FORBIDDEN. Neither mentions send_as.
+func TestSendErr_BlamesTheIdentityWhenOneWasRequested(t *testing.T) {
+	identity := sendAsChannel()
+
+	for _, code := range []string{"CHAT_ADMIN_REQUIRED", "CHAT_WRITE_FORBIDDEN", "SEND_AS_PEER_INVALID"} {
+		err := sendErr("failed to send message", errors.New("rpc error code 400: "+code), &identity)
+		if !strings.Contains(err.Error(), "sendAs") {
+			t.Errorf("%s: error %q must name sendAs as a suspect", code, err)
+		}
+
+		if !strings.Contains(err.Error(), toolGetSendAs) {
+			t.Errorf("%s: error %q must point at %s", code, err, toolGetSendAs)
+		}
+	}
+}
+
+func TestSendErr_StaysQuietWithoutAnIdentity(t *testing.T) {
+	err := sendErr("failed to send message", errors.New("rpc error code 400: CHAT_ADMIN_REQUIRED"), nil)
+	if strings.Contains(err.Error(), "sendAs") {
+		t.Errorf("error %q must not mention sendAs when none was requested", err)
+	}
+}
+
+// An unrelated failure keeps its own explanation even with an identity set.
+func TestSendErr_LeavesUnrelatedFailuresAlone(t *testing.T) {
+	identity := sendAsChannel()
+
+	err := sendErr("failed to send message", errors.New("rpc error code 420: SLOWMODE_WAIT_30"), &identity)
+	if strings.Contains(err.Error(), "sendAs") {
+		t.Errorf("error %q must not blame sendAs for a slow-mode wait", err)
+	}
+}
+
+func TestExplainMTProtoCode_ChatAdminRequired(t *testing.T) {
+	got := explainMTProtoCode("rpc error code 400: CHAT_ADMIN_REQUIRED")
+	if got == "" {
+		t.Error("CHAT_ADMIN_REQUIRED must have a human-readable explanation")
+	}
+}

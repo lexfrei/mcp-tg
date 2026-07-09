@@ -214,6 +214,8 @@ Telegram lets an account post into a supergroup under the identity of a channel 
 
 `tg_chats_set_send_as` changes the identity the chat posts under by default, and `tg_groups_info` reports the current one as `defaultSendAs`. Treat the default as account-wide server state: it shows up in every Telegram client, survives restarts, and in a shared daemon another caller sees it too. Prefer the per-call `sendAs` argument wherever it suffices.
 
+When Telegram refuses an identity it does not say so plainly. Posting as a channel you do not administrate answers `CHAT_ADMIN_REQUIRED`; naming a foreign user answers `CHAT_WRITE_FORBIDDEN`. Both read as "you may not write here" even though the destination was fine, so the send tools add the `sendAs` parameter as a suspect whenever one was given.
+
 What MTProto does not allow, and no amount of client code can add:
 
 - **Reactions and poll votes cannot name an identity per call.** `messages.sendReaction` has no `send_as` field, so those follow the chat default set through `tg_chats_set_send_as`. That is the only lever.

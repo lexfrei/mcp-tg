@@ -14,6 +14,7 @@ type mockClient struct {
 	parentMessages []telegram.Message // see getMessages for selection rules
 	getMessagesFn  func(ids []int) []telegram.Message
 	getHistoryFn   func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
+	resolvePeerFn  func(identifier string) (telegram.InputPeer, error)
 	message        *telegram.Message
 	total          int
 	dialogs        []telegram.Dialog
@@ -61,14 +62,23 @@ type mockClient struct {
 	// lastSetSendAs records the identity SetDefaultSendAs was asked to
 	// store. A nil value is meaningful there: it resets the chat to the
 	// account itself, so setSendAsCalls disambiguates "not called".
-	lastSetSendAs  *telegram.InputPeer
-	setSendAsCalls int
-	sendAsOptions  []telegram.SendAsOption
-	getSendAsCalls int
+	lastSetSendAs   *telegram.InputPeer
+	setSendAsCalls  int
+	sendAsOptions   []telegram.SendAsOption
+	getSendAsCalls  int
+	resolvedQueries []string
 }
 
+// ResolvePeer answers with m.peer unless resolvePeerFn is set. Tools
+// that resolve two references per call — a destination and a send-as
+// identity — need the hook to tell the two apart.
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
 	m.lastQuery = identifier
+	m.resolvedQueries = append(m.resolvedQueries, identifier)
+
+	if m.resolvePeerFn != nil {
+		return m.resolvePeerFn(identifier)
+	}
 
 	return m.peer, m.err
 }

@@ -49,6 +49,35 @@ func validateTopicID(
 	return nil
 }
 
+// resolveSendAs resolves an optional send-as identity. An empty
+// reference means "post as yourself" and yields a nil identity, which is
+// what every send path treats as "leave send_as unset".
+//
+// A channel that resolves without an access hash is rejected here rather
+// than passed on: ResolvePeer returns AccessHash 0 and a nil error for a
+// numeric ID it has never seen, and the resulting SEND_AS_PEER_INVALID
+// or PEER_ID_INVALID from the server names neither the parameter nor the
+// remedy. Listing the chat's identities once seeds the cache and makes
+// the same numeric ID work.
+func resolveSendAs(
+	ctx context.Context, client telegram.Client, sendAs string,
+) (*telegram.InputPeer, error) {
+	if sendAs == "" {
+		return nil, nil //nolint:nilnil // a nil identity is the documented "post as yourself".
+	}
+
+	peer, err := client.ResolvePeer(ctx, sendAs)
+	if err != nil {
+		return nil, telegramErr("failed to resolve the sendAs identity", err)
+	}
+
+	if peer.Type == telegram.PeerChannel && peer.AccessHash == 0 {
+		return nil, validationErr(ErrSendAsUnresolved)
+	}
+
+	return &peer, nil
+}
+
 // normalizeParseMode lowercases the input so callers can pass
 // "Markdown", "COMMONMARK" etc. without getting a validation error.
 func normalizeParseMode(mode string) string {

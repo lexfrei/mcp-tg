@@ -11,8 +11,9 @@ import (
 
 // TopicsCreateParams defines parameters for tg_topics_create.
 type TopicsCreateParams struct {
-	Peer  string `json:"peer"  jsonschema:"@username, t.me/ link, or numeric ID"`
-	Title string `json:"title" jsonschema:"Topic title"`
+	Peer   string  `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
+	Title  string  `json:"title"            jsonschema:"Topic title"`
+	SendAs *string `json:"sendAs,omitempty" jsonschema:"Create as this channel; see tg_chats_get_send_as. Omit to create as yourself"`
 }
 
 // TopicsCreateResult is the output of tg_topics_create.
@@ -31,16 +32,9 @@ func NewTopicsCreateHandler(
 		_ *mcp.CallToolRequest,
 		params TopicsCreateParams,
 	) (*mcp.CallToolResult, TopicsCreateResult, error) {
-		if params.Peer == "" {
-			return &mcp.CallToolResult{IsError: true},
-				TopicsCreateResult{},
-				validationErr(ErrPeerRequired)
-		}
-
-		if params.Title == "" {
-			return &mcp.CallToolResult{IsError: true},
-				TopicsCreateResult{},
-				validationErr(ErrTitleRequired)
+		vErr := validateTopicsCreateParams(&params)
+		if vErr != nil {
+			return &mcp.CallToolResult{IsError: true}, TopicsCreateResult{}, validationErr(vErr)
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)
@@ -50,7 +44,12 @@ func NewTopicsCreateHandler(
 				telegramErr("failed to resolve peer", err)
 		}
 
-		topic, err := client.CreateForumTopic(ctx, peer, params.Title, nil)
+		sendAs, err := resolveSendAs(ctx, client, deref(params.SendAs))
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, TopicsCreateResult{}, err
+		}
+
+		topic, err := client.CreateForumTopic(ctx, peer, params.Title, sendAs)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},
 				TopicsCreateResult{},
@@ -72,6 +71,18 @@ func NewTopicsCreateHandler(
 			),
 		}, nil
 	}
+}
+
+func validateTopicsCreateParams(params *TopicsCreateParams) error {
+	if params.Peer == "" {
+		return ErrPeerRequired
+	}
+
+	if params.Title == "" {
+		return ErrTitleRequired
+	}
+
+	return nil
 }
 
 // TopicsCreateTool returns the tool definition for tg_topics_create.

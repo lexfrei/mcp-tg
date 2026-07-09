@@ -79,6 +79,15 @@ var ErrTooManyIDs = errors.New("too many IDs (max 100)")
 // ErrUserPeerRequired is returned when a user peer is needed but another type was provided.
 var ErrUserPeerRequired = errors.New("this operation requires a user peer, not a group or channel")
 
+// ErrSendAsUnresolved is returned when a sendAs reference names a channel
+// whose access hash is unknown. A bare numeric ID resolves to an access
+// hash of zero without erroring, and sending that on yields a server-side
+// PEER_ID_INVALID that reads as a problem with the destination instead.
+var ErrSendAsUnresolved = errors.New(
+	"sendAs channel has no known access hash; pass @username, " +
+		"or call tg_chats_get_send_as on the destination first",
+)
+
 // ErrInvalidSlowmode is returned when seconds is not an allowed Telegram slowmode value.
 var ErrInvalidSlowmode = errors.New(
 	"invalid slowmode seconds; allowed: 0,10,30,60,300,900,3600,21600,43200",
@@ -153,6 +162,9 @@ func explainMTProtoCode(raw string) string {
 		return "the caption exceeds the server's length limit"
 	case strings.Contains(raw, "SLOWMODE_WAIT"):
 		return "the chat has slow mode enabled and this account must wait before sending"
+	case strings.Contains(raw, "SEND_AS_PEER_INVALID"):
+		return "this account cannot post as the requested identity here; " +
+			"call tg_chats_get_send_as on the destination for the allowed ones"
 	default:
 		return ""
 	}

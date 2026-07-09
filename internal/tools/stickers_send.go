@@ -10,8 +10,9 @@ import (
 
 // StickersSendParams defines the parameters for the tg_stickers_send tool.
 type StickersSendParams struct {
-	Peer          string `json:"peer"          jsonschema:"@username, t.me/ link, or numeric ID"`
-	StickerFileID int64  `json:"stickerFileId" jsonschema:"File ID of the sticker to send"`
+	Peer          string  `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
+	StickerFileID int64   `json:"stickerFileId"    jsonschema:"File ID of the sticker to send"`
+	SendAs        *string `json:"sendAs,omitempty" jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit to post as yourself"`
 }
 
 // StickersSendResult is the output of the tg_stickers_send tool.
@@ -43,7 +44,12 @@ func NewStickersSendHandler(client telegram.Client) mcp.ToolHandlerFor[StickersS
 				telegramErr("failed to resolve peer", err)
 		}
 
-		msg, err := client.SendSticker(ctx, peer, params.StickerFileID, nil)
+		sendAs, err := resolveSendAs(ctx, client, deref(params.SendAs))
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, StickersSendResult{}, err
+		}
+
+		msg, err := client.SendSticker(ctx, peer, params.StickerFileID, sendAs)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, StickersSendResult{},
 				telegramErr("failed to send sticker", err)

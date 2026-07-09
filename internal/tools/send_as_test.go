@@ -379,3 +379,55 @@ func TestMessagesSendHandler_NoIdentityHintWhenNoneRequested(t *testing.T) {
 		t.Errorf("error %q must not mention sendAs when none was requested", err)
 	}
 }
+
+// Only a channel or your own account can be an identity. A user resolved
+// without an access hash cannot be addressed, and a legacy basic group
+// never can be — both fail here rather than on the server.
+func TestResolveSendAs_RejectsIdentitiesThatCannotBeAddressed(t *testing.T) {
+	cases := map[string]struct {
+		peer    telegram.InputPeer
+		wantErr error
+	}{
+		"user without an access hash": {
+			peer:    telegram.InputPeer{Type: telegram.PeerUser, ID: 7},
+			wantErr: ErrSendAsUnresolved,
+		},
+		"channel without an access hash": {
+			peer:    telegram.InputPeer{Type: telegram.PeerChannel, ID: 7},
+			wantErr: ErrSendAsUnresolved,
+		},
+		"legacy basic group": {
+			peer:    telegram.InputPeer{Type: telegram.PeerChat, ID: 7},
+			wantErr: telegram.ErrSendAsUnsupportedPeer,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			mock := &mockClient{resolvePeerFn: func(string) (telegram.InputPeer, error) {
+				return tc.peer, nil
+			}}
+
+			_, err := resolveSendAs(context.Background(), mock, "whatever")
+			if !errors.Is(err, tc.wantErr) {
+				t.Fatalf("error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// A user identity with a hash is your own account and must pass.
+func TestResolveSendAs_AcceptsSelfWithAccessHash(t *testing.T) {
+	self := telegram.InputPeer{Type: telegram.PeerUser, ID: 7, AccessHash: 8}
+
+	mock := &mockClient{resolvePeerFn: func(string) (telegram.InputPeer, error) { return self, nil }}
+
+	got, err := resolveSendAs(context.Background(), mock, "@me")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got == nil || *got != self {
+		t.Errorf("identity = %+v, want %+v", got, self)
+	}
+}

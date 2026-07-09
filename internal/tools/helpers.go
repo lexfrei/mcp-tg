@@ -53,12 +53,15 @@ func validateTopicID(
 // reference means "post as yourself" and yields a nil identity, which is
 // what every send path treats as "leave send_as unset".
 //
-// A channel that resolves without an access hash is rejected here rather
-// than passed on: ResolvePeer returns AccessHash 0 and a nil error for a
-// numeric ID it has never seen, and the resulting SEND_AS_PEER_INVALID
-// or PEER_ID_INVALID from the server names neither the parameter nor the
-// remedy. Listing the chat's identities once seeds the cache and makes
-// the same numeric ID work.
+// An identity that resolves without an access hash is rejected here
+// rather than passed on: ResolvePeer returns AccessHash 0 and a nil error
+// for a numeric ID it has never seen, and the resulting
+// SEND_AS_PEER_INVALID or PEER_ID_INVALID from the server names neither
+// the parameter nor the remedy. Listing the chat's identities once seeds
+// the cache and makes the same numeric ID work.
+//
+// A legacy basic group has no access hash by design and can never be an
+// identity, so it is refused outright rather than blamed on the cache.
 func resolveSendAs(
 	ctx context.Context, client telegram.Client, sendAs string,
 ) (*telegram.InputPeer, error) {
@@ -71,7 +74,11 @@ func resolveSendAs(
 		return nil, telegramErr("failed to resolve the sendAs identity", err)
 	}
 
-	if peer.Type == telegram.PeerChannel && peer.AccessHash == 0 {
+	if peer.Type == telegram.PeerChat {
+		return nil, validationErr(telegram.ErrSendAsUnsupportedPeer)
+	}
+
+	if peer.AccessHash == 0 {
 		return nil, validationErr(ErrSendAsUnresolved)
 	}
 

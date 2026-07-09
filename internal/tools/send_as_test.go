@@ -334,3 +334,48 @@ func TestStickersSendHandler_RejectsEmptyFileID(t *testing.T) {
 		t.Fatalf("error = %v, want ErrStickerFileIDRequired", err)
 	}
 }
+
+// The blame hint is only useful if it survives the handler. Drive the
+// tool end to end with an RPC error Telegram actually answers when it
+// refuses an identity, and check the caller is pointed at the parameter
+// rather than at the destination chat.
+func TestMessagesSendHandler_SurfacesTheIdentityHintOnRejection(t *testing.T) {
+	mock := sendAsMock()
+	mock.err = errors.New("rpc error code 400: CHAT_ADMIN_REQUIRED")
+
+	result, _, err := NewMessagesSendHandler(mock)(context.Background(), nil, MessagesSendParams{
+		Peer: "@group", Text: "hi", SendAs: new(sendAsRef),
+	})
+	if err == nil {
+		t.Fatal("expected the send to fail")
+	}
+
+	if !strings.Contains(err.Error(), "sendAs") {
+		t.Errorf("error %q must name sendAs as a suspect", err)
+	}
+
+	if !strings.Contains(err.Error(), toolGetSendAs) {
+		t.Errorf("error %q must point at %s", err, toolGetSendAs)
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}
+
+// The same failure without an identity must not invent one.
+func TestMessagesSendHandler_NoIdentityHintWhenNoneRequested(t *testing.T) {
+	mock := sendAsMock()
+	mock.err = errors.New("rpc error code 400: CHAT_ADMIN_REQUIRED")
+
+	_, _, err := NewMessagesSendHandler(mock)(context.Background(), nil, MessagesSendParams{
+		Peer: "@group", Text: "hi",
+	})
+	if err == nil {
+		t.Fatal("expected the send to fail")
+	}
+
+	if strings.Contains(err.Error(), "sendAs") {
+		t.Errorf("error %q must not mention sendAs when none was requested", err)
+	}
+}

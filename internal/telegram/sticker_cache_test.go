@@ -207,12 +207,31 @@ func TestStickerCache_KeepsEntriesAtTheLimit(t *testing.T) {
 
 // Eviction drops everything rather than tracking recency: a sticker set
 // holds a few hundred documents, so the limit is a runaway guard, not a
-// working-set policy.
-func TestStickerCache_ClearsWhenOverTheLimit(t *testing.T) {
+// working-set policy. It runs before the insert, so the set that
+// triggered it is the one that survives.
+func TestStickerCache_EvictsOldEntriesButKeepsTheIncomingSet(t *testing.T) {
+	cache := NewStickerCache()
+	cache.StoreAll(fakeStickerDocs(maxStickerCacheEntries))
+
+	cache.StoreAll(cannedStickerSet().Documents)
+
+	if _, ok := cache.Lookup(1); ok {
+		t.Error("an old entry survived an eviction it should have triggered")
+	}
+
+	// Evicting after the insert would drop this one, and the send that
+	// follows a get_set would be told to call get_set again.
+	if _, ok := cache.Lookup(stickerDocID); !ok {
+		t.Error("the set that triggered eviction was evicted along with the old entries")
+	}
+}
+
+// A set larger than the whole cache still ends up addressable.
+func TestStickerCache_StoresASetLargerThanTheLimit(t *testing.T) {
 	cache := NewStickerCache()
 	cache.StoreAll(fakeStickerDocs(maxStickerCacheEntries + 1))
 
-	if _, ok := cache.Lookup(1); ok {
-		t.Error("the cache kept entries after exceeding its limit")
+	if _, ok := cache.Lookup(1); !ok {
+		t.Error("an oversized set was stored but its first document is missing")
 	}
 }

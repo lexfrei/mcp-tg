@@ -45,6 +45,10 @@ func NewStickerCache() *StickerCache {
 }
 
 // StoreAll remembers every sticker document of a set.
+//
+// Room is made before inserting, never after: evicting afterwards could
+// drop the very set just fetched, and the caller would be told to fetch
+// it again by the send that follows.
 func (cache *StickerCache) StoreAll(documents []tg.DocumentClass) {
 	if cache == nil {
 		return
@@ -52,6 +56,8 @@ func (cache *StickerCache) StoreAll(documents []tg.DocumentClass) {
 
 	cache.mut.Lock()
 	defer cache.mut.Unlock()
+
+	cache.evictFor(len(documents))
 
 	for _, doc := range documents {
 		typed, ok := doc.(*tg.Document)
@@ -65,8 +71,6 @@ func (cache *StickerCache) StoreAll(documents []tg.DocumentClass) {
 			FileReference: typed.FileReference,
 		}
 	}
-
-	cache.evictIfNeeded()
 }
 
 // Lookup returns a cached sticker document by its file ID.
@@ -83,10 +87,12 @@ func (cache *StickerCache) Lookup(fileID int64) (StickerDoc, bool) {
 	return doc, found
 }
 
-// evictIfNeeded clears the cache when it exceeds the size limit.
-// Must be called with mut held.
-func (cache *StickerCache) evictIfNeeded() {
-	if len(cache.entries) <= maxStickerCacheEntries {
+// evictFor clears the cache when the incoming documents would not fit.
+// Eviction drops everything rather than tracking recency: a sticker set
+// holds a few hundred documents, so the limit is a runaway guard, not a
+// working-set policy. Must be called with mut held.
+func (cache *StickerCache) evictFor(incoming int) {
+	if len(cache.entries)+incoming <= maxStickerCacheEntries {
 		return
 	}
 

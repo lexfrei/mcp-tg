@@ -419,6 +419,7 @@ func (w *Wrapper) getChannelGroupInfo(ctx context.Context, peer InputPeer) (*Gro
 			if channelFull, ok := full.FullChat.(*tg.ChannelFull); ok {
 				info.About = channelFull.About
 				info.MembersCount = channelFull.ParticipantsCount
+				info.DefaultSendAs = defaultSendAsFrom(channelFull, full.Chats, full.Users)
 			}
 
 			return info, nil

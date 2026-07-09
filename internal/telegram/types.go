@@ -156,15 +156,21 @@ type Dialog struct {
 }
 
 // GroupInfo holds detailed information about a group or channel.
+// GroupInfo describes a group, supergroup or channel.
+//
+// DefaultSendAs is the identity this account posts under by default, and
+// is nil unless one was chosen. Basic groups never have one — MTProto
+// only tracks the setting on channels.
 type GroupInfo struct {
-	Peer         InputPeer `json:"peer"`
-	Title        string    `json:"title"`
-	Username     string    `json:"username,omitempty"`
-	About        string    `json:"about,omitempty"`
-	MembersCount int       `json:"membersCount,omitempty"`
-	IsChannel    bool      `json:"isChannel,omitempty"`
-	IsSupergroup bool      `json:"isSupergroup,omitempty"`
-	IsForum      bool      `json:"isForum,omitempty"`
+	Peer          InputPeer     `json:"peer"`
+	Title         string        `json:"title"`
+	Username      string        `json:"username,omitempty"`
+	About         string        `json:"about,omitempty"`
+	MembersCount  int           `json:"membersCount,omitempty"`
+	IsChannel     bool          `json:"isChannel,omitempty"`
+	IsSupergroup  bool          `json:"isSupergroup,omitempty"`
+	IsForum       bool          `json:"isForum,omitempty"`
+	DefaultSendAs *SendAsOption `json:"defaultSendAs,omitempty"`
 }
 
 // PeerInfo holds basic metadata about any peer.

@@ -122,9 +122,40 @@ func sendAsOptionsFrom(result *tg.ChannelsSendAsPeers) []SendAsOption {
 // sendAsInputPeers indexes the access-hash-bearing peers that accompany
 // the identity list, keyed the same way the peer cache keys its entries.
 func sendAsInputPeers(result *tg.ChannelsSendAsPeers) map[peerKey]InputPeer {
-	peers := make(map[peerKey]InputPeer, len(result.Users)+len(result.Chats))
+	return inputPeersByKey(result.Chats, result.Users)
+}
 
-	for _, usr := range result.Users {
+// defaultSendAsFrom reads the identity a channel posts under by default.
+// ChannelFull carries it as a bare peer, so the display name and access
+// hash come from the Chats and Users of the same getFullChannel reply.
+func defaultSendAsFrom(
+	full *tg.ChannelFull, chats []tg.ChatClass, users []tg.UserClass,
+) *SendAsOption {
+	raw, ok := full.GetDefaultSendAs()
+	if !ok {
+		return nil
+	}
+
+	peer := extractPeerID(raw)
+	if peer.ID == 0 {
+		return nil
+	}
+
+	if hydrated, found := inputPeersByKey(chats, users)[peerKey{typ: peer.Type, id: peer.ID}]; found {
+		peer = hydrated
+	}
+
+	ref, _ := lookupRefByPeer(peer, buildUserRefs(users), buildChatRefs(chats))
+
+	return &SendAsOption{Peer: peer, Name: ref.Name, Username: ref.Username}
+}
+
+// inputPeersByKey indexes the peers of an MTProto response by the key
+// the peer cache uses, keeping their access hashes.
+func inputPeersByKey(chats []tg.ChatClass, users []tg.UserClass) map[peerKey]InputPeer {
+	peers := make(map[peerKey]InputPeer, len(users)+len(chats))
+
+	for _, usr := range users {
 		if typed, ok := usr.(*tg.User); ok {
 			peers[peerKey{typ: PeerUser, id: typed.ID}] = InputPeer{
 				Type: PeerUser, ID: typed.ID, AccessHash: typed.AccessHash,
@@ -132,7 +163,7 @@ func sendAsInputPeers(result *tg.ChannelsSendAsPeers) map[peerKey]InputPeer {
 		}
 	}
 
-	for _, chat := range result.Chats {
+	for _, chat := range chats {
 		if typed, ok := chat.(*tg.Channel); ok {
 			peers[peerKey{typ: PeerChannel, id: typed.ID}] = InputPeer{
 				Type: PeerChannel, ID: typed.ID, AccessHash: typed.AccessHash,

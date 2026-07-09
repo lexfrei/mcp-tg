@@ -113,6 +113,52 @@ func TestChatsGetSendAsHandler_Error(t *testing.T) {
 	}
 }
 
+func TestGroupsInfoHandler_ExposesDefaultSendAs(t *testing.T) {
+	identity := sendAsOptions()[1]
+	mock := &mockClient{
+		peer:  destPeer(),
+		group: &telegram.GroupInfo{Title: "Group", DefaultSendAs: &identity},
+	}
+
+	_, structured, err := NewGroupsInfoHandler(mock)(
+		context.Background(), nil, GroupsInfoParams{Peer: "@group"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.DefaultSendAs == nil {
+		t.Fatal("defaultSendAs is nil even though the group has one")
+	}
+
+	if structured.DefaultSendAs.Username != "mychan" || structured.DefaultSendAs.Peer != "-1000000000020" {
+		t.Errorf("defaultSendAs = %+v, want @mychan as -1000000000020", *structured.DefaultSendAs)
+	}
+
+	if !strings.Contains(structured.Output, "posts as: My Channel [@mychan]") {
+		t.Errorf("output %q must name the identity the group posts as", structured.Output)
+	}
+}
+
+func TestGroupsInfoHandler_OmitsAbsentDefaultSendAs(t *testing.T) {
+	mock := &mockClient{peer: destPeer(), group: &telegram.GroupInfo{Title: "Group"}}
+
+	_, structured, err := NewGroupsInfoHandler(mock)(
+		context.Background(), nil, GroupsInfoParams{Peer: "@group"},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.DefaultSendAs != nil {
+		t.Errorf("defaultSendAs = %+v, want nil", *structured.DefaultSendAs)
+	}
+
+	if strings.Contains(structured.Output, "posts as") {
+		t.Errorf("output %q must not mention an identity that is not set", structured.Output)
+	}
+}
+
 func TestChatsSetSendAsTool_Definition(t *testing.T) {
 	tool := ChatsSetSendAsTool()
 	if tool.Name != "tg_chats_set_send_as" {

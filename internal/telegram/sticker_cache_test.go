@@ -182,3 +182,37 @@ func TestStickerCache_StoresAndLooksUp(t *testing.T) {
 		t.Errorf("cached document = %+v, want hash %d and ref %v", doc, stickerDocHash, stickerFileRef())
 	}
 }
+
+func fakeStickerDocs(count int) []tg.DocumentClass {
+	docs := make([]tg.DocumentClass, count)
+	for i := range docs {
+		docs[i] = &tg.Document{ID: int64(i + 1), AccessHash: int64(i + 1)}
+	}
+
+	return docs
+}
+
+func TestStickerCache_KeepsEntriesAtTheLimit(t *testing.T) {
+	cache := NewStickerCache()
+	cache.StoreAll(fakeStickerDocs(maxStickerCacheEntries))
+
+	if _, ok := cache.Lookup(1); !ok {
+		t.Error("an entry was evicted while the cache was exactly at its limit")
+	}
+
+	if _, ok := cache.Lookup(int64(maxStickerCacheEntries)); !ok {
+		t.Error("the last entry stored at the limit is missing")
+	}
+}
+
+// Eviction drops everything rather than tracking recency: a sticker set
+// holds a few hundred documents, so the limit is a runaway guard, not a
+// working-set policy.
+func TestStickerCache_ClearsWhenOverTheLimit(t *testing.T) {
+	cache := NewStickerCache()
+	cache.StoreAll(fakeStickerDocs(maxStickerCacheEntries + 1))
+
+	if _, ok := cache.Lookup(1); ok {
+		t.Error("the cache kept entries after exceeding its limit")
+	}
+}

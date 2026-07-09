@@ -150,6 +150,19 @@ func defaultSendAsFrom(
 	return &SendAsOption{Peer: peer, Name: ref.Name, Username: ref.Username}
 }
 
+// cachePeersOf remembers every access-hash-bearing peer an MTProto
+// response mentions.
+func (w *Wrapper) cachePeersOf(chats []tg.ChatClass, users []tg.UserClass) {
+	indexed := inputPeersByKey(chats, users)
+
+	peers := make([]InputPeer, 0, len(indexed))
+	for _, peer := range indexed {
+		peers = append(peers, peer)
+	}
+
+	w.cache.StoreAll(peers)
+}
+
 // inputPeersByKey indexes the peers of an MTProto response by the key
 // the peer cache uses, keeping their access hashes.
 func inputPeersByKey(chats []tg.ChatClass, users []tg.UserClass) map[peerKey]InputPeer {

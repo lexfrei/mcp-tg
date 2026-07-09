@@ -47,7 +47,7 @@ func chatFullWithDefaultSendAs(withIdentity bool) *tg.MessagesChatFull {
 	}
 }
 
-func groupInfoFor(t *testing.T, withIdentity bool) *GroupInfo {
+func groupInfoWrapper(t *testing.T, withIdentity bool) (*Wrapper, *GroupInfo) {
 	t.Helper()
 
 	inv := &fullChannelInvoker{full: chatFullWithDefaultSendAs(withIdentity)}
@@ -58,7 +58,32 @@ func groupInfoFor(t *testing.T, withIdentity bool) *GroupInfo {
 		t.Fatalf("GetGroupInfo: %v", err)
 	}
 
+	return wrap, info
+}
+
+func groupInfoFor(t *testing.T, withIdentity bool) *GroupInfo {
+	t.Helper()
+
+	_, info := groupInfoWrapper(t, withIdentity)
+
 	return info
+}
+
+// tg_groups_info hands the default identity back as a numeric peer string.
+// A caller passing that straight into sendAs would be rejected — a numeric
+// channel resolves with access hash 0 — unless the hash we just read from
+// this very reply is remembered.
+func TestGetGroupInfo_SeedsDefaultSendAsIntoPeerCache(t *testing.T) {
+	wrap, _ := groupInfoWrapper(t, true)
+
+	cached, ok := wrap.cache.Lookup(PeerChannel, ownChannelID)
+	if !ok {
+		t.Fatal("the default send-as identity was not seeded into the peer cache")
+	}
+
+	if cached.AccessHash != ownChannelHash {
+		t.Errorf("cached access hash = %d, want %d", cached.AccessHash, ownChannelHash)
+	}
 }
 
 func TestGetGroupInfo_ExposesDefaultSendAs(t *testing.T) {

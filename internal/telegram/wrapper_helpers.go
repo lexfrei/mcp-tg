@@ -422,6 +422,12 @@ func (w *Wrapper) getChannelGroupInfo(ctx context.Context, peer InputPeer) (*Gro
 				info.DefaultSendAs = defaultSendAsFrom(channelFull, full.Chats, full.Users)
 			}
 
+			// The reply carries access hashes for every peer it mentions,
+			// including the default send-as identity we just rendered as a
+			// numeric peer string. Without remembering them, handing that
+			// string back as sendAs resolves to access hash 0.
+			w.cachePeersOf(full.Chats, full.Users)
+
 			return info, nil
 		}
 	}

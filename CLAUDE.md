@@ -177,6 +177,8 @@ Wiring: `SendOpts.SendAs *InputPeer` for the three methods that already had an o
 
 Both new tools reject non-`PeerChannel` peers before the round trip (`telegram.ErrSendAsUnsupportedPeer`); the server's `CHANNEL_INVALID` explains nothing.
 
+Posting as yourself for a single message, in a chat whose default is a channel, works: pass your own numeric ID as `sendAs`. It resolves with an access hash because the account always has a Saved Messages dialog, so `resolveSendAs` accepts it and `InputPeerUser` is what reaches the wire. Verified end-to-end. `inputPeerSelf` is therefore needed only by `SetDefaultSendAs`, where the identity is absent rather than resolved.
+
 Verified against a live account: a rejected identity comes back as `CHAT_ADMIN_REQUIRED` (channel you don't administrate) or `CHAT_WRITE_FORBIDDEN` (foreign user), NOT `SEND_AS_PEER_INVALID` — that code exists in the schema but the server rarely reaches for it. Both read as a chat-permission problem, so `sendErr` (`tools/errors.go`) names `sendAs` as a suspect whenever one was supplied. Do not "simplify" the six send tools back to plain `telegramErr`.
 
 Also verified: a channel that is the chat default reacts as itself, and `messages.getMessageReactionsList` returns its title in `Chats`, not `Users` — `extractReactionUsers` reads both and carries `ReactionUser.PeerType`.

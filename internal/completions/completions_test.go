@@ -72,3 +72,17 @@ func TestMatchesPrefix(t *testing.T) {
 		t.Error("matchesPrefix('', 'test') = true")
 	}
 }
+
+func TestCompletesPeer(t *testing.T) {
+	for _, argument := range []string{"peer", "sendAs"} {
+		if !completesPeer(argument) {
+			t.Errorf("completesPeer(%q) = false, want true", argument)
+		}
+	}
+
+	for _, argument := range []string{"text", "query", "title", ""} {
+		if completesPeer(argument) {
+			t.Errorf("completesPeer(%q) = true, want false", argument)
+		}
+	}
+}

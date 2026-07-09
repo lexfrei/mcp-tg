@@ -128,7 +128,7 @@ func TestStickersSendHandler_PassesSendAs(t *testing.T) {
 	handler := NewStickersSendHandler(mock)
 
 	_, _, err := handler(context.Background(), nil, StickersSendParams{
-		Peer: "@group", StickerFileID: 42, SendAs: new(sendAsRef),
+		Peer: "@group", StickerFileID: "42", SendAs: new(sendAsRef),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -287,5 +287,50 @@ func TestExplainMTProtoCode_ChatAdminRequired(t *testing.T) {
 	got := explainMTProtoCode("rpc error code 400: CHAT_ADMIN_REQUIRED")
 	if got == "" {
 		t.Error("CHAT_ADMIN_REQUIRED must have a human-readable explanation")
+	}
+}
+
+// The MCP SDK unmarshals tool arguments into map[string]any, applies
+// schema defaults and re-marshals (go-sdk v1.6.1, mcp/tool.go). Any JSON
+// number therefore round-trips through float64, whose mantissa holds 53
+// bits. A sticker document id needs 63, so passing it as a JSON number
+// silently corrupts it: 5181593617004757506 arrives as 5181593617004758000.
+// The id is a decimal string for that reason and must stay one.
+func TestStickersSendHandler_ParsesFileIDBeyondFloat64Precision(t *testing.T) {
+	const exact int64 = 5181593617004757506
+
+	mock := sendAsMock()
+
+	_, _, err := NewStickersSendHandler(mock)(context.Background(), nil, StickersSendParams{
+		Peer: "@group", StickerFileID: "5181593617004757506",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.lastStickerID != exact {
+		t.Errorf("sticker id = %d, want %d (lost %d)", mock.lastStickerID, exact, exact-mock.lastStickerID)
+	}
+}
+
+func TestStickersSendHandler_RejectsNonNumericFileID(t *testing.T) {
+	result, _, err := NewStickersSendHandler(sendAsMock())(context.Background(), nil, StickersSendParams{
+		Peer: "@group", StickerFileID: "not-a-number",
+	})
+	if !errors.Is(err, ErrInvalidStickerFileID) {
+		t.Fatalf("error = %v, want ErrInvalidStickerFileID", err)
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
+	}
+}
+
+func TestStickersSendHandler_RejectsEmptyFileID(t *testing.T) {
+	_, _, err := NewStickersSendHandler(sendAsMock())(context.Background(), nil, StickersSendParams{
+		Peer: "@group",
+	})
+	if !errors.Is(err, ErrStickerFileIDRequired) {
+		t.Fatalf("error = %v, want ErrStickerFileIDRequired", err)
 	}
 }

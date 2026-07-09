@@ -175,7 +175,13 @@ Both new tools reject non-`PeerChannel` peers before the round trip (`telegram.E
 
 Verified against a live account: a rejected identity comes back as `CHAT_ADMIN_REQUIRED` (channel you don't administrate) or `CHAT_WRITE_FORBIDDEN` (foreign user), NOT `SEND_AS_PEER_INVALID` — that code exists in the schema but the server rarely reaches for it. Both read as a chat-permission problem, so `sendErr` (`tools/errors.go`) names `sendAs` as a suspect whenever one was supplied. Do not "simplify" the six send tools back to plain `telegramErr`.
 
-Also verified: a channel that is the chat default reacts as itself, and `messages.getMessageReactionsList` returns its title in `Chats`, not `Users` — `extractReactionUsers` reads both and carries `ReactionUser.PeerType`. Separately, `tg_stickers_send` is broken independently of send-as: `SendSticker` builds `InputDocument{ID}` with no access hash or file reference, so every call answers `MEDIA_EMPTY`.
+Also verified: a channel that is the chat default reacts as itself, and `messages.getMessageReactionsList` returns its title in `Chats`, not `Users` — `extractReactionUsers` reads both and carries `ReactionUser.PeerType`.
+
+### Sticker documents (`sticker_cache.go`)
+
+`inputDocument` needs id + access hash + file reference. Only the id is public and stable; the other two arrive with `messages.getStickerSet` and cannot be derived. `GetStickerSet` therefore seeds `StickerCache`, and `SendSticker` looks the document up there, failing with `ErrStickerNotCached` before the RPC when it is absent. Sending a bare id (which is what the code did until this cache existed) answers `MEDIA_EMPTY` on every call. Same shape as the send-as peer cache: read the listing tool once, then the id works.
+
+**`stickerFileId` is a string, and must stay one.** `mcp/tool.go` in go-sdk v1.6.1 unmarshals tool arguments into `map[string]any`, calls `ApplyDefaults`, then re-marshals — so every JSON number passes through `float64`. `internal/json` wraps `segmentio/encoding/json` without `UseNumber`, so there is no escape hatch. A sticker document id needs 63 bits; the mantissa holds 53. Verified end-to-end: `5181593617004757506` reached the wrapper as `5181593617004758000`. Any future tool parameter above 2^53 must be a decimal string for the same reason — this is not paranoia, `stickerFileId` was silently broken by it. Telegram user IDs are well under the limit and are safe as numbers.
 
 ### Telegram protocol details
 

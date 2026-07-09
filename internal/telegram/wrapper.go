@@ -39,6 +39,7 @@ type Wrapper struct {
 	up             *uploader.Uploader
 	down           *downloader.Downloader
 	cache          *PeerCache
+	stickers       *StickerCache
 	transcriptions *TranscriptionBroker
 	warmedAt       atomic.Int64
 	cfg            atomic.Pointer[cachedServerConfig]
@@ -90,6 +91,7 @@ func NewWrapperWithTranscriptionBroker(api *tg.Client, broker *TranscriptionBrok
 		up:             uploader.NewUploader(api),
 		down:           downloader.NewDownloader(),
 		cache:          NewPeerCache(),
+		stickers:       NewStickerCache(),
 		transcriptions: broker,
 	}
 }
@@ -1148,6 +1150,10 @@ func (w *Wrapper) GetStickerSet(ctx context.Context, name string) (*StickerSetFu
 		return nil, errors.New("unexpected sticker set type")
 	}
 
+	// The access hashes and file references only ever arrive here. A
+	// later SendSticker has no other way to address these documents.
+	w.stickers.StoreAll(stickerSet.Documents)
+
 	return convertStickerSetFull(stickerSet), nil
 }
 
@@ -1155,6 +1161,11 @@ func (w *Wrapper) GetStickerSet(ctx context.Context, name string) (*StickerSetFu
 func (w *Wrapper) SendSticker(
 	ctx context.Context, peer InputPeer, stickerFileID int64, sendAs *InputPeer,
 ) (*Message, error) {
+	doc, found := w.stickers.Lookup(stickerFileID)
+	if !found {
+		return nil, errors.Wrapf(ErrStickerNotCached, "sticker %d", stickerFileID)
+	}
+
 	randID, err := cryptoRandID()
 	if err != nil {
 		return nil, err
@@ -1163,7 +1174,11 @@ func (w *Wrapper) SendSticker(
 	req := &tg.MessagesSendMediaRequest{
 		Peer: InputPeerToTG(peer),
 		Media: &tg.InputMediaDocument{
-			ID: &tg.InputDocument{ID: stickerFileID},
+			ID: &tg.InputDocument{
+				ID:            doc.ID,
+				AccessHash:    doc.AccessHash,
+				FileReference: doc.FileReference,
+			},
 		},
 		RandomID: randID,
 	}

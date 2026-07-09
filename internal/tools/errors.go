@@ -62,6 +62,14 @@ var ErrFolderIDRequired = errors.New("folder ID is required")
 // ErrStickerFileIDRequired is returned when a sticker file ID parameter is missing.
 var ErrStickerFileIDRequired = errors.New("sticker file ID is required")
 
+// ErrInvalidStickerFileID is returned when a sticker file ID is not a
+// decimal integer. It is a string rather than a number because the MCP
+// SDK round-trips tool arguments through float64, which cannot hold the
+// 63 bits a sticker document id needs.
+var ErrInvalidStickerFileID = errors.New(
+	"sticker file ID must be a decimal integer string, as printed by tg_stickers_get_set",
+)
+
 // ErrEmojiRequired is returned when an emoji parameter is missing.
 var ErrEmojiRequired = errors.New("emoji is required")
 

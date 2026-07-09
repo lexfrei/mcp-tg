@@ -110,7 +110,11 @@ The categorised list below documents 67 of the 78 registered tools — the remai
 
 - `tg_stickers_search` — Search sticker sets
 - `tg_stickers_get_set` — Get a sticker set
-- `tg_stickers_send` — Send a sticker
+- `tg_stickers_send` — Send a sticker (read its set first, see below)
+
+A sticker is addressed by three numbers, not one: an id, an access hash and a file reference. Only the id is stable and public; the other two arrive with the sticker set. So `tg_stickers_get_set` must be called before `tg_stickers_send` for that set — it caches what the send needs. Sending an id alone would answer `MEDIA_EMPTY`, a code that names neither the sticker nor the remedy, so an uncached sticker is rejected before the request leaves.
+
+`stickerFileId` is a **decimal string**, not a JSON number. The MCP SDK unmarshals tool arguments into `map[string]any` to apply schema defaults, then re-marshals them, so every JSON number round-trips through `float64`. A sticker document id needs 63 bits and a `float64` mantissa holds 53, which silently corrupts it — `5181593617004757506` arrives as `5181593617004758000`. Quote the id and it survives.
 
 ### Drafts (2)
 

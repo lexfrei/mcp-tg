@@ -67,6 +67,7 @@ type mockClient struct {
 	sendAsOptions   []telegram.SendAsOption
 	getSendAsCalls  int
 	resolvedQueries []string
+	lastStickerID   int64
 }
 
 // ResolvePeer answers with m.peer unless resolvePeerFn is set. Tools
@@ -421,10 +422,11 @@ func (m *mockClient) GetStickerSet(_ context.Context, _ string) (*telegram.Stick
 }
 
 func (m *mockClient) SendSticker(
-	_ context.Context, peer telegram.InputPeer, _ int64, sendAs *telegram.InputPeer,
+	_ context.Context, peer telegram.InputPeer, stickerFileID int64, sendAs *telegram.InputPeer,
 ) (*telegram.Message, error) {
 	m.lastPeer = peer
 	m.lastSendAs = sendAs
+	m.lastStickerID = stickerFileID
 
 	return m.message, m.err
 }

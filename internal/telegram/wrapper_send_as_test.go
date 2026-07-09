@@ -242,39 +242,8 @@ func TestForwardMessages_OmitsSendAsWhenNil(t *testing.T) {
 	}
 }
 
-func TestSendSticker_SetsSendAs(t *testing.T) {
-	inv := &sendAsInvoker{}
-	identity := sendAsIdentity()
-
-	_, err := newSendAsWrapper(inv).SendSticker(t.Context(), targetPeer(), 42, &identity)
-	if err != nil {
-		t.Fatalf("SendSticker: %v", err)
-	}
-
-	if inv.sendMedia == nil {
-		t.Fatal("messages.sendMedia was never invoked")
-	}
-
-	got, ok := inv.sendMedia.GetSendAs()
-	if !ok {
-		t.Fatal("send_as flag is not set on the request")
-	}
-
-	assertSendAsIdentity(t, got)
-}
-
-func TestSendSticker_OmitsSendAsWhenNil(t *testing.T) {
-	inv := &sendAsInvoker{}
-
-	_, err := newSendAsWrapper(inv).SendSticker(t.Context(), targetPeer(), 42, nil)
-	if err != nil {
-		t.Fatalf("SendSticker: %v", err)
-	}
-
-	if _, ok := inv.sendMedia.GetSendAs(); ok {
-		t.Error("send_as flag is set even though sendAs is nil")
-	}
-}
+// Sticker sends live in sticker_cache_test.go: they need a cached
+// document before the request can be built at all.
 
 func TestCreateForumTopic_SetsSendAs(t *testing.T) {
 	inv := &sendAsInvoker{}

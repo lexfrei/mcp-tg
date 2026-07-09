@@ -58,6 +58,13 @@ type mockClient struct {
 	// lastSendAs records the identity passed to the send methods that
 	// take it as a trailing argument rather than through SendOpts.
 	lastSendAs *telegram.InputPeer
+	// lastSetSendAs records the identity SetDefaultSendAs was asked to
+	// store. A nil value is meaningful there: it resets the chat to the
+	// account itself, so setSendAsCalls disambiguates "not called".
+	lastSetSendAs  *telegram.InputPeer
+	setSendAsCalls int
+	sendAsOptions  []telegram.SendAsOption
+	getSendAsCalls int
 }
 
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
@@ -548,5 +555,22 @@ func (m *mockClient) DeleteHistory(_ context.Context, peer telegram.InputPeer, _
 }
 
 func (m *mockClient) ClearAllDrafts(_ context.Context) error {
+	return m.err
+}
+
+func (m *mockClient) GetSendAs(_ context.Context, peer telegram.InputPeer) ([]telegram.SendAsOption, error) {
+	m.lastPeer = peer
+	m.getSendAsCalls++
+
+	return m.sendAsOptions, m.err
+}
+
+func (m *mockClient) SetDefaultSendAs(
+	_ context.Context, peer telegram.InputPeer, sendAs *telegram.InputPeer,
+) error {
+	m.lastPeer = peer
+	m.lastSetSendAs = sendAs
+	m.setSendAsCalls++
+
 	return m.err
 }

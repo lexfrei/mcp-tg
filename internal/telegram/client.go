@@ -21,6 +21,7 @@ type Client interface {
 	DraftClient
 	FolderClient
 	StatusClient
+	SendAsClient
 	PeerResolver
 }
 
@@ -147,6 +148,12 @@ type FolderClient interface {
 type StatusClient interface {
 	SendTyping(ctx context.Context, peer InputPeer, action string) error
 	SetOnlineStatus(ctx context.Context, online bool) error
+}
+
+// SendAsClient handles the identities an account may post under.
+type SendAsClient interface {
+	GetSendAs(ctx context.Context, peer InputPeer) ([]SendAsOption, error)
+	SetDefaultSendAs(ctx context.Context, peer InputPeer, sendAs *InputPeer) error
 }
 
 // PeerResolver resolves string identifiers to InputPeer.

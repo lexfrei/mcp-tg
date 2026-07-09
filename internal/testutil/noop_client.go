@@ -260,3 +260,11 @@ func (NoopClient) SetAdmin(
 
 func (NoopClient) DeleteHistory(_ context.Context, _ telegram.InputPeer, _ bool) error { return nil }
 func (NoopClient) ClearAllDrafts(_ context.Context) error                              { return nil }
+
+func (NoopClient) GetSendAs(_ context.Context, _ telegram.InputPeer) ([]telegram.SendAsOption, error) {
+	return nil, nil
+}
+
+func (NoopClient) SetDefaultSendAs(_ context.Context, _ telegram.InputPeer, _ *telegram.InputPeer) error {
+	return nil
+}

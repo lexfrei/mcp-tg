@@ -88,12 +88,13 @@ var ErrTooManyIDs = errors.New("too many IDs (max 100)")
 // ErrUserPeerRequired is returned when a user peer is needed but another type was provided.
 var ErrUserPeerRequired = errors.New("this operation requires a user peer, not a group or channel")
 
-// ErrSendAsUnresolved is returned when a sendAs reference names a channel
-// whose access hash is unknown. A bare numeric ID resolves to an access
+// ErrSendAsUnresolved is returned when a sendAs reference names an
+// identity whose access hash is unknown — usually a channel, since your
+// own account always resolves. A bare numeric ID resolves to an access
 // hash of zero without erroring, and sending that on yields a server-side
 // PEER_ID_INVALID that reads as a problem with the destination instead.
 var ErrSendAsUnresolved = errors.New(
-	"sendAs channel has no known access hash; pass @username, " +
+	"sendAs identity has no known access hash; pass @username, " +
 		"or call tg_chats_get_send_as on the destination first",
 )
 

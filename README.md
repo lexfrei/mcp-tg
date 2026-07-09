@@ -236,6 +236,8 @@ What MTProto does not allow, and no amount of client code can add:
 - A standard reaction is the unicode emoji itself (`"👍"`).
 - A premium custom-emoji reaction is encoded as `"custom:<document_id>"` (e.g. `"custom:5210952531676504517"`). `tg_messages_get_reactions` emits this exact form, so a reaction read from one message can be sent verbatim to another (read → send round-trip).
 
+A reactor is not always a user. When a chat's default identity is a channel (see `tg_chats_set_send_as`), reactions from this account are attributed to that channel. `tg_messages_get_reactions` reports each reactor's kind in `type` (`user` / `channel`), because a channel ID and a user ID with the same number are different peers.
+
 `tg_messages_react` parameters:
 
 - `emoji` — a single reaction (standard or `custom:<id>`). Kept for convenience and backward compatibility.

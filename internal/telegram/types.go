@@ -155,8 +155,7 @@ type Dialog struct {
 	IsGroup     bool      `json:"isGroup,omitempty"`
 }
 
-// GroupInfo holds detailed information about a group or channel.
-// GroupInfo describes a group, supergroup or channel.
+// GroupInfo holds detailed information about a group, supergroup or channel.
 //
 // DefaultSendAs is the identity this account posts under by default, and
 // is nil unless one was chosen. Basic groups never have one — MTProto
@@ -226,13 +225,12 @@ type Folder struct {
 	Peers []InputPeer `json:"peers,omitempty"`
 }
 
-// ReactionUser represents a user who reacted to a message.
-//
-// The Name and Username fields mirror the shape every other
-// peer-bearing JSON surface uses (sender, forward-author, participant)
-// so a downstream consumer can treat a reactor as a "Display Name
-// [@username]" identifier just like any other peer.
 // ReactionUser is one peer's reaction to a message.
+//
+// The Name and Username fields mirror the shape every other peer-bearing
+// JSON surface uses (sender, forward-author, participant) so a downstream
+// consumer can treat a reactor as a "Display Name [@username]" identifier
+// just like any other peer.
 //
 // The reactor is not always a user: a channel reacts whenever it is the
 // chat's default send-as identity. UserID keeps its name for backwards

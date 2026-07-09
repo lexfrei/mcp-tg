@@ -364,6 +364,8 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
 
+	applySendAs(opts.SendAs, req.SetSendAs)
+
 	result, err := w.api.MessagesSendMessage(ctx, req)
 	if err != nil {
 		return nil, errors.Wrap(err, "sending message")
@@ -569,6 +571,8 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 	if opts.ScheduleDate > 0 {
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
+
+	applySendAs(opts.SendAs, req.SetSendAs)
 
 	result, err := w.api.MessagesSendMedia(ctx, req)
 	if err != nil {

@@ -161,7 +161,25 @@ func buildMultiMediaRequest(
 		req.SetScheduleDate(opts.ScheduleDate)
 	}
 
+	applySendAs(opts.SendAs, req.SetSendAs)
+
 	return req
+}
+
+// applySendAs sets the conditional send_as field on an outgoing request
+// when an identity was requested. Every gotd request that carries the
+// field exposes the same SetSendAs method value, so passing the method
+// keeps this one helper usable from sendMessage, sendMedia,
+// sendMultiMedia, forwardMessages and createForumTopic alike.
+//
+// A nil identity leaves the flag bit clear, which is what makes the
+// server attribute the message to the account itself.
+func applySendAs(sendAs *InputPeer, set func(tg.InputPeerClass)) {
+	if sendAs == nil {
+		return
+	}
+
+	set(InputPeerToTG(*sendAs))
 }
 
 // buildReplyTo constructs an InputReplyToMessage from topic and reply IDs.

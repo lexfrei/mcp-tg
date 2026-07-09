@@ -323,6 +323,10 @@ func IsCommonMarkParseMode(mode string) bool {
 type UploadProgress func(ctx context.Context, uploaded, total int64)
 
 // SendOpts configures message sending.
+//
+// SendAs names the identity the message is posted under. A nil value
+// posts under the account itself. Only identities the server lists in
+// GetSendAs are accepted; anything else fails with SEND_AS_PEER_INVALID.
 type SendOpts struct {
 	ReplyTo      int
 	TopicID      int
@@ -330,6 +334,7 @@ type SendOpts struct {
 	Silent       bool
 	NoWebpage    bool
 	ScheduleDate int
+	SendAs       *InputPeer
 	Progress     UploadProgress
 }
 

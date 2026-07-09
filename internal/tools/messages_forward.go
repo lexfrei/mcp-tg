@@ -57,7 +57,7 @@ func NewMessagesForwardHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 				telegramErr("failed to resolve destination peer", err)
 		}
 
-		msgs, err := client.ForwardMessages(ctx, from, dest, params.IDs)
+		msgs, err := client.ForwardMessages(ctx, from, dest, params.IDs, nil)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesForwardResult{},
 				telegramErr("failed to forward messages", err)

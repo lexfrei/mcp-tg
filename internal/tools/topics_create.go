@@ -50,7 +50,7 @@ func NewTopicsCreateHandler(
 				telegramErr("failed to resolve peer", err)
 		}
 
-		topic, err := client.CreateForumTopic(ctx, peer, params.Title)
+		topic, err := client.CreateForumTopic(ctx, peer, params.Title, nil)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},
 				TopicsCreateResult{},

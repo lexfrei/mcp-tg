@@ -46,7 +46,9 @@ func (NoopClient) DeleteMessages(_ context.Context, _ telegram.InputPeer, _ []in
 	return nil
 }
 
-func (NoopClient) ForwardMessages(_ context.Context, _, _ telegram.InputPeer, _ []int) ([]telegram.Message, error) {
+func (NoopClient) ForwardMessages(
+	_ context.Context, _, _ telegram.InputPeer, _ []int, _ *telegram.InputPeer,
+) ([]telegram.Message, error) {
 	return nil, nil
 }
 
@@ -177,7 +179,9 @@ func (NoopClient) GetStickerSet(_ context.Context, _ string) (*telegram.StickerS
 	return nil, nil
 }
 
-func (NoopClient) SendSticker(_ context.Context, _ telegram.InputPeer, _ int64) (*telegram.Message, error) {
+func (NoopClient) SendSticker(
+	_ context.Context, _ telegram.InputPeer, _ int64, _ *telegram.InputPeer,
+) (*telegram.Message, error) {
 	return nil, nil
 }
 
@@ -233,7 +237,7 @@ func (NoopClient) MarkDialogUnread(_ context.Context, _ telegram.InputPeer, _ bo
 func (NoopClient) SetSlowMode(_ context.Context, _ telegram.InputPeer, _ int) error       { return nil }
 
 func (NoopClient) CreateForumTopic(
-	_ context.Context, _ telegram.InputPeer, _ string,
+	_ context.Context, _ telegram.InputPeer, _ string, _ *telegram.InputPeer,
 ) (*telegram.ForumTopic, error) {
 	return nil, nil
 }

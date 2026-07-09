@@ -55,6 +55,9 @@ type mockClient struct {
 	lastTranscribeID int
 	lastWait         time.Duration
 	groupInfoCalls   int
+	// lastSendAs records the identity passed to the send methods that
+	// take it as a trailing argument rather than through SendOpts.
+	lastSendAs *telegram.InputPeer
 }
 
 func (m *mockClient) ResolvePeer(_ context.Context, identifier string) (telegram.InputPeer, error) {
@@ -157,8 +160,11 @@ func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, 
 	return m.err
 }
 
-func (m *mockClient) ForwardMessages(_ context.Context, _, dest telegram.InputPeer, _ []int) ([]telegram.Message, error) {
+func (m *mockClient) ForwardMessages(
+	_ context.Context, _, dest telegram.InputPeer, _ []int, sendAs *telegram.InputPeer,
+) ([]telegram.Message, error) {
 	m.lastPeer = dest
+	m.lastSendAs = sendAs
 
 	return m.messages, m.err
 }
@@ -397,8 +403,11 @@ func (m *mockClient) GetStickerSet(_ context.Context, _ string) (*telegram.Stick
 	return m.setFull, m.err
 }
 
-func (m *mockClient) SendSticker(_ context.Context, peer telegram.InputPeer, _ int64) (*telegram.Message, error) {
+func (m *mockClient) SendSticker(
+	_ context.Context, peer telegram.InputPeer, _ int64, sendAs *telegram.InputPeer,
+) (*telegram.Message, error) {
 	m.lastPeer = peer
+	m.lastSendAs = sendAs
 
 	return m.message, m.err
 }
@@ -496,9 +505,10 @@ func (m *mockClient) SetSlowMode(_ context.Context, peer telegram.InputPeer, _ i
 }
 
 func (m *mockClient) CreateForumTopic(
-	_ context.Context, peer telegram.InputPeer, _ string,
+	_ context.Context, peer telegram.InputPeer, _ string, sendAs *telegram.InputPeer,
 ) (*telegram.ForumTopic, error) {
 	m.lastPeer = peer
+	m.lastSendAs = sendAs
 
 	return m.topic, m.err
 }

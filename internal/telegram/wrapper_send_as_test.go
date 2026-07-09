@@ -26,10 +26,12 @@ func sendAsIdentity() InputPeer {
 // carries the conditional send_as field, so a test can assert whether
 // the flag bit was set and what identity it names.
 type sendAsInvoker struct {
-	mu         sync.Mutex
-	sendMsg    *tg.MessagesSendMessageRequest
-	sendMedia  *tg.MessagesSendMediaRequest
-	multiMedia *tg.MessagesSendMultiMediaRequest
+	mu          sync.Mutex
+	sendMsg     *tg.MessagesSendMessageRequest
+	sendMedia   *tg.MessagesSendMediaRequest
+	multiMedia  *tg.MessagesSendMultiMediaRequest
+	forward     *tg.MessagesForwardMessagesRequest
+	createTopic *tg.MessagesCreateForumTopicRequest
 }
 
 func (s *sendAsInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
@@ -51,6 +53,14 @@ func (s *sendAsInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.
 		return encodeResp(&tg.Updates{}, output)
 	case *tg.MessagesSendMultiMediaRequest:
 		s.multiMedia = req
+
+		return encodeResp(&tg.Updates{}, output)
+	case *tg.MessagesForwardMessagesRequest:
+		s.forward = req
+
+		return encodeResp(&tg.Updates{}, output)
+	case *tg.MessagesCreateForumTopicRequest:
+		s.createTopic = req
 
 		return encodeResp(&tg.Updates{}, output)
 	default:
@@ -193,5 +203,109 @@ func TestSendAlbum_OmitsSendAsWhenNil(t *testing.T) {
 
 	if _, ok := inv.multiMedia.GetSendAs(); ok {
 		t.Error("send_as flag is set even though SendOpts.SendAs is nil")
+	}
+}
+
+func TestForwardMessages_SetsSendAs(t *testing.T) {
+	inv := &sendAsInvoker{}
+	identity := sendAsIdentity()
+
+	_, err := newSendAsWrapper(inv).ForwardMessages(
+		t.Context(), targetPeer(), targetPeer(), []int{5}, &identity,
+	)
+	if err != nil {
+		t.Fatalf("ForwardMessages: %v", err)
+	}
+
+	if inv.forward == nil {
+		t.Fatal("messages.forwardMessages was never invoked")
+	}
+
+	got, ok := inv.forward.GetSendAs()
+	if !ok {
+		t.Fatal("send_as flag is not set on the request")
+	}
+
+	assertSendAsIdentity(t, got)
+}
+
+func TestForwardMessages_OmitsSendAsWhenNil(t *testing.T) {
+	inv := &sendAsInvoker{}
+
+	_, err := newSendAsWrapper(inv).ForwardMessages(t.Context(), targetPeer(), targetPeer(), []int{5}, nil)
+	if err != nil {
+		t.Fatalf("ForwardMessages: %v", err)
+	}
+
+	if _, ok := inv.forward.GetSendAs(); ok {
+		t.Error("send_as flag is set even though sendAs is nil")
+	}
+}
+
+func TestSendSticker_SetsSendAs(t *testing.T) {
+	inv := &sendAsInvoker{}
+	identity := sendAsIdentity()
+
+	_, err := newSendAsWrapper(inv).SendSticker(t.Context(), targetPeer(), 42, &identity)
+	if err != nil {
+		t.Fatalf("SendSticker: %v", err)
+	}
+
+	if inv.sendMedia == nil {
+		t.Fatal("messages.sendMedia was never invoked")
+	}
+
+	got, ok := inv.sendMedia.GetSendAs()
+	if !ok {
+		t.Fatal("send_as flag is not set on the request")
+	}
+
+	assertSendAsIdentity(t, got)
+}
+
+func TestSendSticker_OmitsSendAsWhenNil(t *testing.T) {
+	inv := &sendAsInvoker{}
+
+	_, err := newSendAsWrapper(inv).SendSticker(t.Context(), targetPeer(), 42, nil)
+	if err != nil {
+		t.Fatalf("SendSticker: %v", err)
+	}
+
+	if _, ok := inv.sendMedia.GetSendAs(); ok {
+		t.Error("send_as flag is set even though sendAs is nil")
+	}
+}
+
+func TestCreateForumTopic_SetsSendAs(t *testing.T) {
+	inv := &sendAsInvoker{}
+	identity := sendAsIdentity()
+
+	_, err := newSendAsWrapper(inv).CreateForumTopic(t.Context(), targetPeer(), "topic", &identity)
+	if err != nil {
+		t.Fatalf("CreateForumTopic: %v", err)
+	}
+
+	if inv.createTopic == nil {
+		t.Fatal("messages.createForumTopic was never invoked")
+	}
+
+	got, ok := inv.createTopic.GetSendAs()
+	if !ok {
+		t.Fatal("send_as flag is not set on the request")
+	}
+
+	assertSendAsIdentity(t, got)
+}
+
+func TestCreateForumTopic_OmitsSendAsWhenNil(t *testing.T) {
+	inv := &sendAsInvoker{}
+
+	_, err := newSendAsWrapper(inv).CreateForumTopic(t.Context(), targetPeer(), "topic", nil)
+	if err != nil {
+		t.Fatalf("CreateForumTopic: %v", err)
+	}
+
+	if _, ok := inv.createTopic.GetSendAs(); ok {
+		t.Error("send_as flag is set even though sendAs is nil")
 	}
 }

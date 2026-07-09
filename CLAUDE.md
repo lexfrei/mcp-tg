@@ -68,10 +68,12 @@ internal/testutil/           NoopClient for registration tests
 
 ### Tool annotations
 
-- `readOnlyAnnotations()` — tools that only read data (30 tools)
+- `readOnlyAnnotations()` — tools that only read data (31 tools)
 - `idempotentAnnotations()` — tools that modify state but are safe to retry (28 tools)
 - `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
+
+The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release.
 
 ### Peer resolution
 

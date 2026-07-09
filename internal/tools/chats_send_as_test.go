@@ -230,3 +230,29 @@ func TestChatsSetSendAsHandler_RejectsNonChannelPeer(t *testing.T) {
 		t.Error("SetDefaultSendAs was called for a basic group")
 	}
 }
+
+// saveDefaultSendAs rejects a disallowed identity with the same codes the
+// send paths see, so the setter must point at the parameter too rather
+// than leaking a raw rpc error.
+func TestChatsSetSendAsHandler_BlamesTheIdentityOnRejection(t *testing.T) {
+	mock := sendAsMock()
+	mock.err = errors.New("rpc error code 400: SEND_AS_PEER_INVALID")
+	mock.resolvePeerFn = func(identifier string) (telegram.InputPeer, error) {
+		if identifier == sendAsRef {
+			return sendAsChannel(), nil
+		}
+
+		return destPeer(), nil
+	}
+
+	_, _, err := NewChatsSetSendAsHandler(mock)(
+		context.Background(), nil, ChatsSetSendAsParams{Peer: "@group", SendAs: new(sendAsRef)},
+	)
+	if err == nil {
+		t.Fatal("expected the call to fail")
+	}
+
+	if !strings.Contains(err.Error(), "sendAs") {
+		t.Errorf("error %q must name sendAs as a suspect", err)
+	}
+}

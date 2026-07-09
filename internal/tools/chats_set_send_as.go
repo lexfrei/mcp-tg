@@ -42,7 +42,7 @@ func NewChatsSetSendAsHandler(
 		err = client.SetDefaultSendAs(ctx, peer, sendAs)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, ChatsSetSendAsResult{},
-				telegramErr("failed to set the default send-as identity", err)
+				sendErr("failed to set the default send-as identity", err, sendAs)
 		}
 
 		return nil, ChatsSetSendAsResult{Output: sendAsSetOutput(deref(params.SendAs))}, nil

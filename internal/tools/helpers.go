@@ -50,8 +50,10 @@ func validateTopicID(
 }
 
 // resolveSendAs resolves an optional send-as identity. An empty
-// reference means "post as yourself" and yields a nil identity, which is
-// what every send path treats as "leave send_as unset".
+// reference yields a nil identity, which every send path treats as
+// "leave send_as unset" — the server then posts under the chat's saved
+// default, which is the account itself until tg_chats_set_send_as
+// changes it.
 //
 // An identity that resolves without an access hash is rejected here
 // rather than passed on: ResolvePeer returns AccessHash 0 and a nil error
@@ -66,7 +68,7 @@ func resolveSendAs(
 	ctx context.Context, client telegram.Client, sendAs string,
 ) (*telegram.InputPeer, error) {
 	if sendAs == "" {
-		return nil, nil //nolint:nilnil // a nil identity is the documented "post as yourself".
+		return nil, nil //nolint:nilnil // a nil identity is the documented "use the chat default".
 	}
 
 	peer, err := client.ResolvePeer(ctx, sendAs)

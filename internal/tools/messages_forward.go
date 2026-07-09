@@ -13,7 +13,7 @@ type MessagesForwardParams struct {
 	FromPeer string  `json:"fromPeer"         jsonschema:"Source: @username, t.me/ link, or numeric ID"`
 	ToPeer   string  `json:"toPeer"           jsonschema:"Destination: @username, t.me/ link, or numeric ID"`
 	IDs      []int   `json:"ids"              jsonschema:"Message IDs to forward"`
-	SendAs   *string `json:"sendAs,omitempty" jsonschema:"Forward as this channel; see tg_chats_get_send_as. Omit to forward as yourself"`
+	SendAs   *string `json:"sendAs,omitempty" jsonschema:"Forward as this channel; see tg_chats_get_send_as. Omit to use the chat default"`
 }
 
 // MessagesForwardResult is the output of the tg_messages_forward tool.

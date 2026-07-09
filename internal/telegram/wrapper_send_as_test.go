@@ -117,6 +117,13 @@ func TestSendMessage_SetsSendAs(t *testing.T) {
 	assertSendAsIdentity(t, got)
 }
 
+// Leaving the flag clear is deliberate, not an omission: the server then
+// applies the chat's saved default, the way the official clients do.
+// Setting inputPeerSelf here would make SetDefaultSendAs useless for
+// messages while it still governed reactions.
+//
+// Verified against a live account: with a channel saved as the chat
+// default, a send with no send_as posts as that channel.
 func TestSendMessage_OmitsSendAsWhenNil(t *testing.T) {
 	inv := &sendAsInvoker{}
 

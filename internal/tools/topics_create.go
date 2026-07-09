@@ -13,7 +13,7 @@ import (
 type TopicsCreateParams struct {
 	Peer   string  `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
 	Title  string  `json:"title"            jsonschema:"Topic title"`
-	SendAs *string `json:"sendAs,omitempty" jsonschema:"Create as this channel; see tg_chats_get_send_as. Omit to create as yourself"`
+	SendAs *string `json:"sendAs,omitempty" jsonschema:"Create as this channel; see tg_chats_get_send_as. Omit to use the chat default"`
 }
 
 // TopicsCreateResult is the output of tg_topics_create.

@@ -167,7 +167,9 @@ Known CommonMark gaps documented in README's "Markdown — Known Limitations": n
 
 MTProto's `send_as` field appears on exactly five requests, which map onto six tools: `messages.sendMessage`, `messages.sendMedia` (backs both `tg_messages_send_file` and `tg_stickers_send`), `messages.sendMultiMedia`, `messages.forwardMessages`, `messages.createForumTopic`. All six take an optional `sendAs` string.
 
-Wiring: `SendOpts.SendAs *InputPeer` for the three methods that already had an options struct; a trailing `sendAs *InputPeer` argument for `ForwardMessages` / `CreateForumTopic` / `SendSticker`. `nil` means "post as the account itself" everywhere. `applySendAs(sendAs, req.SetSendAs)` (`wrapper_helpers.go`) sets the conditional field for all five request types via the method value — do NOT inline the `if sendAs != nil` check per call site, `dupl` will flag it.
+Wiring: `SendOpts.SendAs *InputPeer` for the three methods that already had an options struct; a trailing `sendAs *InputPeer` argument for `ForwardMessages` / `CreateForumTopic` / `SendSticker`. `applySendAs(sendAs, req.SetSendAs)` (`wrapper_helpers.go`) sets the conditional field for all five request types via the method value — do NOT inline the `if sendAs != nil` check per call site, `dupl` will flag it.
+
+`nil` does NOT mean "post as the account". It leaves the flag clear, and the server then applies the chat's saved default — verified on a live account: with a channel set as the chat default, a send with no `send_as` posts as that channel. This matches the official clients. Do not "fix" it by substituting `inputPeerSelf`: that would make `tg_chats_set_send_as` govern reactions but not messages, which is neither Telegram's model nor a useful one.
 
 `resolveSendAs` (`tools/helpers.go`) resolves the string and rejects a `PeerChannel` whose `AccessHash` is 0. That state is reachable and silent: `resolveByID` returns it with a nil error for any numeric ID the client has never seen, and the resulting server error names neither the parameter nor the fix. `tg_chats_get_send_as` seeds the peer cache from the `Chats`/`Users` of its own reply, which is what makes numeric IDs work afterwards.
 

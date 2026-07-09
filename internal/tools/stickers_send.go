@@ -19,7 +19,7 @@ import (
 type StickersSendParams struct {
 	Peer          string  `json:"peer"             jsonschema:"@username, t.me/ link, or numeric ID"`
 	StickerFileID string  `json:"stickerFileId"    jsonschema:"Sticker file ID as a decimal string, from tg_stickers_get_set"`
-	SendAs        *string `json:"sendAs,omitempty" jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit to post as yourself"`
+	SendAs        *string `json:"sendAs,omitempty" jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
 }
 
 // StickersSendResult is the output of the tg_stickers_send tool.

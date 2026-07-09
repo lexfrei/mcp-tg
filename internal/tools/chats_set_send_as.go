@@ -65,7 +65,8 @@ func ChatsSetSendAsTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name: toolSetSendAs,
 		Description: "Set the identity this account posts under by default in a supergroup. " +
-			"The default also governs reactions and poll votes, which cannot name an identity per call. " +
+			"Every later send that omits sendAs uses it, as do reactions and poll votes, " +
+			"which cannot name an identity per call. " +
 			"This is account-wide server state: it is visible in every Telegram client, survives restarts, " +
 			"and affects other callers of this server. Prefer the per-call sendAs argument where it suffices. " +
 			"Omit sendAs to reset the chat to your own account.",

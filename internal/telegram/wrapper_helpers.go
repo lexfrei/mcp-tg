@@ -172,8 +172,11 @@ func buildMultiMediaRequest(
 // keeps this one helper usable from sendMessage, sendMedia,
 // sendMultiMedia, forwardMessages and createForumTopic alike.
 //
-// A nil identity leaves the flag bit clear, which is what makes the
-// server attribute the message to the account itself.
+// A nil identity leaves the flag bit clear, which hands the choice to the
+// server: it posts under the chat's saved default, which is the account
+// itself until SetDefaultSendAs says otherwise. Verified against a live
+// account — an omitted send_as in a chat whose default is a channel
+// posts as that channel, exactly as the official clients do.
 func applySendAs(sendAs *InputPeer, set func(tg.InputPeerClass)) {
 	if sendAs == nil {
 		return

@@ -17,7 +17,7 @@ type MessagesSendFileParams struct {
 	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Caption format: '' plain; 'commonmark'/'markdown' (subset, see README)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
-	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit to post as yourself"`
+	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
 }
 
 // MessagesSendFileResult is the output of the tg_messages_send_file tool.

@@ -208,3 +208,30 @@ func TestMessagesSendHandler_MixedEntitiesCountFormattingOnly(t *testing.T) {
 		t.Errorf("EntitiesParsed = %d, want 2 (bold + text_url, not the bare url)", res.EntitiesParsed)
 	}
 }
+
+// TestMediaSendAlbumHandler_ScheduledAlbumIsNotEmpty pins the symptom
+// the scheduled-echo fix addresses: a scheduled album used to come back
+// with count 0 and entitiesParsed 0 even though every item was queued.
+func TestMediaSendAlbumHandler_ScheduledAlbumIsNotEmpty(t *testing.T) {
+	when := 1900000000
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		messages: []telegram.Message{
+			{ID: 1, Entities: []telegram.Entity{{Type: telegram.EntityTypeBold}}},
+			{ID: 2},
+		},
+	}
+	handler := NewMediaSendAlbumHandler(mock)
+
+	_, res, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
+		Peer: "@chat", Paths: []string{"/tmp/a", "/tmp/b"},
+		ParseMode: "commonmark", ScheduleDate: &when,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Count != 2 || res.EntitiesParsed != 1 {
+		t.Errorf("count=%d entitiesParsed=%d, want 2/1 — the scheduled echo was dropped", res.Count, res.EntitiesParsed)
+	}
+}

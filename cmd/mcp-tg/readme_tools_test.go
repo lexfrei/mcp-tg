@@ -196,3 +196,26 @@ func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
 		t.Error("README no longer scopes the lint's word-opening rule correctly")
 	}
 }
+
+// TestReadmeMajorVersion_MatchesTheModulePath pins the promise the README
+// makes about versioning against what the module can actually carry: a
+// vN>=2 tag requires a matching /vN suffix in go.mod, or `go install
+// ...@vN` fails while `@latest` silently keeps resolving to v1.
+func TestReadmeMajorVersion_MatchesTheModulePath(t *testing.T) {
+	gomod, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+
+	hasSuffix := regexp.MustCompile(`(?m)^module .+/v[2-9]\d*$`).Match(gomod)
+	promisesMajor := regexp.MustCompile(`v[2-9]\d*\.0\.0`).Match(readme)
+
+	if promisesMajor && !hasSuffix {
+		t.Error("README promises a major version the module path cannot carry — add the /vN suffix to go.mod or drop the promise")
+	}
+}

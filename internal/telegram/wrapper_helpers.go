@@ -853,6 +853,24 @@ func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, b
 	}
 }
 
+// echoOrSubmitted keeps an unreadable echo from masquerading as "the
+// server applied no entities". A nil message means the envelope could
+// not be read (an unhandled shape, no matching update) — not that the
+// formatting failed. Collapsing the two would feed entitiesParsed: 0 to
+// a caller following the documented self-correction recipe, who would
+// then re-edit correct text forever while every request in fact landed.
+// The submitted set is the honest answer for the same reason
+// shortSentEntities uses it: Telegram rejects malformed entities
+// outright rather than dropping them, so a successful request applied
+// every entity it carried.
+func echoOrSubmitted(msg *Message, id int, submitted []tg.MessageEntityClass) *Message {
+	if msg != nil {
+		return msg
+	}
+
+	return &Message{ID: id, Entities: ConvertEntities(submitted)}
+}
+
 // shortSentEntities resolves the entity set of an updateShortSentMessage
 // echo, falling back to what the request submitted when the echo carries
 // none.

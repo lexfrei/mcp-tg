@@ -407,7 +407,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		return nil, errors.Wrap(err, "sending message")
 	}
 
-	return messageFromUpdate(result, req.Entities), nil
+	return echoOrSubmitted(messageFromUpdate(result, req.Entities), 0, req.Entities), nil
 }
 
 // EditMessage edits an existing message.
@@ -439,7 +439,7 @@ func (w *Wrapper) EditMessage(
 		return nil, errors.Wrap(err, "editing message")
 	}
 
-	return editedMessageFromUpdate(result, msgID), nil
+	return echoOrSubmitted(editedMessageFromUpdate(result, msgID), msgID, req.Entities), nil
 }
 
 // DeleteMessages deletes messages from a chat.
@@ -621,7 +621,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, errors.Wrap(err, "sending file")
 	}
 
-	return messageFromUpdate(result, req.Entities), nil
+	return echoOrSubmitted(messageFromUpdate(result, req.Entities), 0, req.Entities), nil
 }
 
 // SendAlbum sends a group of media files.

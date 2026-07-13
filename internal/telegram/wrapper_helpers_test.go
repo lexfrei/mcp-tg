@@ -777,3 +777,24 @@ func TestFillReplyToRef_SameChat_NoResolve(t *testing.T) {
 		t.Errorf("ReplyTo.FromName populated for same-chat reply, want empty")
 	}
 }
+
+// TestEchoOrSubmitted_UnreadableEchoReportsSubmitted pins the split
+// between "the server applied no entities" (a real zero the caller must
+// act on) and "the echo could not be read" (a zero that would send the
+// caller into an endless correction loop over text that is already
+// right).
+func TestEchoOrSubmitted_UnreadableEchoReportsSubmitted(t *testing.T) {
+	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
+
+	repaired := echoOrSubmitted(nil, 42, submitted)
+	if repaired == nil || repaired.ID != 42 || len(repaired.Entities) != 1 {
+		t.Errorf("an unreadable echo must report the submitted set, got %+v", repaired)
+	}
+
+	// A readable echo always wins, including one that genuinely reports
+	// no entities.
+	echoed := echoOrSubmitted(&Message{ID: 42}, 42, submitted)
+	if len(echoed.Entities) != 0 {
+		t.Errorf("a readable echo reporting zero must stay zero, got %+v", echoed.Entities)
+	}
+}

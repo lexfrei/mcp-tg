@@ -26,18 +26,17 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **FLOOD_WAIT retry** — automatic sleep and retry (up to 3 times) when Telegram rate-limits the client
 - **Connection re-init** — when the server forgets a long-lived connection's `initConnection` state and answers `CONNECTION_LAYER_INVALID` / `CONNECTION_NOT_INITED`, the request is retried once wrapped in `initConnection`, recovering the connection in place
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
-- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`
+- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`; `tg_messages_search_global` pages through a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`)
 
-## Tools (78 registered; 67 listed below)
+## Tools (78)
 
-The categorised list below documents 67 of the 78 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
-
-### Messages (12)
+### Messages (16)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
 - `tg_messages_context` — Get messages around a specific message
-- `tg_messages_search` — Search messages in a chat
+- `tg_messages_search` — Search messages in a chat (optional topic, sender, kind and date filters)
+- `tg_messages_search_global` — Search messages across all chats (optional kind, date and dialog-kind filters, cursor pagination)
 - `tg_messages_transcribe_audio` — Transcribe a Telegram voice message or video note by message ID
 - `tg_messages_send` — Send a text message
 - `tg_messages_edit` — Edit an existing message
@@ -46,14 +45,19 @@ The categorised list below documents 67 of the 78 registered tools — the remai
 - `tg_messages_pin` — Pin or unpin a message
 - `tg_messages_react` — Add or remove reactions
 - `tg_messages_mark_read` — Mark messages as read
+- `tg_messages_get_reactions` — List who reacted to a message
+- `tg_messages_get_scheduled` — List messages scheduled for later delivery
+- `tg_messages_delete_history` — Delete an entire chat history
 
-### Dialogs (3)
+### Dialogs (5)
 
 - `tg_dialogs_list` — List all dialogs
 - `tg_dialogs_search` — Search dialogs by query
 - `tg_dialogs_get_info` — Get chat/channel metadata
+- `tg_dialogs_pin` — Pin or unpin a dialog
+- `tg_dialogs_mark_unread` — Mark a dialog as unread or read
 
-### Contacts & Users (6)
+### Contacts & Users (10)
 
 - `tg_contacts_get` — Get contact info
 - `tg_contacts_search` — Search contacts
@@ -61,8 +65,12 @@ The categorised list below documents 67 of the 78 registered tools — the remai
 - `tg_users_get_photos` — Get user profile photos
 - `tg_users_block` — Block or unblock a user
 - `tg_users_get_common_chats` — Get chats shared with a user
+- `tg_contacts_add` — Add a contact
+- `tg_contacts_delete` — Delete a contact
+- `tg_contacts_get_statuses` — Get online statuses of all contacts
+- `tg_contacts_list_blocked` — List blocked users
 
-### Groups (9)
+### Groups (12)
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
@@ -73,6 +81,9 @@ The categorised list below documents 67 of the 78 registered tools — the remai
 - `tg_groups_members_remove` — Remove a member
 - `tg_groups_invite_link_get` — Get invite link
 - `tg_groups_invite_link_revoke` — Revoke invite link
+- `tg_groups_members_list` — List group members
+- `tg_groups_admin_set` — Promote or demote an admin with specific rights
+- `tg_groups_slowmode` — Set the slowmode delay
 
 ### Chat Management (10)
 
@@ -101,10 +112,12 @@ The categorised list below documents 67 of the 78 registered tools — the remai
 - `tg_profile_set_bio` — Update bio
 - `tg_profile_set_photo` — Set profile photo
 
-### Forum Topics (2)
+### Forum Topics (4)
 
 - `tg_topics_list` — List forum topics
 - `tg_topics_search` — Search forum topics
+- `tg_topics_create` — Create a forum topic
+- `tg_topics_edit` — Rename a forum topic
 
 ### Stickers (3)
 
@@ -116,10 +129,11 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 
 `stickerFileId` is a **decimal string**, not a JSON number. The MCP SDK unmarshals tool arguments into `map[string]any` to apply schema defaults, then re-marshals them, so every JSON number round-trips through `float64`. A sticker document id needs 63 bits and a `float64` mantissa holds 53, which silently corrupts it — `5181593617004757506` arrives as `5181593617004758000`. Quote the id and it survives.
 
-### Drafts (2)
+### Drafts (3)
 
 - `tg_drafts_set` — Set a draft message
 - `tg_drafts_clear` — Clear a draft
+- `tg_messages_clear_all_drafts` — Clear all drafts across every chat
 
 ### Folders (4)
 
@@ -201,6 +215,14 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 **`accessHash` is omitted from every serialized `InputPeer` shape when zero** — that includes `messages[].peerId`, `messages[].replyTo.fromPeerId`, and `messages[].forward.from.peer`. The omission is deliberate: a zero hash looks like a valid one to MTProto but raises `PEER_ID_INVALID` when passed back. For follow-up tool calls against a peer whose `accessHash` field is missing, resolve it through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
 
 `tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers. It does NOT return a `participants` field (the per-peer `accessHash` resolution would be unreliable across arbitrary chats). Callers that need to act on a sender or forward-author surfaced by global search must first resolve the peer via `@username` (if present in `messages[].fromUsername`) or `tg_dialogs_list` before passing it back into MTProto — `accessHash` on the embedded `InputPeer` will be omitted whenever it is unknown.
+
+## Search Filters and Pagination
+
+`tg_messages_search` and `tg_messages_search_global` accept an optional `filter` — Telegram's server-side kind filter, applied before results leave the server. Values: `photos`, `video`, `photo_video`, `document`, `url`, `gif`, `voice`, `music`, `round_voice`, `round_video`, `my_mentions`, `geo`, `contacts`, `pinned`, `poll`. Telegram's `chat_photos` and `phone_calls`/`missed_calls` filters are not offered: they match service messages, which the message conversion does not yet surface, so every result page would come back empty. This is a different mechanism from `tg_messages_list`'s `type` parameter: `type` classifies already-fetched messages client-side (and so supports labels like `webpage` or `invoice` that no server filter expresses), while `filter` restricts the search on the server and covers kinds the client labels cannot (`url`, `pinned`, `my_mentions`).
+
+Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the window, and both return `total` — the server's full match count across all pages. `tg_messages_search` additionally takes `topicId` (restrict to one forum topic) and `from` (restrict to one sender; same peer formats as `peer`).
+
+`tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: when the result carries the ready-made `nextRate`, `nextOffsetId` and `nextOffsetPeer` fields (`hasMore: true` — "probably more"; the terminal signal is an empty page) — copy them into `offsetRate`, `offsetId` and `offsetPeer` verbatim to fetch it; pass either the whole cursor or none of it (the first page). A final or empty page carries no cursor fields. The peers named in each result page are cached with their access hashes, so the returned `nextOffsetPeer` resolves even for channels the account has never opened. The cache is in-memory, so the cursor does not survive a server restart — a continuation whose peer can no longer be resolved is rejected with a clear error asking to re-run the first page.
 
 ## Markdown — Known Limitations
 

@@ -87,6 +87,41 @@ func resolveSendAs(
 	return &peer, nil
 }
 
+// resolveOptionalPeer resolves an optional peer reference. An empty
+// reference yields nil, meaning the caller leaves the corresponding
+// request field unset. paramName labels resolution failures so the
+// error points at the offending tool parameter rather than the main
+// peer argument.
+func resolveOptionalPeer(
+	ctx context.Context, client telegram.Client, ref, paramName string,
+) (*telegram.InputPeer, error) {
+	if ref == "" {
+		return nil, nil //nolint:nilnil // nil is the documented "leave unset".
+	}
+
+	peer, err := client.ResolvePeer(ctx, ref)
+	if err != nil {
+		return nil, telegramErr("failed to resolve the "+paramName+" peer", err)
+	}
+
+	return &peer, nil
+}
+
+// validateDateRange rejects negative bounds and a window whose lower
+// bound exceeds its upper bound. Zero means unbounded on that side, so
+// only a window with both ends set can be inverted.
+func validateDateRange(minDate, maxDate int) error {
+	if minDate < 0 || maxDate < 0 {
+		return ErrNegativeDate
+	}
+
+	if minDate > 0 && maxDate > 0 && minDate > maxDate {
+		return ErrInvalidDateRange
+	}
+
+	return nil
+}
+
 // normalizeParseMode lowercases the input so callers can pass
 // "Markdown", "COMMONMARK" etc. without getting a validation error.
 func normalizeParseMode(mode string) string {

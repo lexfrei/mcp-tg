@@ -49,13 +49,19 @@ type mockClient struct {
 	lastSendOpts     telegram.SendOpts
 	lastUploadOpts   telegram.UploadOpts
 	lastReactionOpts telegram.ReactionOpts
-	getMessagesCalls int
-	getMessagesIDs   []int
-	getHistoryCalls  int
-	getHistoryOpts   []telegram.HistoryOpts
-	lastTranscribeID int
-	lastWait         time.Duration
-	groupInfoCalls   int
+	lastSearchOpts   telegram.SearchOpts
+
+	// lastSearchGlobalOpts records the opts of the latest SearchGlobal
+	// call; nextRate is the cursor SearchGlobal hands back.
+	lastSearchGlobalOpts telegram.SearchGlobalOpts
+	nextRate             int
+	getMessagesCalls     int
+	getMessagesIDs       []int
+	getHistoryCalls      int
+	getHistoryOpts       []telegram.HistoryOpts
+	lastTranscribeID     int
+	lastWait             time.Duration
+	groupInfoCalls       int
 	// lastSendAs records the identity passed to the send methods that
 	// take it as a trailing argument rather than through SendOpts.
 	lastSendAs *telegram.InputPeer
@@ -149,12 +155,13 @@ func (m *mockClient) GetTopicMessages(
 }
 
 func (m *mockClient) SearchMessages(
-	_ context.Context, peer telegram.InputPeer, query string, _ telegram.SearchOpts,
-) ([]telegram.Message, error) {
+	_ context.Context, peer telegram.InputPeer, query string, opts telegram.SearchOpts,
+) ([]telegram.Message, int, error) {
 	m.lastPeer = peer
 	m.lastQuery = query
+	m.lastSearchOpts = opts
 
-	return m.messages, m.err
+	return m.messages, m.total, m.err
 }
 
 func (m *mockClient) SendMessage(
@@ -475,10 +482,16 @@ func (m *mockClient) GetScheduledMessages(_ context.Context, peer telegram.Input
 	return m.messages, m.err
 }
 
-func (m *mockClient) SearchGlobal(_ context.Context, query string, _ int) ([]telegram.Message, error) {
+func (m *mockClient) SearchGlobal(
+	_ context.Context, query string, opts *telegram.SearchGlobalOpts,
+) (telegram.SearchGlobalPage, error) {
 	m.lastQuery = query
 
-	return m.messages, m.err
+	if opts != nil {
+		m.lastSearchGlobalOpts = *opts
+	}
+
+	return telegram.SearchGlobalPage{Messages: m.messages, Total: m.total, NextRate: m.nextRate}, m.err
 }
 
 func (m *mockClient) GetBlockedContacts(_ context.Context, _ int) ([]telegram.User, error) {

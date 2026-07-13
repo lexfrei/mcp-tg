@@ -116,6 +116,62 @@ var ErrUnknownMessageType = errors.New(
 		"contact, location, venue, poll, webpage, game, invoice, unsupported",
 )
 
+// ErrUnknownMessageFilter is returned when a search filter is not one
+// of the server-side filter names accepted by telegram.IsSearchFilter.
+// The list is built from telegram.SearchFilters so a new filter name
+// cannot silently drift out of the error text.
+var ErrUnknownMessageFilter = errors.New(
+	"unknown filter; allowed: " + strings.Join(telegram.SearchFilters(), ", "),
+)
+
+// ErrInvalidDateRange is returned when a minDate/maxDate window is
+// inverted.
+var ErrInvalidDateRange = errors.New("minDate must not exceed maxDate")
+
+// ErrNegativeDate is returned when a date bound is negative — unix
+// timestamps only, mirroring ErrNegativeLimit.
+var ErrNegativeDate = errors.New("minDate and maxDate must not be negative")
+
+// ErrUnknownSearchScope is returned when a global search scope is not
+// one of the dialog kinds Telegram can restrict a search to.
+var ErrUnknownSearchScope = errors.New("unknown scope; allowed: users, groups, channels")
+
+// ErrQueryOrFilterRequired is returned when a global search names
+// neither a text query nor a kind filter. Either alone is a valid
+// search — a bare filter means "all messages of this kind" — but both
+// empty would ask the server to enumerate everything.
+var ErrQueryOrFilterRequired = errors.New("query or filter is required")
+
+// ErrSearchCriteriaRequired is the per-chat variant: alongside query
+// and filter, a bare sender filter ("all messages from this member")
+// is also a valid search.
+var ErrSearchCriteriaRequired = errors.New("query, filter or from is required")
+
+// ErrFromUnresolved is returned when the sender filter resolves without
+// an access hash — a numeric ID the client has never seen resolves with
+// hash 0 and a nil error, and sending it on would fail with a server
+// error naming neither the parameter nor the remedy.
+var ErrFromUnresolved = errors.New(
+	"from resolved without an access hash; pass @username, or look the peer up via tg_dialogs_list first",
+)
+
+// ErrPartialCursor is returned when only part of the global search
+// pagination cursor is supplied. The three fields travel together; a
+// partial cursor is silently accepted by the server and yields a
+// skewed page instead of an error.
+var ErrPartialCursor = errors.New(
+	"offsetRate, offsetId and offsetPeer travel together; copy all three from the previous " +
+		"page's nextRate/nextOffsetId/nextOffsetPeer, or omit all three for the first page",
+)
+
+// ErrOffsetPeerUnresolved is returned when the pagination cursor's peer
+// resolves without an access hash — typical after a restart cleared the
+// peer cache that the previous page had seeded. Sending it on would
+// fail with a server error naming neither the parameter nor the fix.
+var ErrOffsetPeerUnresolved = errors.New(
+	"offsetPeer resolved without an access hash; re-run the first page to seed the peer cache",
+)
+
 // ErrInvalidWaitSeconds is returned when a waitSeconds value is outside
 // the supported range for a bounded MCP request.
 var ErrInvalidWaitSeconds = errors.New("waitSeconds must be between 0 and 120")

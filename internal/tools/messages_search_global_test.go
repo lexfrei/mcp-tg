@@ -1,0 +1,367 @@
+package tools
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/cockroachdb/errors"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
+)
+
+func TestMessagesSearchGlobalHandler_ThreadsOptsThrough(t *testing.T) {
+	mock := &mockClient{peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 555, AccessHash: 666}}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	minDate, maxDate, limit, offsetRate, offsetID := 100, 200, 5, 7, 10
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query:      "q",
+		Filter:     telegram.SearchFilterPhotos,
+		MinDate:    &minDate,
+		MaxDate:    &maxDate,
+		Scope:      telegram.SearchScopeChannels,
+		Limit:      &limit,
+		OffsetRate: &offsetRate,
+		OffsetID:   &offsetID,
+		OffsetPeer: "-100555",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	opts := mock.lastSearchGlobalOpts
+	if opts.MinDate != 100 || opts.MaxDate != 200 || opts.Limit != 5 {
+		t.Errorf("opts = %+v, want dates 100/200 and limit 5", opts)
+	}
+
+	if opts.Filter != telegram.SearchFilterPhotos || opts.Scope != telegram.SearchScopeChannels {
+		t.Errorf("filter/scope = %q/%q, want photos/channels", opts.Filter, opts.Scope)
+	}
+
+	if opts.OffsetRate != 7 || opts.OffsetID != 10 {
+		t.Errorf("cursor = %d/%d, want 7/10", opts.OffsetRate, opts.OffsetID)
+	}
+
+	if opts.OffsetPeer == nil || opts.OffsetPeer.ID != 555 {
+		t.Errorf("OffsetPeer = %+v, want the resolved cursor peer", opts.OffsetPeer)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_FirstPageResolvesNoPeer(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.resolvedQueries) != 0 {
+		t.Errorf("resolvedQueries = %v, want none on the first page", mock.resolvedQueries)
+	}
+
+	if mock.lastSearchGlobalOpts.OffsetPeer != nil {
+		t.Errorf("OffsetPeer = %+v, want nil", mock.lastSearchGlobalOpts.OffsetPeer)
+	}
+}
+
+// globalPageMessages returns messages shaped like real global-search
+// results: every message carries its source peer, which the ready-made
+// cursor is anchored to.
+func globalPageMessages() []telegram.Message {
+	msgs := messagesWithReply()
+	for i := range msgs {
+		msgs[i].PeerID = telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}
+	}
+
+	return msgs
+}
+
+func TestMessagesSearchGlobalHandler_NextRateAndTotalPropagated(t *testing.T) {
+	mock := &mockClient{messages: globalPageMessages(), total: 42, nextRate: 99}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextRate != 99 {
+		t.Errorf("NextRate = %d, want 99", res.NextRate)
+	}
+
+	if res.Total != 42 {
+		t.Errorf("Total = %d, want 42", res.Total)
+	}
+
+	// The summary line is quoted in the project docs; pin it so the
+	// next format change cannot drift past them unnoticed.
+	if res.Output != "Found 2 of 42 message(s)" {
+		t.Errorf("Output = %q, want the documented 'Found N of M message(s)' shape", res.Output)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_ReadyMadeCursor pins that the result
+// carries the full next-page cursor in directly reusable form: the JSON
+// messages[].peerId is a structured object, so callers would otherwise
+// have to convert it to the bot-style string offsetPeer expects.
+func TestMessagesSearchGlobalHandler_ReadyMadeCursor(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 20, Date: 2000, Text: "newer", PeerID: telegram.InputPeer{Type: telegram.PeerUser, ID: 5}},
+		{ID: 10, Date: 1000, Text: "older", PeerID: telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}},
+	}
+	mock := &mockClient{messages: msgs, total: 42, nextRate: 99}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextOffsetID != 10 {
+		t.Errorf("NextOffsetID = %d, want the last message's id 10", res.NextOffsetID)
+	}
+
+	if res.NextOffsetPeer != "-1000000000555" {
+		t.Errorf("NextOffsetPeer = %q, want the bot-style channel ID", res.NextOffsetPeer)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_OffsetPeerResolveFailureNamesTheParam
+// pins that a failing cursor-peer resolution blames the offsetPeer
+// parameter, since the tool has no other peer argument to confuse it
+// with but the error would otherwise read as a generic resolve failure.
+func TestMessagesSearchGlobalHandler_OffsetPeerResolveFailureNamesTheParam(t *testing.T) {
+	mock := &mockClient{
+		resolvePeerFn: func(string) (telegram.InputPeer, error) {
+			return telegram.InputPeer{}, errors.New("PEER_ID_INVALID")
+		},
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	offsetRate, offsetID := 7, 10
+	res, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query: "q", OffsetRate: &offsetRate, OffsetID: &offsetID, OffsetPeer: "-100999",
+	})
+	if err == nil || !strings.Contains(err.Error(), "failed to resolve the offsetPeer peer") {
+		t.Errorf("err = %v, want it to name the offsetPeer parameter", err)
+	}
+
+	if res == nil || !res.IsError {
+		t.Error("result must be marked IsError")
+	}
+}
+
+// TestMessagesSearchGlobalHandler_UnresolvedOffsetPeerRejected pins the
+// cold-cache path: after a daemon restart the previous page's numeric
+// peer resolves with a zero access hash, and sending it on would fail
+// with a server error naming neither the parameter nor the remedy.
+func TestMessagesSearchGlobalHandler_UnresolvedOffsetPeerRejected(t *testing.T) {
+	mock := &mockClient{
+		resolvePeerFn: func(string) (telegram.InputPeer, error) {
+			return telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}, nil
+		},
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	offsetRate, offsetID := 7, 10
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query: "q", OffsetRate: &offsetRate, OffsetID: &offsetID, OffsetPeer: "-1000000000555",
+	})
+	if !errors.Is(err, ErrOffsetPeerUnresolved) {
+		t.Errorf("err = %v, want ErrOffsetPeerUnresolved", err)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_HasMoreFollowsCursor pins that
+// hasMore is derived from the cursor, not from page saturation: a
+// complete result carries no nextRate, and a full final page must not
+// advertise a next page that does not exist.
+func TestMessagesSearchGlobalHandler_HasMoreFollowsCursor(t *testing.T) {
+	limit := 2
+	mock := &mockClient{messages: globalPageMessages(), total: 2, nextRate: 0}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", Limit: &limit})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.HasMore {
+		t.Error("a full page without a cursor must report hasMore=false")
+	}
+
+	mock.nextRate = 99
+
+	_, res, err = handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", Limit: &limit})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !res.HasMore {
+		t.Error("a page with a cursor must report hasMore=true")
+	}
+}
+
+// TestMessagesSearchGlobalHandler_PartialCursorRejected pins that an
+// incomplete cursor fails validation: the server accepts it silently
+// and returns a skewed page, so the shape check is the only warning
+// the caller gets.
+func TestMessagesSearchGlobalHandler_PartialCursorRejected(t *testing.T) {
+	offsetID := 42
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", OffsetID: &offsetID})
+	if !errors.Is(err, ErrPartialCursor) {
+		t.Errorf("err = %v, want ErrPartialCursor", err)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_FinalPageCarriesNoCursor pins that a
+// complete result (no nextRate) yields no next-page cursor even when
+// the page has messages.
+func TestMessagesSearchGlobalHandler_FinalPageCarriesNoCursor(t *testing.T) {
+	mock := &mockClient{messages: globalPageMessages(), total: 2, nextRate: 0}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextOffsetID != 0 || res.NextOffsetPeer != "" {
+		t.Errorf("final page must carry no cursor, got id=%d peer=%q", res.NextOffsetID, res.NextOffsetPeer)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_EmptyPageWithRateIsTerminal pins the
+// atomicity of hasMore and the cursor: a page that yields no complete
+// cursor must not advertise a next page, even when the server sent a
+// next_rate — the caller could not address that page anyway.
+func TestMessagesSearchGlobalHandler_EmptyPageWithRateIsTerminal(t *testing.T) {
+	mock := &mockClient{nextRate: 99}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.HasMore || res.NextRate != 0 || res.NextOffsetID != 0 || res.NextOffsetPeer != "" {
+		t.Errorf("an empty page must be terminal, got %+v", res)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_HiddenLastPeerIsTerminal pins the
+// same atomicity when the last message's peer is privacy-hidden: a
+// cursor without offsetPeer would fail this tool's own partial-cursor
+// validation on the way back in.
+func TestMessagesSearchGlobalHandler_HiddenLastPeerIsTerminal(t *testing.T) {
+	mock := &mockClient{
+		messages: []telegram.Message{{ID: 10, Date: 1000, Text: "x"}},
+		nextRate: 99,
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.HasMore || res.NextRate != 0 || res.NextOffsetID != 0 || res.NextOffsetPeer != "" {
+		t.Errorf("a page without an addressable cursor must be terminal, got %+v", res)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_ChatCursorAllowed pins the PeerChat
+// exemption in the unresolved-cursor guard: legacy basic groups carry
+// no access hash by design and are valid cursor peers, so the hash-0
+// rejection must not fire for them.
+func TestMessagesSearchGlobalHandler_ChatCursorAllowed(t *testing.T) {
+	mock := &mockClient{
+		resolvePeerFn: func(string) (telegram.InputPeer, error) {
+			return telegram.InputPeer{Type: telegram.PeerChat, ID: 42}, nil
+		},
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	offsetRate, offsetID := 7, 10
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query: "q", OffsetRate: &offsetRate, OffsetID: &offsetID, OffsetPeer: "-42",
+	})
+	if err != nil {
+		t.Fatalf("a basic-group cursor peer must be accepted, got: %v", err)
+	}
+
+	if mock.lastSearchGlobalOpts.OffsetPeer == nil || mock.lastSearchGlobalOpts.OffsetPeer.ID != 42 {
+		t.Errorf("OffsetPeer = %+v, want the resolved basic group", mock.lastSearchGlobalOpts.OffsetPeer)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_EmptyPageHasNoCursor(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextOffsetID != 0 || res.NextOffsetPeer != "" {
+		t.Errorf("empty page must carry no cursor, got id=%d peer=%q", res.NextOffsetID, res.NextOffsetPeer)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_EmptyQueryWithFilterAllowed(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Filter: telegram.SearchFilterPhotos})
+	if err != nil {
+		t.Fatalf("empty query with a filter must be a valid 'all photos' search, got: %v", err)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_EmptyQueryWithoutFilterRejected(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{})
+	if !errors.Is(err, ErrQueryOrFilterRequired) {
+		t.Errorf("err = %v, want ErrQueryOrFilterRequired", err)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_UnknownScope(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", Scope: "everything"})
+	if !errors.Is(err, ErrUnknownSearchScope) {
+		t.Errorf("err = %v, want ErrUnknownSearchScope", err)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_UnknownFilter(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", Filter: "bogus"})
+	if !errors.Is(err, ErrUnknownMessageFilter) {
+		t.Errorf("err = %v, want ErrUnknownMessageFilter", err)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_InvertedDateRange(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	minDate, maxDate := 200, 100
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query: "q", MinDate: &minDate, MaxDate: &maxDate,
+	})
+	if !errors.Is(err, ErrInvalidDateRange) {
+		t.Errorf("err = %v, want ErrInvalidDateRange", err)
+	}
+}

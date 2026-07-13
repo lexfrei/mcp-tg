@@ -72,6 +72,31 @@ func TestMessagesSearchHandler_NoOptionalParamsLeaveOptsZero(t *testing.T) {
 	}
 }
 
+func TestMessagesSearchHandler_EmptyQueryWithFilterAllowed(t *testing.T) {
+	mock := &mockClient{peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1}}
+	handler := NewMessagesSearchHandler(mock)
+
+	_, _, err := handler(context.Background(), searchRequest(),
+		MessagesSearchParams{Peer: testChatPeer, Filter: telegram.SearchFilterPhotos})
+	if err != nil {
+		t.Fatalf("empty query with a filter must be a valid 'all photos' search, got: %v", err)
+	}
+
+	if mock.lastSearchOpts.Filter != telegram.SearchFilterPhotos {
+		t.Errorf("Filter = %q, want photos", mock.lastSearchOpts.Filter)
+	}
+}
+
+func TestMessagesSearchHandler_EmptyQueryWithoutFilterRejected(t *testing.T) {
+	handler := NewMessagesSearchHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), searchRequest(),
+		MessagesSearchParams{Peer: testChatPeer})
+	if !errors.Is(err, ErrQueryOrFilterRequired) {
+		t.Errorf("err = %v, want ErrQueryOrFilterRequired", err)
+	}
+}
+
 func TestMessagesSearchHandler_UnknownFilter(t *testing.T) {
 	handler := NewMessagesSearchHandler(&mockClient{})
 

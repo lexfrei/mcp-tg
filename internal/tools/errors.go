@@ -132,6 +132,12 @@ var ErrInvalidDateRange = errors.New("minDate must not exceed maxDate")
 // one of the dialog kinds Telegram can restrict a search to.
 var ErrUnknownSearchScope = errors.New("unknown scope; allowed: users, groups, channels")
 
+// ErrQueryOrFilterRequired is returned when a search names neither a
+// text query nor a kind filter. Either alone is a valid search — a bare
+// filter means "all messages of this kind" — but both empty would ask
+// the server to enumerate the entire history.
+var ErrQueryOrFilterRequired = errors.New("query or filter is required")
+
 // ErrInvalidWaitSeconds is returned when a waitSeconds value is outside
 // the supported range for a bounded MCP request.
 var ErrInvalidWaitSeconds = errors.New("waitSeconds must be between 0 and 120")

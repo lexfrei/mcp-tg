@@ -19,7 +19,7 @@ import (
 // to fetch the next page, pass the previous result's nextRate together
 // with the last returned message's id and peerId.
 type MessagesSearchGlobalParams struct {
-	Query      string `json:"query"                jsonschema:"Search query"`
+	Query      string `json:"query,omitempty"      jsonschema:"Search query (optional when filter is set)"`
 	Filter     string `json:"filter,omitempty"     jsonschema:"Server-side kind filter (photos, video, document, url, voice, ...)"`
 	MinDate    *int   `json:"minDate,omitempty"    jsonschema:"Only messages sent after this unix timestamp"`
 	MaxDate    *int   `json:"maxDate,omitempty"    jsonschema:"Only messages sent before this unix timestamp"`
@@ -83,8 +83,8 @@ func NewMessagesSearchGlobalHandler(
 // validateSearchGlobalParams runs every request-shape check that needs
 // no network round-trip, so a malformed call fails before any RPC.
 func validateSearchGlobalParams(params *MessagesSearchGlobalParams) error {
-	if params.Query == "" {
-		return ErrQueryRequired
+	if params.Query == "" && params.Filter == "" {
+		return ErrQueryOrFilterRequired
 	}
 
 	limitErr := validateLimit(deref(params.Limit))

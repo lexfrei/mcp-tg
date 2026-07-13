@@ -82,6 +82,26 @@ func TestMessagesSearchGlobalHandler_NextRateAndTotalPropagated(t *testing.T) {
 	}
 }
 
+func TestMessagesSearchGlobalHandler_EmptyQueryWithFilterAllowed(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Filter: telegram.SearchFilterPhotos})
+	if err != nil {
+		t.Fatalf("empty query with a filter must be a valid 'all photos' search, got: %v", err)
+	}
+}
+
+func TestMessagesSearchGlobalHandler_EmptyQueryWithoutFilterRejected(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{})
+	if !errors.Is(err, ErrQueryOrFilterRequired) {
+		t.Errorf("err = %v, want ErrQueryOrFilterRequired", err)
+	}
+}
+
 func TestMessagesSearchGlobalHandler_UnknownScope(t *testing.T) {
 	handler := NewMessagesSearchGlobalHandler(&mockClient{})
 

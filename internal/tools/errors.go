@@ -125,6 +125,13 @@ var ErrPlainLooksLikeMarkdown = errors.New(
 		"or set allowRawMarkdown=true to send the characters literally",
 )
 
+// ErrAllowRawMarkdownWithoutPlain is returned when allowRawMarkdown is
+// set outside plain mode, where it does nothing — a silently dropped
+// flag is harder to debug than a refusal.
+var ErrAllowRawMarkdownWithoutPlain = errors.New(
+	"allowRawMarkdown only applies to parseMode='plain'; drop it or switch the mode",
+)
+
 // ErrUnknownParseMode is returned when parseMode is a value the wrapper
 // does not recognise.
 var ErrUnknownParseMode = errors.New(

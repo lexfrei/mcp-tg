@@ -853,47 +853,32 @@ func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, b
 	}
 }
 
-// withSubmittedEntities restores the entity count when the server echo
-// reported none but the client did submit entities.
+// shortSentEntities resolves the entity set of an updateShortSentMessage
+// echo, falling back to what the request submitted when the echo carries
+// none.
 //
-// updateShortSentMessage carries its entities behind a conditional flag
-// and Telegram documents neither when the flag is set nor whether an
-// unchanged entity set is echoed back at all. Probing a live account
-// did not settle it either: a Saved Messages send — the case the short
-// form is meant for — answers with the full updates envelope, so the
-// short branch never fired. Rather than let the documented
-// "entitiesParsed: 0 means nothing parsed" contract rest on an
-// unverifiable flag, fall back to what was submitted. Telegram rejects
-// malformed entities outright (ENTITY_BOUND_INVALID and friends) rather
-// than dropping them silently, so a request that returned successfully
-// applied every entity it carried.
-func withSubmittedEntities(msg *Message, submitted []tg.MessageEntityClass) *Message {
-	if msg == nil || len(msg.Entities) > 0 || len(submitted) == 0 {
-		return msg
+// The short form's entities field is conditional, and Telegram documents
+// neither when the flag is set nor whether an unchanged entity set is
+// echoed back at all. Probing a live account did not settle it: a Saved
+// Messages send — the case this form exists for — answers with the full
+// updates envelope instead, so the short branch never fired. Rather than
+// rest the documented "entitiesParsed: 0 means nothing parsed" contract
+// on an unobservable flag, fall back to the submitted set here. That is
+// safe because Telegram rejects malformed entities outright
+// (ENTITY_BOUND_INVALID and friends) instead of dropping them silently,
+// so a request that returned successfully applied every entity it
+// carried.
+//
+// The fallback is deliberately scoped to THIS shape. On the full-updates
+// path the server sends back its own message, and a zero there is a real
+// "the server applied none" — the exact signal entitiesParsed exists to
+// carry. Do not widen this.
+func shortSentEntities(upd *tg.UpdateShortSentMessage, submitted []tg.MessageEntityClass) []Entity {
+	if echoed := ConvertEntities(upd.Entities); len(echoed) > 0 {
+		return echoed
 	}
 
-	msg.Entities = ConvertEntities(submitted)
-
-	return msg
-}
-
-// withSubmittedEntitiesAll is the album counterpart: the caption rides
-// the first item, so a single echo carrying entities means the set was
-// applied.
-func withSubmittedEntitiesAll(msgs []Message, submitted []tg.MessageEntityClass) []Message {
-	if len(msgs) == 0 || len(submitted) == 0 {
-		return msgs
-	}
-
-	for i := range msgs {
-		if len(msgs[i].Entities) > 0 {
-			return msgs
-		}
-	}
-
-	msgs[0].Entities = ConvertEntities(submitted)
-
-	return msgs
+	return ConvertEntities(submitted)
 }
 
 func messagesFromUpdates(result tg.UpdatesClass) []Message {
@@ -964,18 +949,21 @@ func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Messag
 	return converted
 }
 
-func messageFromUpdate(result tg.UpdatesClass) *Message {
+// messageFromUpdate converts a send/edit echo. submitted is the entity
+// set the request carried; it is used ONLY to repair the short echo (see
+// shortSentEntities) and is ignored on every other shape, where the
+// server's message is authoritative — an echo that reports no entities
+// there really means the server applied none.
+func messageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntityClass) *Message {
 	if result == nil {
 		return nil
 	}
 
 	if upd, ok := result.(*tg.UpdateShortSentMessage); ok {
 		return &Message{
-			ID:   upd.ID,
-			Date: upd.Date,
-			// The short echo carries the entities the server accepted;
-			// they are the caller's only proof that formatting parsed.
-			Entities: ConvertEntities(upd.Entities),
+			ID:       upd.ID,
+			Date:     upd.Date,
+			Entities: shortSentEntities(upd, submitted),
 		}
 	}
 

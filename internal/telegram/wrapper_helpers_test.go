@@ -355,7 +355,7 @@ func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
 		Users:   []tg.UserClass{&tg.User{ID: 10, FirstName: "Bob", Username: "bob"}},
 	}
 
-	got := messageFromUpdate(combined)
+	got := messageFromUpdate(combined, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdatesCombined")
 	}
@@ -381,7 +381,7 @@ func TestMessageFromUpdate_ShortSentMessageKeepsEntities(t *testing.T) {
 		&tg.MessageEntityCode{Offset: 5, Length: 3},
 	})
 
-	got := messageFromUpdate(short)
+	got := messageFromUpdate(short, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdateShortSentMessage")
 	}
@@ -403,7 +403,7 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditMessage{Message: raw}},
 	}
 
-	got := messageFromUpdate(updates)
+	got := messageFromUpdate(updates, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for UpdateEditMessage")
 	}
@@ -413,10 +413,6 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 	}
 }
 
-// TestMessageFromUpdate_PrefersNewOverEdit pins the two-pass scan: a
-// send response can carry an edit update for the parent message (the
-// topic root's reply-counter bump) BEFORE the new-message update, and
-// the send result must report the sent message, not the parent.
 // TestMessagesFromUpdates_ScheduledMessages pins the scheduled path:
 // a scheduled album (or forward) echoes updateNewScheduledMessage, and
 // dropping those left the caller with count 0 and entitiesParsed 0 —
@@ -439,55 +435,60 @@ func TestMessagesFromUpdates_ScheduledMessages(t *testing.T) {
 	}
 }
 
-// TestWithSubmittedEntities_FillsOnlyWhenEchoIsSilent pins the fallback
-// that keeps entitiesParsed honest regardless of which echo shape the
-// server picks: submitted entities are reported when the echo carried
-// none, and an echo that DID carry entities always wins.
-func TestWithSubmittedEntities_FillsOnlyWhenEchoIsSilent(t *testing.T) {
+// TestShortSentEntities_FallsBackToSubmitted pins the repair of the one
+// echo shape whose entity flag is unobservable: when the short echo
+// carries no entities, the submitted set is reported instead.
+func TestShortSentEntities_FallsBackToSubmitted(t *testing.T) {
 	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
 
-	silent := withSubmittedEntities(&Message{ID: 1}, submitted)
-	if len(silent.Entities) != 1 {
-		t.Errorf("silent echo: got %d entities, want the submitted 1", len(silent.Entities))
+	silent := &tg.UpdateShortSentMessage{ID: 1, Date: 100}
+
+	got := messageFromUpdate(silent, submitted)
+	if got == nil || len(got.Entities) != 1 {
+		t.Errorf("a silent short echo must report the submitted entities, got %+v", got)
 	}
 
-	echoed := withSubmittedEntities(
-		&Message{ID: 1, Entities: []Entity{{Type: "code"}, {Type: "italic"}}}, submitted)
-	if len(echoed.Entities) != 2 || echoed.Entities[0].Type != "code" {
-		t.Errorf("a non-empty echo must win, got %+v", echoed.Entities)
-	}
+	// An echo that DID carry entities is authoritative.
+	echoed := &tg.UpdateShortSentMessage{ID: 1, Date: 100}
+	echoed.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityCode{Offset: 0, Length: 2},
+		&tg.MessageEntityItalic{Offset: 3, Length: 2},
+	})
 
-	if withSubmittedEntities(nil, submitted) != nil {
-		t.Error("a nil message must stay nil")
-	}
-
-	plain := withSubmittedEntities(&Message{ID: 1}, nil)
-	if len(plain.Entities) != 0 {
-		t.Errorf("nothing submitted means nothing to fill, got %+v", plain.Entities)
+	got = messageFromUpdate(echoed, submitted)
+	if got == nil || len(got.Entities) != 2 {
+		t.Errorf("a non-empty short echo must win, got %+v", got)
 	}
 }
 
-func TestWithSubmittedEntitiesAll_FillsTheCaptionCarrier(t *testing.T) {
+// TestMessageFromUpdate_FullEchoZeroIsAuthoritative pins the scope of
+// that fallback: on the full-updates path the server sends its own
+// message, so a zero there means the server applied no entities — the
+// exact signal entitiesParsed exists to carry. Filling it in from the
+// submitted set would erase the signal.
+func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
 	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
 
-	filled := withSubmittedEntitiesAll([]Message{{ID: 1}, {ID: 2}}, submitted)
-	if len(filled[0].Entities) != 1 {
-		t.Errorf("the caption carrier must get the submitted entities, got %+v", filled[0].Entities)
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewMessage{Message: &tg.Message{ID: 3, Date: 100, Message: "no entities"}},
+		},
 	}
 
-	// An echo that already reported entities anywhere in the album is
-	// authoritative; nothing is filled in.
-	echoed := withSubmittedEntitiesAll(
-		[]Message{{ID: 1}, {ID: 2, Entities: []Entity{{Type: "code"}}}}, submitted)
-	if len(echoed[0].Entities) != 0 {
-		t.Errorf("a non-empty album echo must win, got %+v", echoed[0].Entities)
+	got := messageFromUpdate(updates, submitted)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
 	}
 
-	if withSubmittedEntitiesAll(nil, submitted) != nil {
-		t.Error("an empty album must stay empty")
+	if len(got.Entities) != 0 {
+		t.Errorf("a server echo reporting no entities must stay at 0, got %+v", got.Entities)
 	}
 }
 
+// TestMessageFromUpdate_PrefersNewOverEdit pins the two-pass scan: a
+// send response can carry an edit update for the parent message (the
+// topic root's reply-counter bump) BEFORE the new-message update, and
+// the send result must report the sent message, not the parent.
 func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
 	parent := &tg.Message{ID: 1, Date: 90, Message: "parent bumped"}
 	sent := &tg.Message{ID: 2, Date: 100, Message: "the actual send"}
@@ -499,7 +500,7 @@ func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates)
+	got := messageFromUpdate(updates, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -516,7 +517,7 @@ func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditChannelMessage{Message: raw}},
 	}
 
-	got := messageFromUpdate(updates)
+	got := messageFromUpdate(updates, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for UpdateEditChannelMessage")
 	}
@@ -540,7 +541,7 @@ func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates)
+	got := messageFromUpdate(updates, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}

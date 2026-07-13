@@ -150,7 +150,15 @@ func entityCountAll(msgs []telegram.Message) int {
 // parseMode=plain unless allowRaw overrides. Empty text (a file or
 // album without a caption) always passes.
 func validatePlainText(mode string, allowRaw bool, text string) error {
-	if mode != telegram.ParseModePlain || allowRaw || text == "" {
+	if mode != telegram.ParseModePlain {
+		if allowRaw {
+			return ErrAllowRawMarkdownWithoutPlain
+		}
+
+		return nil
+	}
+
+	if allowRaw || text == "" {
 		return nil
 	}
 

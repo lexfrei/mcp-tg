@@ -98,3 +98,34 @@ func TestMediaSendAlbumHandler_EmptyCaptionSkipsLint(t *testing.T) {
 		t.Errorf("empty caption must not trip the lint, got: %v", err)
 	}
 }
+
+// TestValidatePlainText_Matrix covers the (mode x allowRaw x text) grid
+// at the single point where the rule lives, instead of relying on the
+// per-tool handler tests to cover it by accident.
+func TestValidatePlainText_Matrix(t *testing.T) {
+	cases := []struct {
+		name     string
+		mode     string
+		allowRaw bool
+		text     string
+		want     error
+	}{
+		{"plain markdown rejected", telegram.ParseModePlain, false, "a **b** c", ErrPlainLooksLikeMarkdown},
+		{"plain prose passes", telegram.ParseModePlain, false, "a plain sentence", nil},
+		{"plain empty passes", telegram.ParseModePlain, false, "", nil},
+		{"plain override passes", telegram.ParseModePlain, true, "a **b** c", nil},
+		{"commonmark markdown passes", telegram.ParseModeCommonMark, false, "a **b** c", nil},
+		{
+			"commonmark override rejected",
+			telegram.ParseModeCommonMark, true, "a **b** c",
+			ErrAllowRawMarkdownWithoutPlain,
+		},
+	}
+
+	for _, tc := range cases {
+		got := validatePlainText(tc.mode, tc.allowRaw, tc.text)
+		if !errors.Is(got, tc.want) {
+			t.Errorf("%s: got %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

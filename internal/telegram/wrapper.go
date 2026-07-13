@@ -407,7 +407,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		return nil, errors.Wrap(err, "sending message")
 	}
 
-	return withSubmittedEntities(messageFromUpdate(result), req.Entities), nil
+	return messageFromUpdate(result, req.Entities), nil
 }
 
 // EditMessage edits an existing message.
@@ -439,7 +439,7 @@ func (w *Wrapper) EditMessage(
 		return nil, errors.Wrap(err, "editing message")
 	}
 
-	return withSubmittedEntities(messageFromUpdate(result), req.Entities), nil
+	return messageFromUpdate(result, req.Entities), nil
 }
 
 // DeleteMessages deletes messages from a chat.
@@ -621,7 +621,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, errors.Wrap(err, "sending file")
 	}
 
-	return withSubmittedEntities(messageFromUpdate(result), req.Entities), nil
+	return messageFromUpdate(result, req.Entities), nil
 }
 
 // SendAlbum sends a group of media files.
@@ -638,10 +638,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 	sizing := albumSizes(paths)
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
-	var (
-		base            int64
-		captionEntities []tg.MessageEntityClass
-	)
+	var base int64
 
 	for idx, path := range paths {
 		itemProgress := albumItemProgress(opts.Progress, base, sizing.total)
@@ -662,8 +659,6 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 
 		if idx == 0 {
 			applyAlbumCaption(&media, caption, opts.ParseMode)
-
-			captionEntities = media.Entities
 		}
 
 		multiMedia = append(multiMedia, media)
@@ -676,7 +671,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		return nil, errors.Wrap(err, "sending album")
 	}
 
-	return withSubmittedEntitiesAll(messagesFromUpdates(result), captionEntities), nil
+	return messagesFromUpdates(result), nil
 }
 
 // renderCaption returns the on-the-wire plaintext for a caption after
@@ -1229,7 +1224,7 @@ func (w *Wrapper) SendSticker(
 		return nil, errors.Wrap(err, "sending sticker")
 	}
 
-	return messageFromUpdate(result), nil
+	return messageFromUpdate(result, nil), nil
 }
 
 // SetDraft sets a draft message in a chat.

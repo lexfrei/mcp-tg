@@ -14,6 +14,9 @@ type MessagesEditParams struct {
 	MessageID int    `json:"messageId" jsonschema:"ID of the message to edit"`
 	Text      string `json:"text"      jsonschema:"New message text"`
 	ParseMode string `json:"parseMode" jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset, see README)"`
+
+	// AllowRawMarkdown skips the plain-mode markdown lint.
+	AllowRawMarkdown *bool `json:"allowRawMarkdown,omitempty" jsonschema:"Send markdown-looking characters literally in plain mode"`
 }
 
 // MessagesEditResult is the output of the tg_messages_edit tool.
@@ -29,25 +32,10 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 		_ *mcp.CallToolRequest,
 		params MessagesEditParams,
 	) (*mcp.CallToolResult, MessagesEditResult, error) {
-		if params.Peer == "" {
+		validErr := validateEditParams(&params)
+		if validErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
-				validationErr(ErrPeerRequired)
-		}
-
-		if params.MessageID == 0 {
-			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
-				validationErr(ErrMessageIDRequired)
-		}
-
-		if params.Text == "" {
-			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
-				validationErr(ErrTextRequired)
-		}
-
-		pmErr := validateParseMode(params.ParseMode)
-		if pmErr != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
-				validationErr(pmErr)
+				validationErr(validErr)
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)
@@ -72,6 +60,29 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 			Output:    fmt.Sprintf("Message %d edited", msgID),
 		}, nil
 	}
+}
+
+// validateEditParams runs every request-shape check that needs no
+// network round-trip, so a malformed call fails before any RPC.
+func validateEditParams(params *MessagesEditParams) error {
+	if params.Peer == "" {
+		return ErrPeerRequired
+	}
+
+	if params.MessageID == 0 {
+		return ErrMessageIDRequired
+	}
+
+	if params.Text == "" {
+		return ErrTextRequired
+	}
+
+	pmErr := validateParseMode(params.ParseMode)
+	if pmErr != nil {
+		return pmErr
+	}
+
+	return validatePlainText(normalizeParseMode(params.ParseMode), deref(params.AllowRawMarkdown), params.Text)
 }
 
 // MessagesEditTool returns the MCP tool definition for tg_messages_edit.

@@ -19,6 +19,9 @@ type MessagesSendParams struct {
 	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
 	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
+
+	// AllowRawMarkdown skips the plain-mode markdown lint.
+	AllowRawMarkdown *bool `json:"allowRawMarkdown,omitempty" jsonschema:"Send markdown-looking characters literally in plain mode"`
 }
 
 // MessagesSendResult is the output of the tg_messages_send tool.
@@ -85,7 +88,12 @@ func validateSendParams(params *MessagesSendParams) error {
 		return ErrTextRequired
 	}
 
-	return validateParseMode(params.ParseMode)
+	pmErr := validateParseMode(params.ParseMode)
+	if pmErr != nil {
+		return pmErr
+	}
+
+	return validatePlainText(normalizeParseMode(params.ParseMode), deref(params.AllowRawMarkdown), params.Text)
 }
 
 func sendOptsFrom(params *MessagesSendParams) telegram.SendOpts {

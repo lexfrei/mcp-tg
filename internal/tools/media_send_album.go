@@ -18,6 +18,9 @@ type MediaSendAlbumParams struct {
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 	SendAs       *string  `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for chat default"`
+
+	// AllowRawMarkdown skips the plain-mode markdown lint.
+	AllowRawMarkdown *bool `json:"allowRawMarkdown,omitempty" jsonschema:"Send markdown-looking caption characters literally in plain mode"`
 }
 
 // MediaSendAlbumResult is the output of the tg_media_send_album tool.
@@ -49,6 +52,13 @@ func NewMediaSendAlbumHandler(
 		if pmErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
 				validationErr(pmErr)
+		}
+
+		lintErr := validatePlainText(
+			normalizeParseMode(params.ParseMode), deref(params.AllowRawMarkdown), deref(params.Caption))
+		if lintErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
+				validationErr(lintErr)
 		}
 
 		msgs, err := sendAlbum(ctx, client, req, &params)

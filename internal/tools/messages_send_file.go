@@ -18,6 +18,9 @@ type MessagesSendFileParams struct {
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
+
+	// AllowRawMarkdown skips the plain-mode markdown lint.
+	AllowRawMarkdown *bool `json:"allowRawMarkdown,omitempty" jsonschema:"Send markdown-looking caption characters literally in plain mode"`
 }
 
 // MessagesSendFileResult is the output of the tg_messages_send_file tool.
@@ -49,6 +52,13 @@ func NewMessagesSendFileHandler(
 		if pmErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
 				validationErr(pmErr)
+		}
+
+		lintErr := validatePlainText(
+			normalizeParseMode(params.ParseMode), deref(params.AllowRawMarkdown), deref(params.Caption))
+		if lintErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
+				validationErr(lintErr)
 		}
 
 		msg, err := uploadAndSendFile(ctx, client, req, &params)

@@ -122,6 +122,21 @@ func validateDateRange(minDate, maxDate int) error {
 	return nil
 }
 
+// validatePlainText rejects markdown-looking text sent with
+// parseMode=plain unless allowRaw overrides. Empty text (a file or
+// album without a caption) always passes.
+func validatePlainText(mode string, allowRaw bool, text string) error {
+	if mode != telegram.ParseModePlain || allowRaw || text == "" {
+		return nil
+	}
+
+	if telegram.LooksLikeMarkdown(text) {
+		return ErrPlainLooksLikeMarkdown
+	}
+
+	return nil
+}
+
 // normalizeParseMode lowercases the input so callers can pass
 // "Markdown", "COMMONMARK" etc. without getting a validation error.
 func normalizeParseMode(mode string) string {

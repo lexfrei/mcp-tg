@@ -115,6 +115,14 @@ var ErrMarkdownAliasRemoved = errors.New(
 	"parseMode 'markdown' is no longer accepted; use 'commonmark'",
 )
 
+// ErrPlainLooksLikeMarkdown is returned when plain-mode text contains
+// constructs the CommonMark parser would transform — the formatting
+// would otherwise ship as literal characters with no error.
+var ErrPlainLooksLikeMarkdown = errors.New(
+	"text looks like markdown; pass parseMode='commonmark' to format it, " +
+		"or set allowRawMarkdown=true to send the characters literally",
+)
+
 // ErrUnknownParseMode is returned when parseMode is a value the wrapper
 // does not recognise.
 var ErrUnknownParseMode = errors.New(

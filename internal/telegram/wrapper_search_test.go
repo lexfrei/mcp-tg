@@ -243,6 +243,37 @@ func TestSearchGlobal_ExtractsNextRateAndSeedsCache(t *testing.T) {
 	}
 }
 
+// TestSearchGlobal_ScopeMapsToExactlyOneFlag pins the wire mapping of
+// every scope value: a copy-paste swap of the three comparisons would
+// pass the rest of the suite, since handler tests stop at the opts
+// string and only the channels case asserted the TL flags.
+func TestSearchGlobal_ScopeMapsToExactlyOneFlag(t *testing.T) {
+	cases := []struct {
+		scope                     string
+		users, groups, broadcasts bool
+	}{
+		{scope: SearchScopeUsers, users: true},
+		{scope: SearchScopeGroups, groups: true},
+		{scope: SearchScopeChannels, broadcasts: true},
+	}
+
+	for _, tc := range cases {
+		inv := &searchInvoker{resp: searchSliceResponse()}
+
+		_, err := newSearchWrapper(inv).SearchGlobal(context.Background(), "q", &SearchGlobalOpts{Scope: tc.scope})
+		if err != nil {
+			t.Fatalf("scope %q: unexpected error: %v", tc.scope, err)
+		}
+
+		got := [3]bool{inv.global.UsersOnly, inv.global.GroupsOnly, inv.global.BroadcastsOnly}
+		want := [3]bool{tc.users, tc.groups, tc.broadcasts}
+
+		if got != want {
+			t.Errorf("scope %q: flags [users groups broadcasts] = %v, want %v", tc.scope, got, want)
+		}
+	}
+}
+
 // TestSearchGlobal_NextRateFallsBackToLastMessageDate pins the
 // documented cursor contract: when messages.messagesSlice carries no
 // next_rate, the caller must continue with the date of the last

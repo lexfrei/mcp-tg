@@ -89,7 +89,10 @@ func NewMessagesSearchGlobalHandler(
 			Output:   fmt.Sprintf("Found %d message(s)", len(page.Messages)),
 		}
 
-		if len(page.Messages) > 0 {
+		// The cursor exists to fetch the next page; a final page
+		// (no nextRate) must not carry one, or a caller keying on the
+		// cursor fields instead of hasMore fetches an empty page.
+		if page.NextRate > 0 && len(page.Messages) > 0 {
 			last := page.Messages[len(page.Messages)-1]
 			result.NextOffsetID = last.ID
 
@@ -122,7 +125,27 @@ func validateSearchGlobalParams(params *MessagesSearchGlobalParams) error {
 		return ErrUnknownSearchScope
 	}
 
+	cursorErr := validateGlobalCursor(params)
+	if cursorErr != nil {
+		return cursorErr
+	}
+
 	return validateDateRange(deref(params.MinDate), deref(params.MaxDate))
+}
+
+// validateGlobalCursor rejects a partial pagination cursor: the three
+// fields travel together, and the server silently accepts a subset
+// while returning a skewed page instead of an error.
+func validateGlobalCursor(params *MessagesSearchGlobalParams) error {
+	hasRate := deref(params.OffsetRate) != 0
+	hasID := deref(params.OffsetID) != 0
+	hasPeer := params.OffsetPeer != ""
+
+	if (hasRate || hasID || hasPeer) && (!hasRate || !hasID || !hasPeer) {
+		return ErrPartialCursor
+	}
+
+	return nil
 }
 
 // searchGlobalOptsFromParams threads the tool parameters into

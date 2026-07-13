@@ -151,6 +151,15 @@ var ErrFromUnresolved = errors.New(
 	"from resolved without an access hash; pass @username, or look the peer up via tg_dialogs_list first",
 )
 
+// ErrPartialCursor is returned when only part of the global search
+// pagination cursor is supplied. The three fields travel together; a
+// partial cursor is silently accepted by the server and yields a
+// skewed page instead of an error.
+var ErrPartialCursor = errors.New(
+	"offsetRate, offsetId and offsetPeer travel together; copy all three from the previous " +
+		"page's nextRate/nextOffsetId/nextOffsetPeer, or omit all three for the first page",
+)
+
 // ErrOffsetPeerUnresolved is returned when the pagination cursor's peer
 // resolves without an access hash — typical after a restart cleared the
 // peer cache that the previous page had seeded. Sending it on would

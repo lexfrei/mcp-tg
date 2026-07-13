@@ -121,8 +121,10 @@ func TestMessagesSearchGlobalHandler_OffsetPeerResolveFailureNamesTheParam(t *te
 	}
 	handler := NewMessagesSearchGlobalHandler(mock)
 
-	res, _, err := handler(context.Background(), nil,
-		MessagesSearchGlobalParams{Query: "q", OffsetPeer: "-100999"})
+	offsetRate, offsetID := 7, 10
+	res, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query: "q", OffsetRate: &offsetRate, OffsetID: &offsetID, OffsetPeer: "-100999",
+	})
 	if err == nil || !strings.Contains(err.Error(), "failed to resolve the offsetPeer peer") {
 		t.Errorf("err = %v, want it to name the offsetPeer parameter", err)
 	}
@@ -144,8 +146,10 @@ func TestMessagesSearchGlobalHandler_UnresolvedOffsetPeerRejected(t *testing.T) 
 	}
 	handler := NewMessagesSearchGlobalHandler(mock)
 
-	_, _, err := handler(context.Background(), nil,
-		MessagesSearchGlobalParams{Query: "q", OffsetPeer: "-1000000000555"})
+	offsetRate, offsetID := 7, 10
+	_, _, err := handler(context.Background(), nil, MessagesSearchGlobalParams{
+		Query: "q", OffsetRate: &offsetRate, OffsetID: &offsetID, OffsetPeer: "-1000000000555",
+	})
 	if !errors.Is(err, ErrOffsetPeerUnresolved) {
 		t.Errorf("err = %v, want ErrOffsetPeerUnresolved", err)
 	}
@@ -180,6 +184,38 @@ func TestMessagesSearchGlobalHandler_HasMoreFollowsCursor(t *testing.T) {
 
 	if !res.HasMore {
 		t.Error("a page with a cursor must report hasMore=true")
+	}
+}
+
+// TestMessagesSearchGlobalHandler_PartialCursorRejected pins that an
+// incomplete cursor fails validation: the server accepts it silently
+// and returns a skewed page, so the shape check is the only warning
+// the caller gets.
+func TestMessagesSearchGlobalHandler_PartialCursorRejected(t *testing.T) {
+	offsetID := 42
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", OffsetID: &offsetID})
+	if !errors.Is(err, ErrPartialCursor) {
+		t.Errorf("err = %v, want ErrPartialCursor", err)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_FinalPageCarriesNoCursor pins that a
+// complete result (no nextRate) yields no next-page cursor even when
+// the page has messages.
+func TestMessagesSearchGlobalHandler_FinalPageCarriesNoCursor(t *testing.T) {
+	mock := &mockClient{messages: messagesWithReply(), total: 2, nextRate: 0}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextOffsetID != 0 || res.NextOffsetPeer != "" {
+		t.Errorf("final page must carry no cursor, got id=%d peer=%q", res.NextOffsetID, res.NextOffsetPeer)
 	}
 }
 

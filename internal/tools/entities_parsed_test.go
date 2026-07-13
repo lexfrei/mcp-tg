@@ -150,3 +150,61 @@ func TestEntitiesParsed_ZeroSerializesInEveryResult(t *testing.T) {
 		}
 	}
 }
+
+// TestMessagesSendHandler_AutoDetectedEntitiesNotCounted pins the bug
+// that made the signal lie: a plain send containing a bare link and a
+// hashtag comes back with server-added entities, and counting them
+// would tell the caller their markdown parsed when none was requested.
+func TestMessagesSendHandler_AutoDetectedEntitiesNotCounted(t *testing.T) {
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		message: &telegram.Message{
+			ID: 7,
+			Entities: []telegram.Entity{
+				{Type: telegram.EntityTypeURL, Offset: 4, Length: 19},
+				{Type: telegram.EntityTypeHashtag, Offset: 28, Length: 4},
+			},
+		},
+	}
+	handler := NewMessagesSendHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSendParams{
+		Peer: "@chat", Text: "see https://example.com and #tag", ParseMode: "plain",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.EntitiesParsed != 0 {
+		t.Errorf("EntitiesParsed = %d, want 0 — the server detected those, no parseMode did", res.EntitiesParsed)
+	}
+}
+
+// TestMessagesSendHandler_MixedEntitiesCountFormattingOnly pins the
+// other half: real formatting still counts, alongside auto-detected
+// entities in the same message.
+func TestMessagesSendHandler_MixedEntitiesCountFormattingOnly(t *testing.T) {
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		message: &telegram.Message{
+			ID: 7,
+			Entities: []telegram.Entity{
+				{Type: telegram.EntityTypeURL},
+				{Type: telegram.EntityTypeBold},
+				{Type: telegram.EntityTypeTextURL},
+			},
+		},
+	}
+	handler := NewMessagesSendHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSendParams{
+		Peer: "@chat", Text: "**b** [t](u) https://x.y", ParseMode: "commonmark",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.EntitiesParsed != 2 {
+		t.Errorf("EntitiesParsed = %d, want 2 (bold + text_url, not the bare url)", res.EntitiesParsed)
+	}
+}

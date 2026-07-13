@@ -122,28 +122,43 @@ func validateDateRange(minDate, maxDate int) error {
 	return nil
 }
 
-// entityCount returns how many formatting entities the server echoed
-// back for a sent or edited message; nil-safe because some echo shapes
-// yield no message at all.
+// entityCount returns how many FORMATTING entities the server echoed
+// back for a sent or edited message. Auto-detected entities (a bare
+// URL, an @mention, a #hashtag) are excluded: the server adds those to
+// any message regardless of parseMode, so counting them would report a
+// non-zero "your markdown parsed" for a plain send that merely
+// contained a link. Nil-safe — some echo shapes yield no message.
 func entityCount(msg *telegram.Message) int {
 	if msg == nil {
 		return 0
 	}
 
-	return len(msg.Entities)
+	return countFormatting(msg.Entities)
 }
 
-// entityCountAll sums the echoed entities across an album's messages.
-// The sum is used instead of "the first message" because the server's
-// update order is not a contract — only the captioned item carries
-// entities, so the result is the same either way.
+// entityCountAll sums the echoed formatting entities across an album's
+// messages. The sum is used instead of "the first message" because the
+// server's update order is not a contract — only the captioned item
+// carries entities, so the result is the same either way.
 func entityCountAll(msgs []telegram.Message) int {
 	total := 0
 	for i := range msgs {
-		total += len(msgs[i].Entities)
+		total += countFormatting(msgs[i].Entities)
 	}
 
 	return total
+}
+
+func countFormatting(entities []telegram.Entity) int {
+	count := 0
+
+	for _, entity := range entities {
+		if telegram.IsFormattingEntity(entity.Type) {
+			count++
+		}
+	}
+
+	return count
 }
 
 // validatePlainText rejects markdown-looking text sent with

@@ -3,6 +3,7 @@ package telegram
 import (
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // markdownHints compiles conservative approximations of the constructs
@@ -19,7 +20,9 @@ import (
 // parser supports them: indentation is how people paste logs and
 // stack traces, which would make the lint fire on ordinary plain
 // sends far too often.
-func markdownHints() []*regexp.Regexp {
+//
+//nolint:gochecknoglobals // compile the hint set once, not on every plain-mode send.
+var markdownHints = sync.OnceValue(func() []*regexp.Regexp {
 	return []*regexp.Regexp{
 		regexp.MustCompile("`[^`\n]+`"),                // inline code
 		regexp.MustCompile(`\*\*\S(?:[^*\n]*\S)?\*\*`), // bold
@@ -29,7 +32,7 @@ func markdownHints() []*regexp.Regexp {
 		regexp.MustCompile(`\[[^\]\n]+\]\([^)\s]+\)`),  // [text](url)
 		regexp.MustCompile(`<https?://[^>\s]+>`),       // <autolink>
 	}
-}
+})
 
 // LooksLikeMarkdown reports whether text contains constructs the
 // CommonMark parser would transform, so a plain-mode send can be

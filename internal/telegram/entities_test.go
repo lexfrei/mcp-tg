@@ -173,3 +173,32 @@ func TestConvertMessage_NoEntities(t *testing.T) {
 		t.Errorf("Entities = %v, want nil for plain message", got.Entities)
 	}
 }
+
+// TestIsFormattingEntity_ExcludesServerAutoDetected pins the split that
+// keeps entitiesParsed honest: Telegram adds url/mention/hashtag and
+// friends to any message on its own, so they are not evidence that a
+// parseMode did anything.
+func TestIsFormattingEntity_ExcludesServerAutoDetected(t *testing.T) {
+	formatting := []string{
+		EntityTypeBold, EntityTypeItalic, EntityTypeUnderline, EntityTypeStrike,
+		EntityTypeSpoiler, EntityTypeCode, EntityTypePre, EntityTypeBlockquote,
+		EntityTypeTextURL, EntityTypeMentionName, EntityTypeCustomEmoji,
+	}
+
+	for _, entityType := range formatting {
+		if !IsFormattingEntity(entityType) {
+			t.Errorf("IsFormattingEntity(%q) = false, want true", entityType)
+		}
+	}
+
+	autoDetected := []string{
+		EntityTypeURL, EntityTypeMention, EntityTypeHashtag, EntityTypeCashtag,
+		EntityTypeBotCommand, EntityTypeEmail, EntityTypePhone,
+	}
+
+	for _, entityType := range autoDetected {
+		if IsFormattingEntity(entityType) {
+			t.Errorf("IsFormattingEntity(%q) = true, want false — the server adds it unasked", entityType)
+		}
+	}
+}

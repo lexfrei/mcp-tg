@@ -65,6 +65,31 @@ type simpleEntityRange interface {
 	GetLength() int
 }
 
+// autoDetectedEntityTypes are the entity types Telegram's server adds by
+// itself to ANY message — a bare URL, an @mention, a #hashtag — with no
+// regard for parseMode. They are formatting nobody asked for, so they
+// must not count towards "did my markdown parse".
+func autoDetectedEntityTypes() map[string]struct{} {
+	return map[string]struct{}{
+		EntityTypeURL:        {},
+		EntityTypeMention:    {},
+		EntityTypeHashtag:    {},
+		EntityTypeCashtag:    {},
+		EntityTypeBotCommand: {},
+		EntityTypeEmail:      {},
+		EntityTypePhone:      {},
+	}
+}
+
+// IsFormattingEntity reports whether an entity type is one a parseMode
+// can actually produce (bold, code, text_url, ...), as opposed to the
+// types the server detects on its own regardless of parseMode.
+func IsFormattingEntity(entityType string) bool {
+	_, auto := autoDetectedEntityTypes()[entityType]
+
+	return !auto
+}
+
 // simpleEntityType maps an MTProto entity constructor ID to the domain
 // type label. Only types that carry nothing but Offset+Length belong
 // here — anything with URL/language/userID metadata goes through

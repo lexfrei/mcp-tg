@@ -230,7 +230,7 @@ The four text tools (`tg_messages_send`, `tg_messages_edit`, `tg_messages_send_f
 
 In plain mode, text or captions that look like markdown — code fences, `` `inline code` ``, `**bold**`, `[text](url)`, `<https://autolink>`, `__underline__`, `~~strike~~`, `||spoiler||` — are rejected with "text looks like markdown; pass parseMode='commonmark' to format it, or set allowRawMarkdown=true to send the characters literally". Set `allowRawMarkdown: true` to intentionally send such characters unformatted; it applies to plain mode only and is rejected elsewhere rather than silently ignored. Single `*italic*`/`_italic_` and `>` quotes do not trigger the lint.
 
-Every result reports `entitiesParsed` — how many formatting entities the server actually accepted, present even when 0. The self-correction recipe: if a `commonmark` send returns `entitiesParsed: 0` despite formatting in the text, the markdown did not parse — fix the text and call `tg_messages_edit` with `parseMode: "commonmark"`.
+Every result reports `entitiesParsed` — how many FORMATTING entities the sent message carries (bold, code, `[text](url)` links, …), present even when 0. Entities Telegram detects on its own — a bare URL, an `@mention`, a `#hashtag` — are excluded, so they cannot masquerade as parsed markdown in a plain send. The self-correction recipe: if a `commonmark` send returns `entitiesParsed: 0` despite formatting in the text, the markdown did not parse — fix the text and call `tg_messages_edit` with `parseMode: "commonmark"`.
 
 ## Markdown — Known Limitations
 

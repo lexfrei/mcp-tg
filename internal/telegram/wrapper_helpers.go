@@ -853,6 +853,49 @@ func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, b
 	}
 }
 
+// withSubmittedEntities restores the entity count when the server echo
+// reported none but the client did submit entities.
+//
+// updateShortSentMessage carries its entities behind a conditional flag
+// and Telegram documents neither when the flag is set nor whether an
+// unchanged entity set is echoed back at all. Probing a live account
+// did not settle it either: a Saved Messages send — the case the short
+// form is meant for — answers with the full updates envelope, so the
+// short branch never fired. Rather than let the documented
+// "entitiesParsed: 0 means nothing parsed" contract rest on an
+// unverifiable flag, fall back to what was submitted. Telegram rejects
+// malformed entities outright (ENTITY_BOUND_INVALID and friends) rather
+// than dropping them silently, so a request that returned successfully
+// applied every entity it carried.
+func withSubmittedEntities(msg *Message, submitted []tg.MessageEntityClass) *Message {
+	if msg == nil || len(msg.Entities) > 0 || len(submitted) == 0 {
+		return msg
+	}
+
+	msg.Entities = ConvertEntities(submitted)
+
+	return msg
+}
+
+// withSubmittedEntitiesAll is the album counterpart: the caption rides
+// the first item, so a single echo carrying entities means the set was
+// applied.
+func withSubmittedEntitiesAll(msgs []Message, submitted []tg.MessageEntityClass) []Message {
+	if len(msgs) == 0 || len(submitted) == 0 {
+		return msgs
+	}
+
+	for i := range msgs {
+		if len(msgs[i].Entities) > 0 {
+			return msgs
+		}
+	}
+
+	msgs[0].Entities = ConvertEntities(submitted)
+
+	return msgs
+}
+
 func messagesFromUpdates(result tg.UpdatesClass) []Message {
 	if result == nil {
 		return nil
@@ -868,17 +911,13 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 
 	var msgs []Message
 
+	// extractNewMessage covers every new-message shape, scheduled ones
+	// included — a scheduled album echoes updateNewScheduledMessage, and
+	// a hand-rolled subset of this switch silently returned no messages
+	// at all for it.
 	for _, update := range updates {
-		if newMsg, ok := update.(*tg.UpdateNewMessage); ok {
-			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				msgs = append(msgs, enrichUpdateMessage(msg, userRefs, chatRefs))
-			}
-		}
-
-		if newMsg, ok := update.(*tg.UpdateNewChannelMessage); ok {
-			if msg, ok := newMsg.Message.(*tg.Message); ok {
-				msgs = append(msgs, enrichUpdateMessage(msg, userRefs, chatRefs))
-			}
+		if msg := extractNewMessage(update, userRefs, chatRefs); msg != nil {
+			msgs = append(msgs, *msg)
 		}
 	}
 

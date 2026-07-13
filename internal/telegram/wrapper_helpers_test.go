@@ -417,6 +417,77 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 // send response can carry an edit update for the parent message (the
 // topic root's reply-counter bump) BEFORE the new-message update, and
 // the send result must report the sent message, not the parent.
+// TestMessagesFromUpdates_ScheduledMessages pins the scheduled path:
+// a scheduled album (or forward) echoes updateNewScheduledMessage, and
+// dropping those left the caller with count 0 and entitiesParsed 0 —
+// which the documented contract reads as "nothing parsed".
+func TestMessagesFromUpdates_ScheduledMessages(t *testing.T) {
+	raw := &tg.Message{ID: 5, Date: 100, Message: "scheduled"}
+	raw.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 9}})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateNewScheduledMessage{Message: raw}},
+	}
+
+	msgs := messagesFromUpdates(updates)
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1 — the scheduled echo was dropped", len(msgs))
+	}
+
+	if len(msgs[0].Entities) != 1 {
+		t.Errorf("got %d entities, want 1", len(msgs[0].Entities))
+	}
+}
+
+// TestWithSubmittedEntities_FillsOnlyWhenEchoIsSilent pins the fallback
+// that keeps entitiesParsed honest regardless of which echo shape the
+// server picks: submitted entities are reported when the echo carried
+// none, and an echo that DID carry entities always wins.
+func TestWithSubmittedEntities_FillsOnlyWhenEchoIsSilent(t *testing.T) {
+	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
+
+	silent := withSubmittedEntities(&Message{ID: 1}, submitted)
+	if len(silent.Entities) != 1 {
+		t.Errorf("silent echo: got %d entities, want the submitted 1", len(silent.Entities))
+	}
+
+	echoed := withSubmittedEntities(
+		&Message{ID: 1, Entities: []Entity{{Type: "code"}, {Type: "italic"}}}, submitted)
+	if len(echoed.Entities) != 2 || echoed.Entities[0].Type != "code" {
+		t.Errorf("a non-empty echo must win, got %+v", echoed.Entities)
+	}
+
+	if withSubmittedEntities(nil, submitted) != nil {
+		t.Error("a nil message must stay nil")
+	}
+
+	plain := withSubmittedEntities(&Message{ID: 1}, nil)
+	if len(plain.Entities) != 0 {
+		t.Errorf("nothing submitted means nothing to fill, got %+v", plain.Entities)
+	}
+}
+
+func TestWithSubmittedEntitiesAll_FillsTheCaptionCarrier(t *testing.T) {
+	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
+
+	filled := withSubmittedEntitiesAll([]Message{{ID: 1}, {ID: 2}}, submitted)
+	if len(filled[0].Entities) != 1 {
+		t.Errorf("the caption carrier must get the submitted entities, got %+v", filled[0].Entities)
+	}
+
+	// An echo that already reported entities anywhere in the album is
+	// authoritative; nothing is filled in.
+	echoed := withSubmittedEntitiesAll(
+		[]Message{{ID: 1}, {ID: 2, Entities: []Entity{{Type: "code"}}}}, submitted)
+	if len(echoed[0].Entities) != 0 {
+		t.Errorf("a non-empty album echo must win, got %+v", echoed[0].Entities)
+	}
+
+	if withSubmittedEntitiesAll(nil, submitted) != nil {
+		t.Error("an empty album must stay empty")
+	}
+}
+
 func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
 	parent := &tg.Message{ID: 1, Date: 90, Message: "parent bumped"}
 	sent := &tg.Message{ID: 2, Date: 100, Message: "the actual send"}

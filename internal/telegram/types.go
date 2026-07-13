@@ -303,6 +303,11 @@ type HistoryOpts struct {
 type SearchOpts struct {
 	Limit    int
 	OffsetID int
+	TopicID  int        // forum topic (top_msg_id); 0 = whole chat
+	FromID   *InputPeer // only messages from this sender; nil = anyone
+	Filter   string     // search filter name (see SearchFilters); "" = none
+	MinDate  int        // unix; 0 = unbounded
+	MaxDate  int        // unix; 0 = unbounded
 }
 
 // ParseMode values understood by the Telegram wrapper.

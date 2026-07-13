@@ -49,6 +49,7 @@ type mockClient struct {
 	lastSendOpts     telegram.SendOpts
 	lastUploadOpts   telegram.UploadOpts
 	lastReactionOpts telegram.ReactionOpts
+	lastSearchOpts   telegram.SearchOpts
 	getMessagesCalls int
 	getMessagesIDs   []int
 	getHistoryCalls  int
@@ -149,12 +150,13 @@ func (m *mockClient) GetTopicMessages(
 }
 
 func (m *mockClient) SearchMessages(
-	_ context.Context, peer telegram.InputPeer, query string, _ telegram.SearchOpts,
-) ([]telegram.Message, error) {
+	_ context.Context, peer telegram.InputPeer, query string, opts telegram.SearchOpts,
+) ([]telegram.Message, int, error) {
 	m.lastPeer = peer
 	m.lastQuery = query
+	m.lastSearchOpts = opts
 
-	return m.messages, m.err
+	return m.messages, m.total, m.err
 }
 
 func (m *mockClient) SendMessage(

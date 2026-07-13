@@ -153,7 +153,7 @@ func searchAndReplyHandler(client telegram.Client) mcp.PromptHandler {
 			return nil, errors.Wrap(err, "resolving peer")
 		}
 
-		msgs, err := client.SearchMessages(ctx, peer, query, telegram.SearchOpts{Limit: defaultContextMessages})
+		msgs, _, err := client.SearchMessages(ctx, peer, query, telegram.SearchOpts{Limit: defaultContextMessages})
 		if err != nil {
 			return nil, errors.Wrap(err, "searching messages")
 		}

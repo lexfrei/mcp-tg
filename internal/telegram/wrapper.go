@@ -305,27 +305,61 @@ func (w *Wrapper) GetMessages(ctx context.Context, peer InputPeer, ids []int) ([
 	return msgs, nil
 }
 
-// SearchMessages searches for messages in a chat.
-func (w *Wrapper) SearchMessages(ctx context.Context, peer InputPeer, query string, opts SearchOpts) ([]Message, error) {
+// SearchMessages searches for messages in a chat. The returned int is
+// the server's total match count, which exceeds len(messages) when the
+// result is paginated.
+func (w *Wrapper) SearchMessages(
+	ctx context.Context, peer InputPeer, query string, opts SearchOpts,
+) ([]Message, int, error) {
+	req, err := buildSearchRequest(peer, query, opts)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	result, err := w.api.MessagesSearch(ctx, req)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "searching messages")
+	}
+
+	msgs, total := extractMessages(result, peer)
+
+	return msgs, total, nil
+}
+
+// buildSearchRequest assembles the TL request for SearchMessages,
+// setting conditional fields only when the caller asked for them.
+// MinDate/MaxDate are unconditional because zero is already the TL-side
+// "unbounded" sentinel.
+func buildSearchRequest(peer InputPeer, query string, opts SearchOpts) (*tg.MessagesSearchRequest, error) {
+	filter, err := searchFilterToTG(opts.Filter)
+	if err != nil {
+		return nil, err
+	}
+
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	result, err := w.api.MessagesSearch(ctx, &tg.MessagesSearchRequest{
+	req := &tg.MessagesSearchRequest{
 		Peer:     InputPeerToTG(peer),
 		Q:        query,
-		Filter:   &tg.InputMessagesFilterEmpty{},
+		Filter:   filter,
 		Limit:    limit,
 		OffsetID: opts.OffsetID,
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "searching messages")
+		MinDate:  opts.MinDate,
+		MaxDate:  opts.MaxDate,
 	}
 
-	msgs, _ := extractMessages(result, peer)
+	if opts.TopicID > 0 {
+		req.SetTopMsgID(opts.TopicID)
+	}
 
-	return msgs, nil
+	if opts.FromID != nil {
+		req.SetFromID(InputPeerToTG(*opts.FromID))
+	}
+
+	return req, nil
 }
 
 // SendMessage sends a text message.

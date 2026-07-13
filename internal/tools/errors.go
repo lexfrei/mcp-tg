@@ -116,6 +116,18 @@ var ErrUnknownMessageType = errors.New(
 		"contact, location, venue, poll, webpage, game, invoice, unsupported",
 )
 
+// ErrUnknownMessageFilter is returned when a search filter is not one
+// of the server-side filter names accepted by telegram.IsSearchFilter.
+// The list is built from telegram.SearchFilters so a new filter name
+// cannot silently drift out of the error text.
+var ErrUnknownMessageFilter = errors.New(
+	"unknown filter; allowed: " + strings.Join(telegram.SearchFilters(), ", "),
+)
+
+// ErrInvalidDateRange is returned when a minDate/maxDate window is
+// inverted.
+var ErrInvalidDateRange = errors.New("minDate must not exceed maxDate")
+
 // ErrInvalidWaitSeconds is returned when a waitSeconds value is outside
 // the supported range for a bounded MCP request.
 var ErrInvalidWaitSeconds = errors.New("waitSeconds must be between 0 and 120")

@@ -1353,30 +1353,66 @@ func (w *Wrapper) GetScheduledMessages(
 	return msgs, nil
 }
 
-// SearchGlobal searches messages across all chats.
+// SearchGlobal searches messages across all chats. The peers named in
+// the reply are cached so the caller can pass a result message's
+// numeric peer ID back as the pagination cursor's OffsetPeer even for
+// chats the account never resolved before.
 func (w *Wrapper) SearchGlobal(
-	ctx context.Context, query string, limit int,
-) ([]Message, error) {
+	ctx context.Context, query string, opts *SearchGlobalOpts,
+) (SearchGlobalPage, error) {
+	if opts == nil {
+		opts = &SearchGlobalOpts{}
+	}
+
+	req, err := buildSearchGlobalRequest(query, opts)
+	if err != nil {
+		return SearchGlobalPage{}, err
+	}
+
+	result, err := w.api.MessagesSearchGlobal(ctx, req)
+	if err != nil {
+		return SearchGlobalPage{}, errors.Wrap(err, "searching global messages")
+	}
+
+	return w.searchGlobalPage(result), nil
+}
+
+// buildSearchGlobalRequest assembles the TL request for SearchGlobal.
+// The three offset fields travel together as one compound cursor; on
+// the first page all of them are zero and the peer falls back to
+// inputPeerEmpty, which is what the schema expects.
+func buildSearchGlobalRequest(query string, opts *SearchGlobalOpts) (*tg.MessagesSearchGlobalRequest, error) {
+	filter, err := searchFilterToTG(opts.Filter)
+	if err != nil {
+		return nil, err
+	}
+
+	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	result, err := w.api.MessagesSearchGlobal(
-		ctx,
-		&tg.MessagesSearchGlobalRequest{
-			Q:          query,
-			Limit:      limit,
-			OffsetPeer: &tg.InputPeerEmpty{},
-			Filter:     &tg.InputMessagesFilterEmpty{},
-		},
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "searching global messages")
+	var offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
+	if opts.OffsetPeer != nil {
+		offsetPeer = InputPeerToTG(*opts.OffsetPeer)
 	}
 
-	msgs, _ := extractMessages(result, InputPeer{})
+	req := &tg.MessagesSearchGlobalRequest{
+		Q:          query,
+		Filter:     filter,
+		Limit:      limit,
+		MinDate:    opts.MinDate,
+		MaxDate:    opts.MaxDate,
+		OffsetRate: opts.OffsetRate,
+		OffsetID:   opts.OffsetID,
+		OffsetPeer: offsetPeer,
+		UsersOnly:  opts.Scope == SearchScopeUsers,
+		GroupsOnly: opts.Scope == SearchScopeGroups,
+		// Telegram calls channels "broadcasts" in this request.
+		BroadcastsOnly: opts.Scope == SearchScopeChannels,
+	}
 
-	return msgs, nil
+	return req, nil
 }
 
 // GetBlockedContacts returns a list of blocked users.
@@ -1943,6 +1979,25 @@ func (w *Wrapper) cacheFromPeerDialogs(result *tg.MessagesPeerDialogs) {
 			})
 		}
 	}
+}
+
+// searchGlobalPage converts an MTProto search response into one result
+// page, keeping the next_rate cursor and seeding the peer cache with
+// every peer the reply names.
+func (w *Wrapper) searchGlobalPage(result tg.MessagesMessagesClass) SearchGlobalPage {
+	msgs, total := extractMessages(result, InputPeer{})
+	page := SearchGlobalPage{Messages: msgs, Total: total}
+
+	switch res := result.(type) {
+	case *tg.MessagesMessagesSlice:
+		page.NextRate, _ = res.GetNextRate()
+
+		w.cachePeersOf(res.Chats, res.Users)
+	case *tg.MessagesMessages:
+		w.cachePeersOf(res.Chats, res.Users)
+	}
+
+	return page
 }
 
 // cacheDialogPeers stores all dialog peers with valid access hashes.

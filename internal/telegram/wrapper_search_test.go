@@ -159,3 +159,101 @@ func TestSearchMessages_UnknownFilterFailsBeforeRPC(t *testing.T) {
 		t.Error("the RPC must not fire when the filter name is invalid")
 	}
 }
+
+func TestSearchGlobal_FirstPageDefaults(t *testing.T) {
+	inv := &searchInvoker{resp: searchSliceResponse()}
+
+	_, err := newSearchWrapper(inv).SearchGlobal(context.Background(), "q", &SearchGlobalOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := inv.global.OffsetPeer.(*tg.InputPeerEmpty); !ok {
+		t.Errorf("OffsetPeer = %T, want *tg.InputPeerEmpty", inv.global.OffsetPeer)
+	}
+
+	if inv.global.UsersOnly || inv.global.GroupsOnly || inv.global.BroadcastsOnly {
+		t.Error("scope flags must stay clear without a scope")
+	}
+
+	if inv.global.Limit != defaultLimit {
+		t.Errorf("Limit = %d, want default %d", inv.global.Limit, defaultLimit)
+	}
+}
+
+func TestSearchGlobal_ThreadsCursorAndScope(t *testing.T) {
+	inv := &searchInvoker{resp: searchSliceResponse()}
+	cursor := InputPeer{Type: PeerChannel, ID: 555, AccessHash: 666}
+
+	_, err := newSearchWrapper(inv).SearchGlobal(context.Background(), "q", &SearchGlobalOpts{
+		Scope:      SearchScopeChannels,
+		OffsetRate: 7,
+		OffsetID:   10,
+		OffsetPeer: &cursor,
+		MinDate:    100,
+		MaxDate:    200,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !inv.global.BroadcastsOnly || inv.global.UsersOnly || inv.global.GroupsOnly {
+		t.Error("channels scope must set only BroadcastsOnly")
+	}
+
+	if inv.global.OffsetRate != 7 || inv.global.OffsetID != 10 {
+		t.Errorf("OffsetRate/OffsetID = %d/%d, want 7/10", inv.global.OffsetRate, inv.global.OffsetID)
+	}
+
+	channel, ok := inv.global.OffsetPeer.(*tg.InputPeerChannel)
+	if !ok || channel.ChannelID != 555 {
+		t.Errorf("OffsetPeer = %#v, want InputPeerChannel{555}", inv.global.OffsetPeer)
+	}
+
+	if inv.global.MinDate != 100 || inv.global.MaxDate != 200 {
+		t.Errorf("MinDate/MaxDate = %d/%d, want 100/200", inv.global.MinDate, inv.global.MaxDate)
+	}
+}
+
+func TestSearchGlobal_ExtractsNextRateAndSeedsCache(t *testing.T) {
+	resp := searchSliceResponse()
+	resp.SetNextRate(99)
+	// Photo is a required field on channel#, not a conditional one,
+	// so a nil there fails encoding rather than decoding as absent.
+	resp.Chats = []tg.ChatClass{&tg.Channel{ID: 555, AccessHash: 666, Photo: &tg.ChatPhotoEmpty{}}}
+	inv := &searchInvoker{resp: resp}
+	wrapper := newSearchWrapper(inv)
+
+	page, err := wrapper.SearchGlobal(context.Background(), "q", &SearchGlobalOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if page.NextRate != 99 {
+		t.Errorf("NextRate = %d, want 99", page.NextRate)
+	}
+
+	if page.Total != 42 {
+		t.Errorf("Total = %d, want 42", page.Total)
+	}
+
+	cached, ok := wrapper.cache.Lookup(PeerChannel, 555)
+	if !ok || cached.AccessHash != 666 {
+		t.Errorf("cache.Lookup(channel 555) = %+v (found=%v), want the reply's access hash", cached, ok)
+	}
+}
+
+func TestSearchGlobal_UnknownFilterFailsBeforeRPC(t *testing.T) {
+	inv := &searchInvoker{resp: searchSliceResponse()}
+
+	_, err := newSearchWrapper(inv).SearchGlobal(
+		context.Background(), "q", &SearchGlobalOpts{Filter: "bogus"},
+	)
+	if err == nil {
+		t.Fatal("expected an error for an unknown filter")
+	}
+
+	if inv.global != nil {
+		t.Error("the RPC must not fire when the filter name is invalid")
+	}
+}

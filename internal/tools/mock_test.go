@@ -50,13 +50,18 @@ type mockClient struct {
 	lastUploadOpts   telegram.UploadOpts
 	lastReactionOpts telegram.ReactionOpts
 	lastSearchOpts   telegram.SearchOpts
-	getMessagesCalls int
-	getMessagesIDs   []int
-	getHistoryCalls  int
-	getHistoryOpts   []telegram.HistoryOpts
-	lastTranscribeID int
-	lastWait         time.Duration
-	groupInfoCalls   int
+
+	// lastSearchGlobalOpts records the opts of the latest SearchGlobal
+	// call; nextRate is the cursor SearchGlobal hands back.
+	lastSearchGlobalOpts telegram.SearchGlobalOpts
+	nextRate             int
+	getMessagesCalls     int
+	getMessagesIDs       []int
+	getHistoryCalls      int
+	getHistoryOpts       []telegram.HistoryOpts
+	lastTranscribeID     int
+	lastWait             time.Duration
+	groupInfoCalls       int
 	// lastSendAs records the identity passed to the send methods that
 	// take it as a trailing argument rather than through SendOpts.
 	lastSendAs *telegram.InputPeer
@@ -477,10 +482,16 @@ func (m *mockClient) GetScheduledMessages(_ context.Context, peer telegram.Input
 	return m.messages, m.err
 }
 
-func (m *mockClient) SearchGlobal(_ context.Context, query string, _ int) ([]telegram.Message, error) {
+func (m *mockClient) SearchGlobal(
+	_ context.Context, query string, opts *telegram.SearchGlobalOpts,
+) (telegram.SearchGlobalPage, error) {
 	m.lastQuery = query
 
-	return m.messages, m.err
+	if opts != nil {
+		m.lastSearchGlobalOpts = *opts
+	}
+
+	return telegram.SearchGlobalPage{Messages: m.messages, Total: m.total, NextRate: m.nextRate}, m.err
 }
 
 func (m *mockClient) GetBlockedContacts(_ context.Context, _ int) ([]telegram.User, error) {

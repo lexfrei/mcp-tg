@@ -33,7 +33,7 @@ type MessageClient interface {
 	GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, error)
 	GetTopicMessages(ctx context.Context, peer InputPeer, topicID int, opts HistoryOpts) ([]Message, int, error)
 	SearchMessages(ctx context.Context, peer InputPeer, query string, opts SearchOpts) ([]Message, int, error)
-	SearchGlobal(ctx context.Context, query string, limit int) ([]Message, error)
+	SearchGlobal(ctx context.Context, query string, opts *SearchGlobalOpts) (SearchGlobalPage, error)
 	GetScheduledMessages(ctx context.Context, peer InputPeer) ([]Message, error)
 	GetReactions(ctx context.Context, peer InputPeer, msgID int, limit int) ([]ReactionUser, error)
 	TranscribeAudio(ctx context.Context, peer InputPeer, msgID int, wait time.Duration) (*Transcription, error)

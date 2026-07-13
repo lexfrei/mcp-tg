@@ -210,8 +210,10 @@ func (NoopClient) GetScheduledMessages(_ context.Context, _ telegram.InputPeer) 
 	return nil, nil
 }
 
-func (NoopClient) SearchGlobal(_ context.Context, _ string, _ int) ([]telegram.Message, error) {
-	return nil, nil
+func (NoopClient) SearchGlobal(
+	_ context.Context, _ string, _ *telegram.SearchGlobalOpts,
+) (telegram.SearchGlobalPage, error) {
+	return telegram.SearchGlobalPage{}, nil
 }
 
 func (NoopClient) GetBlockedContacts(_ context.Context, _ int) ([]telegram.User, error) {

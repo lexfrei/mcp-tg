@@ -310,6 +310,30 @@ type SearchOpts struct {
 	MaxDate  int        // unix; 0 = unbounded
 }
 
+// SearchGlobalOpts configures a cross-chat message search.
+//
+// The three offset fields form one compound pagination cursor: pass the
+// previous page's NextRate as OffsetRate, and the last returned
+// message's ID and peer as OffsetID/OffsetPeer. All three zero/nil
+// means the first page.
+type SearchGlobalOpts struct {
+	Limit      int
+	Filter     string // search filter name (see SearchFilters); "" = none
+	MinDate    int    // unix; 0 = unbounded
+	MaxDate    int    // unix; 0 = unbounded
+	Scope      string // SearchScopeUsers/Groups/Channels; "" = all dialogs
+	OffsetRate int
+	OffsetID   int
+	OffsetPeer *InputPeer // nil = first page (inputPeerEmpty)
+}
+
+// SearchGlobalPage is one page of cross-chat search results.
+type SearchGlobalPage struct {
+	Messages []Message
+	Total    int // server's total match count across all pages
+	NextRate int // next page's OffsetRate; 0 when the server sent none
+}
+
 // ParseMode values understood by the Telegram wrapper.
 //
 // ParseModeMarkdown is the legacy alias kept for backward compatibility.

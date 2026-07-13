@@ -14,6 +14,7 @@ func TestLooksLikeMarkdown_Positives(t *testing.T) {
 		"link":             "see [the docs](https://example.com/page)",
 		"fence mid-line":   "inline ```code``` fence",
 		"bold single rune": "a **b** c",
+		"autolink":         "visit <https://example.com/page> now",
 	}
 
 	for name, text := range cases {
@@ -40,6 +41,9 @@ func TestLooksLikeMarkdown_Negatives(t *testing.T) {
 		"bare url":           "https://example.com/page",
 		"lone backtick":      "the ` character",
 		"double tilde gap":   "waves ~~ everywhere ~~ here",
+		"html-ish tag":       "the <b>tag</b> stays",
+		"comparison angle":   "if x < y then y > x",
+		"indented log":       "stack:\n    at main.go:10\n    at run.go:5",
 	}
 
 	for name, text := range cases {

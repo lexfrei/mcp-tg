@@ -14,6 +14,11 @@ import (
 // "x ** y ** z" don't trigger. Note that __init__ IS a true positive
 // by design — the parser really would underline "init" in commonmark
 // mode — and allowRawMarkdown is the documented escape.
+//
+// 4-space indented code blocks are also excluded even though the
+// parser supports them: indentation is how people paste logs and
+// stack traces, which would make the lint fire on ordinary plain
+// sends far too often.
 func markdownHints() []*regexp.Regexp {
 	return []*regexp.Regexp{
 		regexp.MustCompile("`[^`\n]+`"),                // inline code
@@ -22,6 +27,7 @@ func markdownHints() []*regexp.Regexp {
 		regexp.MustCompile(`~~\S(?:[^~\n]*\S)?~~`),     // strikethrough
 		regexp.MustCompile(`\|\|\S(?:[^|\n]*\S)?\|\|`), // spoiler
 		regexp.MustCompile(`\[[^\]\n]+\]\([^)\s]+\)`),  // [text](url)
+		regexp.MustCompile(`<https?://[^>\s]+>`),       // <autolink>
 	}
 }
 

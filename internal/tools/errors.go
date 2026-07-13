@@ -111,6 +111,8 @@ var ErrParseModeRequired = errors.New(
 )
 
 // ErrMarkdownAliasRemoved is returned for the retired 'markdown' alias.
+// Over MCP the schema enum rejects the value first with its own message;
+// this error covers the direct-handler path and documents the retirement.
 var ErrMarkdownAliasRemoved = errors.New(
 	"parseMode 'markdown' is no longer accepted; use 'commonmark'",
 )

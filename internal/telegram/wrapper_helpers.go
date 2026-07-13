@@ -853,6 +853,40 @@ func lookupRefByPeer(peer InputPeer, users, chats map[int64]peerRef) (peerRef, b
 	}
 }
 
+// ownMessageIDs returns the message IDs the server assigned to OUR
+// requests, read from the updateMessageID entries that pair each id with
+// the random_id we generated. This is the only identity signal MTProto
+// gives: an echo envelope can also bundle updates for other messages —
+// a channel post propagating into its linked discussion group, a topic
+// root's counter bumping — and message IDs are numbered per peer, so
+// even an ID match can hit a stranger. An empty result means the server
+// sent no updateMessageID and the caller must fall back.
+func ownMessageIDs(updates []tg.UpdateClass, randIDs map[int64]struct{}) map[int]struct{} {
+	ids := make(map[int]struct{}, len(randIDs))
+
+	for _, update := range updates {
+		upd, ok := update.(*tg.UpdateMessageID)
+		if !ok {
+			continue
+		}
+
+		if _, mine := randIDs[upd.RandomID]; mine {
+			ids[upd.ID] = struct{}{}
+		}
+	}
+
+	return ids
+}
+
+func randIDSet(randIDs ...int64) map[int64]struct{} {
+	set := make(map[int64]struct{}, len(randIDs))
+	for _, id := range randIDs {
+		set[id] = struct{}{}
+	}
+
+	return set
+}
+
 // echoOrSubmitted keeps an unreadable echo from masquerading as "the
 // server applied no entities". A nil message means the envelope could
 // not be read (an unhandled shape, no matching update) — not that the
@@ -899,7 +933,7 @@ func shortSentEntities(upd *tg.UpdateShortSentMessage, submitted []tg.MessageEnt
 	return ConvertEntities(submitted)
 }
 
-func messagesFromUpdates(result tg.UpdatesClass) []Message {
+func messagesFromUpdates(result tg.UpdatesClass, randIDs ...int64) []Message {
 	if result == nil {
 		return nil
 	}
@@ -912,6 +946,11 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 	userRefs := buildUserRefs(users)
 	chatRefs := buildChatRefs(chats)
 
+	// An album echo can also carry the copies Telegram fans out into a
+	// linked discussion group; counting those would report more files
+	// than were sent and double the caption's entities.
+	own := ownMessageIDs(updates, randIDSet(randIDs...))
+
 	var msgs []Message
 
 	// extractNewMessage covers every new-message shape, scheduled ones
@@ -919,9 +958,18 @@ func messagesFromUpdates(result tg.UpdatesClass) []Message {
 	// a hand-rolled subset of this switch silently returned no messages
 	// at all for it.
 	for _, update := range updates {
-		if msg := extractNewMessage(update, userRefs, chatRefs); msg != nil {
-			msgs = append(msgs, *msg)
+		msg := extractNewMessage(update, userRefs, chatRefs)
+		if msg == nil {
+			continue
 		}
+
+		if len(own) > 0 {
+			if _, mine := own[msg.ID]; !mine {
+				continue
+			}
+		}
+
+		msgs = append(msgs, *msg)
 	}
 
 	return msgs
@@ -972,11 +1020,13 @@ func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Messag
 // shortSentEntities) and is ignored on every other shape, where the
 // server's message is authoritative — an echo that reports no entities
 // there really means the server applied none.
-func messageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntityClass) *Message {
+func messageFromUpdate(result tg.UpdatesClass, randID int64, submitted []tg.MessageEntityClass) *Message {
 	if result == nil {
 		return nil
 	}
 
+	// The short echo is the direct answer to this request — no other
+	// message can be hiding in it.
 	if upd, ok := result.(*tg.UpdateShortSentMessage); ok {
 		return &Message{
 			ID:       upd.ID,
@@ -990,7 +1040,33 @@ func messageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntityClass
 		return nil
 	}
 
-	return firstMessageFromUpdates(updates, buildUserRefs(users), buildChatRefs(chats))
+	userRefs := buildUserRefs(users)
+	chatRefs := buildChatRefs(chats)
+
+	if ids := ownMessageIDs(updates, randIDSet(randID)); len(ids) > 0 {
+		return messageWithID(updates, ids, userRefs, chatRefs)
+	}
+
+	return firstMessageFromUpdates(updates, userRefs, chatRefs)
+}
+
+// messageWithID returns the new message whose ID the server paired with
+// our random_id, ignoring whatever else the envelope carries.
+func messageWithID(
+	updates []tg.UpdateClass, ids map[int]struct{}, users, chats map[int64]peerRef,
+) *Message {
+	for _, update := range updates {
+		msg := extractNewMessage(update, users, chats)
+		if msg == nil {
+			continue
+		}
+
+		if _, mine := ids[msg.ID]; mine {
+			return msg
+		}
+	}
+
+	return nil
 }
 
 // firstMessageFromUpdates returns the NEW message an echo carries. A
@@ -1020,7 +1096,7 @@ func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]pe
 //
 // There is deliberately no new-message fallback either — that would be
 // the mirror of the bug the send path just closed.
-func editedMessageFromUpdate(result tg.UpdatesClass, msgID int) *Message {
+func editedMessageFromUpdate(result tg.UpdatesClass, msgID int, peer InputPeer) *Message {
 	if result == nil {
 		return nil
 	}
@@ -1035,12 +1111,25 @@ func editedMessageFromUpdate(result tg.UpdatesClass, msgID int) *Message {
 
 	for _, update := range updates {
 		msg := extractEditedMessage(update, userRefs, chatRefs)
-		if msg != nil && msg.ID == msgID {
+		if msg != nil && msg.ID == msgID && samePeer(msg.PeerID, peer) {
 			return msg
 		}
 	}
 
 	return nil
+}
+
+// samePeer compares the echo's peer with the request's. Message IDs are
+// numbered per peer, so an ID match alone can land on a stranger — the
+// linked discussion group's copy of a channel post being the obvious
+// candidate. A zero peer on either side means "unknown", and the ID
+// match has to stand on its own.
+func samePeer(echoed, requested InputPeer) bool {
+	if echoed.ID == 0 || requested.ID == 0 {
+		return true
+	}
+
+	return echoed.Type == requested.Type && echoed.ID == requested.ID
 }
 
 func extractNewMessage(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {

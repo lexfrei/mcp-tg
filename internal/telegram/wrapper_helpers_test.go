@@ -355,7 +355,7 @@ func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
 		Users:   []tg.UserClass{&tg.User{ID: 10, FirstName: "Bob", Username: "bob"}},
 	}
 
-	got := messageFromUpdate(combined, nil)
+	got := messageFromUpdate(combined, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdatesCombined")
 	}
@@ -381,7 +381,7 @@ func TestMessageFromUpdate_ShortSentMessageKeepsEntities(t *testing.T) {
 		&tg.MessageEntityCode{Offset: 5, Length: 3},
 	})
 
-	got := messageFromUpdate(short, nil)
+	got := messageFromUpdate(short, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdateShortSentMessage")
 	}
@@ -403,7 +403,7 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditMessage{Message: raw}},
 	}
 
-	got := editedMessageFromUpdate(updates, 7)
+	got := editedMessageFromUpdate(updates, 7, InputPeer{})
 	if got == nil {
 		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditMessage")
 	}
@@ -443,7 +443,7 @@ func TestShortSentEntities_FallsBackToSubmitted(t *testing.T) {
 
 	silent := &tg.UpdateShortSentMessage{ID: 1, Date: 100}
 
-	got := messageFromUpdate(silent, submitted)
+	got := messageFromUpdate(silent, 0, submitted)
 	if got == nil || len(got.Entities) != 1 {
 		t.Errorf("a silent short echo must report the submitted entities, got %+v", got)
 	}
@@ -455,7 +455,7 @@ func TestShortSentEntities_FallsBackToSubmitted(t *testing.T) {
 		&tg.MessageEntityItalic{Offset: 3, Length: 2},
 	})
 
-	got = messageFromUpdate(echoed, submitted)
+	got = messageFromUpdate(echoed, 0, submitted)
 	if got == nil || len(got.Entities) != 2 {
 		t.Errorf("a non-empty short echo must win, got %+v", got)
 	}
@@ -475,7 +475,7 @@ func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, submitted)
+	got := messageFromUpdate(updates, 0, submitted)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -499,7 +499,7 @@ func TestEditedMessageFromUpdate_IgnoresNewMessages(t *testing.T) {
 		},
 	}
 
-	if got := editedMessageFromUpdate(bundled, 99); got != nil {
+	if got := editedMessageFromUpdate(bundled, 99, InputPeer{}); got != nil {
 		t.Errorf("an edit echo without an edit update must yield nil, got ID=%d", got.ID)
 	}
 }
@@ -525,7 +525,7 @@ func TestEditedMessageFromUpdate_MatchesTheEditedID(t *testing.T) {
 		},
 	}
 
-	got := editedMessageFromUpdate(updates, 42)
+	got := editedMessageFromUpdate(updates, 42, InputPeer{})
 	if got == nil {
 		t.Fatal("editedMessageFromUpdate returned nil for the edited message")
 	}
@@ -546,7 +546,7 @@ func TestMessageFromUpdate_IgnoresEditUpdates(t *testing.T) {
 		},
 	}
 
-	if got := messageFromUpdate(parentOnly, nil); got != nil {
+	if got := messageFromUpdate(parentOnly, 0, nil); got != nil {
 		t.Errorf("a send echo carrying only an edit update must yield nil, got ID=%d", got.ID)
 	}
 }
@@ -565,7 +565,7 @@ func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, nil)
+	got := messageFromUpdate(updates, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -582,7 +582,7 @@ func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditChannelMessage{Message: raw}},
 	}
 
-	got := editedMessageFromUpdate(updates, 9)
+	got := editedMessageFromUpdate(updates, 9, InputPeer{})
 	if got == nil {
 		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditChannelMessage")
 	}
@@ -606,7 +606,7 @@ func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, nil)
+	got := messageFromUpdate(updates, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -796,5 +796,98 @@ func TestEchoOrSubmitted_UnreadableEchoReportsSubmitted(t *testing.T) {
 	echoed := echoOrSubmitted(&Message{ID: 42}, 42, submitted)
 	if len(echoed.Entities) != 0 {
 		t.Errorf("a readable echo reporting zero must stay zero, got %+v", echoed.Entities)
+	}
+}
+
+// TestMessageFromUpdate_IdentifiesOwnMessageByRandomID pins the identity
+// signal MTProto actually gives: the server pairs our random_id with the
+// ID it assigned. An envelope can also carry a message from a completely
+// different chat (a channel post fanning out into its linked discussion
+// group), and taking the first new message would report a stranger's ID
+// — which the caller would then edit, delete or pin.
+func TestMessageFromUpdate_IdentifiesOwnMessageByRandomID(t *testing.T) {
+	const ourRand int64 = 4242
+
+	stranger := &tg.Message{ID: 999, Date: 100, Message: "another chat", PeerID: &tg.PeerChannel{ChannelID: 222}}
+
+	mine := &tg.Message{ID: 57, Date: 100, Message: "mine", PeerID: &tg.PeerChannel{ChannelID: 111}}
+	mine.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 4},
+		&tg.MessageEntityCode{Offset: 5, Length: 2},
+	})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewChannelMessage{Message: stranger},
+			&tg.UpdateMessageID{ID: 57, RandomID: ourRand},
+			&tg.UpdateNewChannelMessage{Message: mine},
+		},
+	}
+
+	got := messageFromUpdate(updates, ourRand, nil)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if got.ID != 57 {
+		t.Errorf("got ID=%d, want 57 — the envelope's stranger was reported as ours", got.ID)
+	}
+
+	if len(got.Entities) != 2 {
+		t.Errorf("got %d entities, want 2 — the stranger's count leaked", len(got.Entities))
+	}
+}
+
+// TestMessagesFromUpdates_AlbumCountsOwnItemsOnly pins the same rule for
+// albums: Telegram fans a channel album out into the linked discussion
+// group, and counting the copies would report more files than were sent
+// and double the caption's entities.
+func TestMessagesFromUpdates_AlbumCountsOwnItemsOnly(t *testing.T) {
+	const randA, randB int64 = 11, 22
+
+	captioned := &tg.Message{ID: 1, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 111}}
+	captioned.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 3}})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateMessageID{ID: 1, RandomID: randA},
+			&tg.UpdateMessageID{ID: 2, RandomID: randB},
+			&tg.UpdateNewChannelMessage{Message: captioned},
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 2, Date: 100}},
+			// The linked discussion group's copies.
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 900, Date: 100}},
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 901, Date: 100}},
+		},
+	}
+
+	msgs := messagesFromUpdates(updates, randA, randB)
+	if len(msgs) != 2 {
+		t.Errorf("got %d messages for a 2-item album — the group copies were counted", len(msgs))
+	}
+}
+
+// TestEditedMessageFromUpdate_RejectsSamIDInAnotherPeer pins the peer
+// check: message IDs are numbered per peer, so an ID match alone can
+// land on the linked group's copy of the post being edited.
+func TestEditedMessageFromUpdate_RejectsSameIDInAnotherPeer(t *testing.T) {
+	stranger := &tg.Message{ID: 57, Date: 100, Message: "same id, other peer", PeerID: &tg.PeerChannel{ChannelID: 222}}
+	stranger.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}})
+
+	mine := &tg.Message{ID: 57, Date: 100, Message: "mine", PeerID: &tg.PeerChannel{ChannelID: 111}}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: stranger},
+			&tg.UpdateEditChannelMessage{Message: mine},
+		},
+	}
+
+	got := editedMessageFromUpdate(updates, 57, InputPeer{Type: PeerChannel, ID: 111})
+	if got == nil {
+		t.Fatal("editedMessageFromUpdate returned nil for the edited message")
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("got %d entities — the other peer's copy was reported as ours", len(got.Entities))
 	}
 }

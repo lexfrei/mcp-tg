@@ -407,7 +407,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		return nil, errors.Wrap(err, "sending message")
 	}
 
-	return echoOrSubmitted(messageFromUpdate(result, req.Entities), 0, req.Entities), nil
+	return echoOrSubmitted(messageFromUpdate(result, randID, req.Entities), 0, req.Entities), nil
 }
 
 // EditMessage edits an existing message.
@@ -439,7 +439,7 @@ func (w *Wrapper) EditMessage(
 		return nil, errors.Wrap(err, "editing message")
 	}
 
-	return echoOrSubmitted(editedMessageFromUpdate(result, msgID), msgID, req.Entities), nil
+	return echoOrSubmitted(editedMessageFromUpdate(result, msgID, peer), msgID, req.Entities), nil
 }
 
 // DeleteMessages deletes messages from a chat.
@@ -484,7 +484,7 @@ func (w *Wrapper) ForwardMessages(
 		return nil, errors.Wrap(err, "forwarding messages")
 	}
 
-	return messagesFromUpdates(result), nil
+	return messagesFromUpdates(result, randIDs...), nil
 }
 
 // PinMessage pins or unpins a message in a chat.
@@ -621,7 +621,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, errors.Wrap(err, "sending file")
 	}
 
-	return echoOrSubmitted(messageFromUpdate(result, req.Entities), 0, req.Entities), nil
+	return echoOrSubmitted(messageFromUpdate(result, randID, req.Entities), 0, req.Entities), nil
 }
 
 // SendAlbum sends a group of media files.
@@ -638,7 +638,10 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 	sizing := albumSizes(paths)
 	multiMedia := make([]tg.InputSingleMedia, 0, len(paths))
 
-	var base int64
+	var (
+		base       int64
+		albumRands []int64
+	)
 
 	for idx, path := range paths {
 		itemProgress := albumItemProgress(opts.Progress, base, sizing.total)
@@ -654,6 +657,8 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		if randErr != nil {
 			return nil, randErr
 		}
+
+		albumRands = append(albumRands, randID)
 
 		media := tg.InputSingleMedia{RandomID: randID, Media: input}
 
@@ -671,7 +676,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		return nil, errors.Wrap(err, "sending album")
 	}
 
-	return messagesFromUpdates(result), nil
+	return messagesFromUpdates(result, albumRands...), nil
 }
 
 // renderCaption returns the on-the-wire plaintext for a caption after
@@ -1224,7 +1229,7 @@ func (w *Wrapper) SendSticker(
 		return nil, errors.Wrap(err, "sending sticker")
 	}
 
-	return messageFromUpdate(result, nil), nil
+	return messageFromUpdate(result, randID, nil), nil
 }
 
 // SetDraft sets a draft message in a chat.

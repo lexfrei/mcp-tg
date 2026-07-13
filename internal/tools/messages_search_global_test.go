@@ -132,6 +132,25 @@ func TestMessagesSearchGlobalHandler_OffsetPeerResolveFailureNamesTheParam(t *te
 	}
 }
 
+// TestMessagesSearchGlobalHandler_UnresolvedOffsetPeerRejected pins the
+// cold-cache path: after a daemon restart the previous page's numeric
+// peer resolves with a zero access hash, and sending it on would fail
+// with a server error naming neither the parameter nor the remedy.
+func TestMessagesSearchGlobalHandler_UnresolvedOffsetPeerRejected(t *testing.T) {
+	mock := &mockClient{
+		resolvePeerFn: func(string) (telegram.InputPeer, error) {
+			return telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}, nil
+		},
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", OffsetPeer: "-1000000000555"})
+	if !errors.Is(err, ErrOffsetPeerUnresolved) {
+		t.Errorf("err = %v, want ErrOffsetPeerUnresolved", err)
+	}
+}
+
 // TestMessagesSearchGlobalHandler_HasMoreFollowsCursor pins that
 // hasMore is derived from the cursor, not from page saturation: a
 // complete result carries no nextRate, and a full final page must not

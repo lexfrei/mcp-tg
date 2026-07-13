@@ -143,6 +143,14 @@ var ErrQueryOrFilterRequired = errors.New("query or filter is required")
 // is also a valid search.
 var ErrSearchCriteriaRequired = errors.New("query, filter or from is required")
 
+// ErrOffsetPeerUnresolved is returned when the pagination cursor's peer
+// resolves without an access hash — typical after a restart cleared the
+// peer cache that the previous page had seeded. Sending it on would
+// fail with a server error naming neither the parameter nor the fix.
+var ErrOffsetPeerUnresolved = errors.New(
+	"offsetPeer resolved without an access hash; re-run the first page to seed the peer cache",
+)
+
 // ErrInvalidWaitSeconds is returned when a waitSeconds value is outside
 // the supported range for a bounded MCP request.
 var ErrInvalidWaitSeconds = errors.New("waitSeconds must be between 0 and 120")

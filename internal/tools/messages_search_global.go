@@ -136,6 +136,13 @@ func searchGlobalOptsFromParams(
 		return nil, err
 	}
 
+	// A resolved cursor peer without an access hash cannot go on the
+	// wire (basic groups excepted — they have none by design). Typical
+	// after a restart cleared the cache the previous page had seeded.
+	if offsetPeer != nil && offsetPeer.Type != telegram.PeerChat && offsetPeer.AccessHash == 0 {
+		return nil, validationErr(ErrOffsetPeerUnresolved)
+	}
+
 	return &telegram.SearchGlobalOpts{
 		Limit:      deref(params.Limit),
 		Filter:     params.Filter,

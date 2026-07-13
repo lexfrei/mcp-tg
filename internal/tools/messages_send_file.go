@@ -24,9 +24,12 @@ type MessagesSendFileParams struct {
 }
 
 // MessagesSendFileResult is the output of the tg_messages_send_file tool.
+//
+// EntitiesParsed mirrors MessagesSendResult: present even at 0.
 type MessagesSendFileResult struct {
-	MessageID int    `json:"messageId"`
-	Output    string `json:"output"`
+	MessageID      int    `json:"messageId"`
+	EntitiesParsed int    `json:"entitiesParsed"`
+	Output         string `json:"output"`
 }
 
 // NewMessagesSendFileHandler creates a handler for the tg_messages_send_file tool.
@@ -72,8 +75,9 @@ func NewMessagesSendFileHandler(
 		}
 
 		return nil, MessagesSendFileResult{
-			MessageID: msgID,
-			Output:    fmt.Sprintf("File sent to %s (message ID: %d)", params.Peer, msgID),
+			MessageID:      msgID,
+			EntitiesParsed: entityCount(msg),
+			Output:         fmt.Sprintf("File sent to %s (message ID: %d)", params.Peer, msgID),
 		}, nil
 	}
 }

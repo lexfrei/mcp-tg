@@ -24,9 +24,13 @@ type MediaSendAlbumParams struct {
 }
 
 // MediaSendAlbumResult is the output of the tg_media_send_album tool.
+//
+// EntitiesParsed sums the caption entities across the album's echoed
+// messages; present even at 0.
 type MediaSendAlbumResult struct {
-	Count  int    `json:"count"`
-	Output string `json:"output"`
+	Count          int    `json:"count"`
+	EntitiesParsed int    `json:"entitiesParsed"`
+	Output         string `json:"output"`
 }
 
 // NewMediaSendAlbumHandler creates a handler for the tg_media_send_album tool.
@@ -67,8 +71,9 @@ func NewMediaSendAlbumHandler(
 		}
 
 		return nil, MediaSendAlbumResult{
-			Count:  len(msgs),
-			Output: fmt.Sprintf("Sent album with %d file(s) to %s", len(msgs), params.Peer),
+			Count:          len(msgs),
+			EntitiesParsed: entityCountAll(msgs),
+			Output:         fmt.Sprintf("Sent album with %d file(s) to %s", len(msgs), params.Peer),
 		}, nil
 	}
 }

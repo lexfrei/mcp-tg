@@ -122,6 +122,30 @@ func validateDateRange(minDate, maxDate int) error {
 	return nil
 }
 
+// entityCount returns how many formatting entities the server echoed
+// back for a sent or edited message; nil-safe because some echo shapes
+// yield no message at all.
+func entityCount(msg *telegram.Message) int {
+	if msg == nil {
+		return 0
+	}
+
+	return len(msg.Entities)
+}
+
+// entityCountAll sums the echoed entities across an album's messages.
+// The sum is used instead of "the first message" because the server's
+// update order is not a contract — only the captioned item carries
+// entities, so the result is the same either way.
+func entityCountAll(msgs []telegram.Message) int {
+	total := 0
+	for i := range msgs {
+		total += len(msgs[i].Entities)
+	}
+
+	return total
+}
+
 // validatePlainText rejects markdown-looking text sent with
 // parseMode=plain unless allowRaw overrides. Empty text (a file or
 // album without a caption) always passes.

@@ -25,9 +25,14 @@ type MessagesSendParams struct {
 }
 
 // MessagesSendResult is the output of the tg_messages_send tool.
+//
+// EntitiesParsed is the number of formatting entities the server
+// accepted — deliberately serialized even at 0, since 0 after a
+// commonmark send is the caller's signal that nothing parsed.
 type MessagesSendResult struct {
-	MessageID int    `json:"messageId"`
-	Output    string `json:"output"`
+	MessageID      int    `json:"messageId"`
+	EntitiesParsed int    `json:"entitiesParsed"`
+	Output         string `json:"output"`
 }
 
 // NewMessagesSendHandler creates a handler for the tg_messages_send tool.
@@ -73,8 +78,9 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 		}
 
 		return nil, MessagesSendResult{
-			MessageID: msgID,
-			Output:    fmt.Sprintf("Message sent (ID: %d)", msgID),
+			MessageID:      msgID,
+			EntitiesParsed: entityCount(msg),
+			Output:         fmt.Sprintf("Message sent (ID: %d)", msgID),
 		}, nil
 	}
 }

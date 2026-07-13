@@ -28,11 +28,9 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`; `tg_messages_search_global` pages through a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`)
 
-## Tools (78 registered; 68 listed below)
+## Tools (78)
 
-The categorised list below documents 68 of the 78 registered tools — the remaining 10 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
-
-### Messages (13)
+### Messages (16)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
@@ -47,14 +45,19 @@ The categorised list below documents 68 of the 78 registered tools — the remai
 - `tg_messages_pin` — Pin or unpin a message
 - `tg_messages_react` — Add or remove reactions
 - `tg_messages_mark_read` — Mark messages as read
+- `tg_messages_get_reactions` — List who reacted to a message
+- `tg_messages_get_scheduled` — List messages scheduled for later delivery
+- `tg_messages_delete_history` — Delete an entire chat history
 
-### Dialogs (3)
+### Dialogs (5)
 
 - `tg_dialogs_list` — List all dialogs
 - `tg_dialogs_search` — Search dialogs by query
 - `tg_dialogs_get_info` — Get chat/channel metadata
+- `tg_dialogs_pin` — Pin or unpin a dialog
+- `tg_dialogs_mark_unread` — Mark a dialog as unread or read
 
-### Contacts & Users (6)
+### Contacts & Users (10)
 
 - `tg_contacts_get` — Get contact info
 - `tg_contacts_search` — Search contacts
@@ -62,8 +65,12 @@ The categorised list below documents 68 of the 78 registered tools — the remai
 - `tg_users_get_photos` — Get user profile photos
 - `tg_users_block` — Block or unblock a user
 - `tg_users_get_common_chats` — Get chats shared with a user
+- `tg_contacts_add` — Add a contact
+- `tg_contacts_delete` — Delete a contact
+- `tg_contacts_get_statuses` — Get online statuses of all contacts
+- `tg_contacts_list_blocked` — List blocked users
 
-### Groups (9)
+### Groups (12)
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
@@ -74,6 +81,9 @@ The categorised list below documents 68 of the 78 registered tools — the remai
 - `tg_groups_members_remove` — Remove a member
 - `tg_groups_invite_link_get` — Get invite link
 - `tg_groups_invite_link_revoke` — Revoke invite link
+- `tg_groups_members_list` — List group members
+- `tg_groups_admin_set` — Promote or demote an admin with specific rights
+- `tg_groups_slowmode` — Set the slowmode delay
 
 ### Chat Management (10)
 
@@ -102,10 +112,12 @@ The categorised list below documents 68 of the 78 registered tools — the remai
 - `tg_profile_set_bio` — Update bio
 - `tg_profile_set_photo` — Set profile photo
 
-### Forum Topics (2)
+### Forum Topics (4)
 
 - `tg_topics_list` — List forum topics
 - `tg_topics_search` — Search forum topics
+- `tg_topics_create` — Create a forum topic
+- `tg_topics_edit` — Rename a forum topic
 
 ### Stickers (3)
 
@@ -117,10 +129,11 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 
 `stickerFileId` is a **decimal string**, not a JSON number. The MCP SDK unmarshals tool arguments into `map[string]any` to apply schema defaults, then re-marshals them, so every JSON number round-trips through `float64`. A sticker document id needs 63 bits and a `float64` mantissa holds 53, which silently corrupts it — `5181593617004757506` arrives as `5181593617004758000`. Quote the id and it survives.
 
-### Drafts (2)
+### Drafts (3)
 
 - `tg_drafts_set` — Set a draft message
 - `tg_drafts_clear` — Clear a draft
+- `tg_messages_clear_all_drafts` — Clear all drafts across every chat
 
 ### Folders (4)
 
@@ -205,11 +218,11 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 
 ## Search Filters and Pagination
 
-`tg_messages_search` and `tg_messages_search_global` accept an optional `filter` — Telegram's server-side kind filter, applied before results leave the server. Values: `photos`, `video`, `photo_video`, `document`, `url`, `gif`, `voice`, `music`, `chat_photos`, `round_voice`, `round_video`, `my_mentions`, `geo`, `contacts`, `pinned`, `poll`, `phone_calls`, `missed_calls`. This is a different mechanism from `tg_messages_list`'s `type` parameter: `type` classifies already-fetched messages client-side (and so supports labels like `webpage` or `invoice` that no server filter expresses), while `filter` restricts the search on the server and covers kinds the client labels cannot (`url`, `pinned`, `my_mentions`, `missed_calls`).
+`tg_messages_search` and `tg_messages_search_global` accept an optional `filter` — Telegram's server-side kind filter, applied before results leave the server. Values: `photos`, `video`, `photo_video`, `document`, `url`, `gif`, `voice`, `music`, `round_voice`, `round_video`, `my_mentions`, `geo`, `contacts`, `pinned`, `poll`. Telegram's `chat_photos` and `phone_calls`/`missed_calls` filters are not offered: they match service messages, which the message conversion does not yet surface, so every result page would come back empty. This is a different mechanism from `tg_messages_list`'s `type` parameter: `type` classifies already-fetched messages client-side (and so supports labels like `webpage` or `invoice` that no server filter expresses), while `filter` restricts the search on the server and covers kinds the client labels cannot (`url`, `pinned`, `my_mentions`, `missed_calls`).
 
 Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the window, and both return `total` — the server's full match count across all pages. `tg_messages_search` additionally takes `topicId` (restrict to one forum topic) and `from` (restrict to one sender; same peer formats as `peer`).
 
-`tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: every result carries ready-made `nextRate`, `nextOffsetId` and `nextOffsetPeer` fields — copy them into `offsetRate`, `offsetId` and `offsetPeer` verbatim to fetch the next page. All three omitted means the first page. The peers named in each result page are cached with their access hashes, so the returned `nextOffsetPeer` resolves even for channels the account has never opened.
+`tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: every result carries ready-made `nextRate`, `nextOffsetId` and `nextOffsetPeer` fields — copy them into `offsetRate`, `offsetId` and `offsetPeer` verbatim to fetch the next page. All three omitted means the first page. The peers named in each result page are cached with their access hashes, so the returned `nextOffsetPeer` resolves even for channels the account has never opened. The cache is in-memory, so the cursor does not survive a server restart — a continuation whose peer can no longer be resolved is rejected with a clear error asking to re-run the first page.
 
 ## Markdown — Known Limitations
 

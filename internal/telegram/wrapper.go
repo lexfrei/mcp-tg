@@ -407,7 +407,7 @@ func (w *Wrapper) SendMessage(ctx context.Context, peer InputPeer, text string, 
 		return nil, errors.Wrap(err, "sending message")
 	}
 
-	return echoOrSubmitted(messageFromUpdate(result, randID, req.Entities), 0, req.Entities), nil
+	return echoOrSubmitted(messageFromUpdate(result, peer, randID, req.Entities), 0, req.Entities), nil
 }
 
 // EditMessage edits an existing message.
@@ -484,7 +484,7 @@ func (w *Wrapper) ForwardMessages(
 		return nil, errors.Wrap(err, "forwarding messages")
 	}
 
-	return messagesFromUpdates(result, randIDs...), nil
+	return messagesFromUpdates(result, dest, randIDs...), nil
 }
 
 // PinMessage pins or unpins a message in a chat.
@@ -621,7 +621,7 @@ func (w *Wrapper) SendFile(ctx context.Context, peer InputPeer, path, caption st
 		return nil, errors.Wrap(err, "sending file")
 	}
 
-	return echoOrSubmitted(messageFromUpdate(result, randID, req.Entities), 0, req.Entities), nil
+	return echoOrSubmitted(messageFromUpdate(result, peer, randID, req.Entities), 0, req.Entities), nil
 }
 
 // SendAlbum sends a group of media files.
@@ -676,7 +676,7 @@ func (w *Wrapper) SendAlbum(ctx context.Context, peer InputPeer, paths []string,
 		return nil, errors.Wrap(err, "sending album")
 	}
 
-	return messagesFromUpdates(result, albumRands...), nil
+	return messagesFromUpdates(result, peer, albumRands...), nil
 }
 
 // renderCaption returns the on-the-wire plaintext for a caption after
@@ -1229,7 +1229,7 @@ func (w *Wrapper) SendSticker(
 		return nil, errors.Wrap(err, "sending sticker")
 	}
 
-	return messageFromUpdate(result, randID, nil), nil
+	return messageFromUpdate(result, peer, randID, nil), nil
 }
 
 // SetDraft sets a draft message in a chat.

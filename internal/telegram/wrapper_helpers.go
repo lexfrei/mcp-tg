@@ -933,7 +933,7 @@ func shortSentEntities(upd *tg.UpdateShortSentMessage, submitted []tg.MessageEnt
 	return ConvertEntities(submitted)
 }
 
-func messagesFromUpdates(result tg.UpdatesClass, randIDs ...int64) []Message {
+func messagesFromUpdates(result tg.UpdatesClass, peer InputPeer, randIDs ...int64) []Message {
 	if result == nil {
 		return nil
 	}
@@ -964,7 +964,8 @@ func messagesFromUpdates(result tg.UpdatesClass, randIDs ...int64) []Message {
 		}
 
 		if len(own) > 0 {
-			if _, mine := own[msg.ID]; !mine {
+			_, mine := own[msg.ID]
+			if !mine || !samePeer(msg.PeerID, peer) {
 				continue
 			}
 		}
@@ -1020,7 +1021,9 @@ func enrichUpdateMessage(raw *tg.Message, users, chats map[int64]peerRef) Messag
 // shortSentEntities) and is ignored on every other shape, where the
 // server's message is authoritative — an echo that reports no entities
 // there really means the server applied none.
-func messageFromUpdate(result tg.UpdatesClass, randID int64, submitted []tg.MessageEntityClass) *Message {
+func messageFromUpdate(
+	result tg.UpdatesClass, peer InputPeer, randID int64, submitted []tg.MessageEntityClass,
+) *Message {
 	if result == nil {
 		return nil
 	}
@@ -1044,16 +1047,20 @@ func messageFromUpdate(result tg.UpdatesClass, randID int64, submitted []tg.Mess
 	chatRefs := buildChatRefs(chats)
 
 	if ids := ownMessageIDs(updates, randIDSet(randID)); len(ids) > 0 {
-		return messageWithID(updates, ids, userRefs, chatRefs)
+		return messageWithID(updates, peer, ids, userRefs, chatRefs)
 	}
 
 	return firstMessageFromUpdates(updates, userRefs, chatRefs)
 }
 
 // messageWithID returns the new message whose ID the server paired with
-// our random_id, ignoring whatever else the envelope carries.
+// our random_id, ignoring whatever else the envelope carries. The peer
+// is checked too: message IDs are numbered PER PEER, and a channel's
+// counter runs close to its linked discussion group's, so the group's
+// copy of our post can carry the very same ID — matching on the number
+// alone would read the entity count off a stranger.
 func messageWithID(
-	updates []tg.UpdateClass, ids map[int]struct{}, users, chats map[int64]peerRef,
+	updates []tg.UpdateClass, peer InputPeer, ids map[int]struct{}, users, chats map[int64]peerRef,
 ) *Message {
 	for _, update := range updates {
 		msg := extractNewMessage(update, users, chats)
@@ -1061,7 +1068,7 @@ func messageWithID(
 			continue
 		}
 
-		if _, mine := ids[msg.ID]; mine {
+		if _, mine := ids[msg.ID]; mine && samePeer(msg.PeerID, peer) {
 			return msg
 		}
 	}

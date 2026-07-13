@@ -355,7 +355,7 @@ func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
 		Users:   []tg.UserClass{&tg.User{ID: 10, FirstName: "Bob", Username: "bob"}},
 	}
 
-	got := messageFromUpdate(combined, 0, nil)
+	got := messageFromUpdate(combined, InputPeer{}, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdatesCombined")
 	}
@@ -381,7 +381,7 @@ func TestMessageFromUpdate_ShortSentMessageKeepsEntities(t *testing.T) {
 		&tg.MessageEntityCode{Offset: 5, Length: 3},
 	})
 
-	got := messageFromUpdate(short, 0, nil)
+	got := messageFromUpdate(short, InputPeer{}, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdateShortSentMessage")
 	}
@@ -425,7 +425,7 @@ func TestMessagesFromUpdates_ScheduledMessages(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateNewScheduledMessage{Message: raw}},
 	}
 
-	msgs := messagesFromUpdates(updates)
+	msgs := messagesFromUpdates(updates, InputPeer{})
 	if len(msgs) != 1 {
 		t.Fatalf("got %d messages, want 1 — the scheduled echo was dropped", len(msgs))
 	}
@@ -443,7 +443,7 @@ func TestShortSentEntities_FallsBackToSubmitted(t *testing.T) {
 
 	silent := &tg.UpdateShortSentMessage{ID: 1, Date: 100}
 
-	got := messageFromUpdate(silent, 0, submitted)
+	got := messageFromUpdate(silent, InputPeer{}, 0, submitted)
 	if got == nil || len(got.Entities) != 1 {
 		t.Errorf("a silent short echo must report the submitted entities, got %+v", got)
 	}
@@ -455,7 +455,7 @@ func TestShortSentEntities_FallsBackToSubmitted(t *testing.T) {
 		&tg.MessageEntityItalic{Offset: 3, Length: 2},
 	})
 
-	got = messageFromUpdate(echoed, 0, submitted)
+	got = messageFromUpdate(echoed, InputPeer{}, 0, submitted)
 	if got == nil || len(got.Entities) != 2 {
 		t.Errorf("a non-empty short echo must win, got %+v", got)
 	}
@@ -475,7 +475,7 @@ func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, 0, submitted)
+	got := messageFromUpdate(updates, InputPeer{}, 0, submitted)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -546,7 +546,7 @@ func TestMessageFromUpdate_IgnoresEditUpdates(t *testing.T) {
 		},
 	}
 
-	if got := messageFromUpdate(parentOnly, 0, nil); got != nil {
+	if got := messageFromUpdate(parentOnly, InputPeer{}, 0, nil); got != nil {
 		t.Errorf("a send echo carrying only an edit update must yield nil, got ID=%d", got.ID)
 	}
 }
@@ -565,7 +565,7 @@ func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, 0, nil)
+	got := messageFromUpdate(updates, InputPeer{}, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -606,7 +606,7 @@ func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, 0, nil)
+	got := messageFromUpdate(updates, InputPeer{}, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -824,7 +824,7 @@ func TestMessageFromUpdate_IdentifiesOwnMessageByRandomID(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates, ourRand, nil)
+	got := messageFromUpdate(updates, InputPeer{Type: PeerChannel, ID: 111}, ourRand, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -860,7 +860,7 @@ func TestMessagesFromUpdates_AlbumCountsOwnItemsOnly(t *testing.T) {
 		},
 	}
 
-	msgs := messagesFromUpdates(updates, randA, randB)
+	msgs := messagesFromUpdates(updates, InputPeer{Type: PeerChannel, ID: 111}, randA, randB)
 	if len(msgs) != 2 {
 		t.Errorf("got %d messages for a 2-item album — the group copies were counted", len(msgs))
 	}
@@ -889,5 +889,68 @@ func TestEditedMessageFromUpdate_RejectsSameIDInAnotherPeer(t *testing.T) {
 
 	if len(got.Entities) != 0 {
 		t.Errorf("got %d entities — the other peer's copy was reported as ours", len(got.Entities))
+	}
+}
+
+// TestMessageFromUpdate_RejectsCollidingIDFromAnotherPeer pins that the
+// random_id match is not enough on its own: a channel's ID counter runs
+// close to its linked discussion group's, so the group's copy of our
+// post can carry the very same ID. Matching on the number alone reads
+// the entity count off a stranger.
+func TestMessageFromUpdate_RejectsCollidingIDFromAnotherPeer(t *testing.T) {
+	const ourRand int64 = 77
+
+	copyInGroup := &tg.Message{ID: 5, Date: 100, Message: "copy", PeerID: &tg.PeerChannel{ChannelID: 222}}
+	copyInGroup.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 4},
+		&tg.MessageEntityCode{Offset: 5, Length: 2},
+	})
+
+	mine := &tg.Message{ID: 5, Date: 100, Message: "mine", PeerID: &tg.PeerChannel{ChannelID: 111}}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateMessageID{ID: 5, RandomID: ourRand},
+			&tg.UpdateNewChannelMessage{Message: copyInGroup},
+			&tg.UpdateNewChannelMessage{Message: mine},
+		},
+	}
+
+	got := messageFromUpdate(updates, InputPeer{Type: PeerChannel, ID: 111}, ourRand, nil)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("got %d entities — the linked group's copy was read as ours", len(got.Entities))
+	}
+}
+
+// TestMessagesFromUpdates_AlbumRejectsCollidingIDs is the album mirror:
+// a copy whose ID collides with one of our items must not inflate the
+// file count or the caption's entity total.
+func TestMessagesFromUpdates_AlbumRejectsCollidingIDs(t *testing.T) {
+	const randA, randB int64 = 11, 22
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateMessageID{ID: 1, RandomID: randA},
+			&tg.UpdateMessageID{ID: 2, RandomID: randB},
+			&tg.UpdateNewChannelMessage{
+				Message: &tg.Message{ID: 1, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 111}},
+			},
+			&tg.UpdateNewChannelMessage{
+				Message: &tg.Message{ID: 2, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 111}},
+			},
+			// The linked group's copy, whose counter happens to collide.
+			&tg.UpdateNewChannelMessage{
+				Message: &tg.Message{ID: 2, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 222}},
+			},
+		},
+	}
+
+	msgs := messagesFromUpdates(updates, InputPeer{Type: PeerChannel, ID: 111}, randA, randB)
+	if len(msgs) != 2 {
+		t.Errorf("got %d messages for a 2-item album — a colliding copy was counted", len(msgs))
 	}
 }

@@ -213,14 +213,19 @@ func validSlowmode(sec int) bool {
 	}
 }
 
-// validateParseMode rejects unknown parseMode values and flags modes
-// that are recognised but not yet implemented. Empty string means
-// "plain text" and is always accepted. Comparison is case-insensitive
-// so callers can pass "Markdown" or "COMMONMARK" without error.
+// validateParseMode accepts exactly 'plain' and 'commonmark'. There is
+// deliberately no default and no legacy alias: an omitted mode and the
+// retired 'markdown' spelling each get their own steering error.
+// Comparison is case-insensitive here as defense in depth — the schema
+// enum enforces strict lowercase before the handler ever runs.
 func validateParseMode(mode string) error {
 	switch normalizeParseMode(mode) {
-	case "", telegram.ParseModeMarkdown, telegram.ParseModeCommonMark:
+	case telegram.ParseModePlain, telegram.ParseModeCommonMark:
 		return nil
+	case "":
+		return ErrParseModeRequired
+	case telegram.ParseModeMarkdown:
+		return ErrMarkdownAliasRemoved
 	case telegram.ParseModeHTML, telegram.ParseModeMarkdownV2:
 		return ErrParseModeNotImplemented
 	default:

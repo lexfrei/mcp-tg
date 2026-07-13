@@ -103,10 +103,22 @@ var ErrInvalidSlowmode = errors.New(
 	"invalid slowmode seconds; allowed: 0,10,30,60,300,900,3600,21600,43200",
 )
 
+// ErrParseModeRequired is returned when parseMode is missing. There is
+// no default on purpose: optional formatting params get systematically
+// omitted by LLM callers, and markdown then ships as literal asterisks.
+var ErrParseModeRequired = errors.New(
+	"parseMode is required; pass 'plain' (no formatting) or 'commonmark'",
+)
+
+// ErrMarkdownAliasRemoved is returned for the retired 'markdown' alias.
+var ErrMarkdownAliasRemoved = errors.New(
+	"parseMode 'markdown' is no longer accepted; use 'commonmark'",
+)
+
 // ErrUnknownParseMode is returned when parseMode is a value the wrapper
 // does not recognise.
 var ErrUnknownParseMode = errors.New(
-	"unknown parseMode; allowed: '' (plain), 'commonmark', 'markdown' (alias for commonmark), 'html', 'markdownv2'",
+	"unknown parseMode; allowed: 'plain', 'commonmark'",
 )
 
 // ErrUnknownMessageType is returned when a messages_list type filter is

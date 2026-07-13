@@ -256,7 +256,7 @@ func TestMessagesSendHandler_EmptyPeer(t *testing.T) {
 
 	result, _, err := handler(
 		context.Background(), nil,
-		MessagesSendParams{Text: "hello"},
+		MessagesSendParams{ParseMode: "plain", Text: "hello"},
 	)
 	if err == nil {
 		t.Fatal("expected error for empty peer")
@@ -277,7 +277,7 @@ func TestMessagesSendFileHandler_EmptyPeer(t *testing.T) {
 
 	result, _, err := handler(
 		context.Background(), nil,
-		MessagesSendFileParams{Path: "/tmp/f"},
+		MessagesSendFileParams{ParseMode: "plain", Path: "/tmp/f"},
 	)
 	if err == nil {
 		t.Fatal("expected error for empty peer")
@@ -298,7 +298,7 @@ func TestMessagesSendFileHandler_EmptyPath(t *testing.T) {
 
 	result, _, err := handler(
 		context.Background(), nil,
-		MessagesSendFileParams{Peer: "@user"},
+		MessagesSendFileParams{ParseMode: "plain", Peer: "@user"},
 	)
 	if err == nil {
 		t.Fatal("expected error for empty path")
@@ -319,7 +319,7 @@ func TestMediaSendAlbumHandler_EmptyPeer(t *testing.T) {
 
 	result, _, err := handler(
 		context.Background(), nil,
-		MediaSendAlbumParams{Paths: []string{"/f"}},
+		MediaSendAlbumParams{ParseMode: "plain", Paths: []string{"/f"}},
 	)
 	if err == nil {
 		t.Fatal("expected error for empty peer")
@@ -340,7 +340,7 @@ func TestMediaSendAlbumHandler_EmptyPaths(t *testing.T) {
 
 	result, _, err := handler(
 		context.Background(), nil,
-		MediaSendAlbumParams{Peer: "@user"},
+		MediaSendAlbumParams{ParseMode: "plain", Peer: "@user"},
 	)
 	if err == nil {
 		t.Fatal("expected error for empty paths")
@@ -1299,6 +1299,8 @@ func TestMessagesSendHandler_WithTopicID(t *testing.T) {
 	handler := NewMessagesSendHandler(mock)
 
 	_, res, err := handler(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer:    "@chat",
 		Text:    "hello",
 		TopicID: &topicID,
@@ -1329,7 +1331,7 @@ func TestMessagesEditHandler_InvalidParseMode(t *testing.T) {
 		Peer:      "@chat",
 		MessageID: 1,
 		Text:      "hi",
-		ParseMode: &badMode,
+		ParseMode: badMode,
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid parseMode")
@@ -1352,7 +1354,7 @@ func TestMessagesSendHandler_InvalidParseMode(t *testing.T) {
 	result, _, err := handler(context.Background(), nil, MessagesSendParams{
 		Peer:      "@chat",
 		Text:      "hi",
-		ParseMode: &badMode,
+		ParseMode: badMode,
 	})
 	if err == nil {
 		t.Fatal("expected error for invalid parseMode")

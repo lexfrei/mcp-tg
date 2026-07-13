@@ -14,7 +14,7 @@ type MediaSendAlbumParams struct {
 	Paths        []string `json:"paths"                  jsonschema:"Local file paths to send as album"`
 	Caption      *string  `json:"caption,omitempty"      jsonschema:"Optional caption for the album"`
 	TopicID      *int     `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
-	ParseMode    *string  `json:"parseMode,omitempty"    jsonschema:"Caption: '' plain; 'commonmark'/'markdown' subset"`
+	ParseMode    string   `json:"parseMode"              jsonschema:"Caption: 'plain' (no formatting) or 'commonmark' subset"`
 	Silent       *bool    `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int     `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 	SendAs       *string  `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for chat default"`
@@ -45,7 +45,7 @@ func NewMediaSendAlbumHandler(
 				validationErr(ErrPathsRequired)
 		}
 
-		pmErr := validateParseMode(deref(params.ParseMode))
+		pmErr := validateParseMode(params.ParseMode)
 		if pmErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{},
 				validationErr(pmErr)
@@ -96,7 +96,7 @@ func sendAlbum(
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
-		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
+		ParseMode:    normalizeParseMode(params.ParseMode),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 		SendAs:       sendAs,
@@ -119,7 +119,9 @@ func MediaSendAlbumTool() *mcp.Tool {
 		Name: "tg_media_send_album",
 		Description: "Send multiple files as an album to a Telegram chat. " +
 			"The optional caption is attached to the FIRST file only — Telegram " +
-			"renders one caption per album, not per item.",
+			"renders one caption per album, not per item. " +
+			"(caption parseMode is required: 'plain' or 'commonmark')",
+		InputSchema: inputSchemaWithEnum[MediaSendAlbumParams]("parseMode", parseModeEnum()),
 		Annotations: writeAnnotations(),
 	}
 }

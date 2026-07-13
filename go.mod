@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/cockroachdb/errors v1.14.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/gotd/log/logzap v0.1.1
 	github.com/gotd/td v0.160.0
 	github.com/lexfrei/keychain v1.1.1
@@ -31,7 +32,6 @@ require (
 	github.com/go-faster/yaml v0.4.6 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gotd/ige v0.2.2 // indirect
 	github.com/gotd/log v0.1.0 // indirect

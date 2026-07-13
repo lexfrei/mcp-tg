@@ -14,7 +14,7 @@ type MessagesSendFileParams struct {
 	Path         string  `json:"path"                   jsonschema:"Local file path to send"`
 	Caption      *string `json:"caption,omitempty"      jsonschema:"Optional caption for the file"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
-	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"Caption format: '' plain; 'commonmark'/'markdown' (subset, see README)"`
+	ParseMode    string  `json:"parseMode"              jsonschema:"Caption: 'plain' (no formatting) or 'commonmark' (subset, see README)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`
@@ -45,7 +45,7 @@ func NewMessagesSendFileHandler(
 				validationErr(ErrPathRequired)
 		}
 
-		pmErr := validateParseMode(deref(params.ParseMode))
+		pmErr := validateParseMode(params.ParseMode)
 		if pmErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{},
 				validationErr(pmErr)
@@ -98,7 +98,7 @@ func uploadAndSendFile(
 
 	opts := telegram.SendOpts{
 		TopicID:      deref(params.TopicID),
-		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
+		ParseMode:    normalizeParseMode(params.ParseMode),
 		Silent:       deref(params.Silent),
 		ScheduleDate: deref(params.ScheduleDate),
 		SendAs:       sendAs,
@@ -118,8 +118,10 @@ func uploadAndSendFile(
 // MessagesSendFileTool returns the MCP tool definition for tg_messages_send_file.
 func MessagesSendFileTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_messages_send_file",
-		Description: "Send a file to a Telegram chat",
+		Name: "tg_messages_send_file",
+		Description: "Send a file to a Telegram chat " +
+			"(caption parseMode is required: 'plain' or 'commonmark')",
+		InputSchema: inputSchemaWithEnum[MessagesSendFileParams]("parseMode", parseModeEnum()),
 		Annotations: writeAnnotations(),
 	}
 }

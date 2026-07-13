@@ -10,10 +10,10 @@ import (
 
 // MessagesEditParams defines the parameters for the tg_messages_edit tool.
 type MessagesEditParams struct {
-	Peer      string  `json:"peer"                jsonschema:"@username, t.me/ link, or numeric ID"`
-	MessageID int     `json:"messageId"           jsonschema:"ID of the message to edit"`
-	Text      string  `json:"text"                jsonschema:"New message text"`
-	ParseMode *string `json:"parseMode,omitempty" jsonschema:"'' plain; 'commonmark' (CommonMark subset, see README); 'markdown' alias"`
+	Peer      string `json:"peer"      jsonschema:"@username, t.me/ link, or numeric ID"`
+	MessageID int    `json:"messageId" jsonschema:"ID of the message to edit"`
+	Text      string `json:"text"      jsonschema:"New message text"`
+	ParseMode string `json:"parseMode" jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset, see README)"`
 }
 
 // MessagesEditResult is the output of the tg_messages_edit tool.
@@ -44,7 +44,7 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 				validationErr(ErrTextRequired)
 		}
 
-		pmErr := validateParseMode(deref(params.ParseMode))
+		pmErr := validateParseMode(params.ParseMode)
 		if pmErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
 				validationErr(pmErr)
@@ -56,7 +56,7 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 				telegramErr("failed to resolve peer", err)
 		}
 
-		msg, err := client.EditMessage(ctx, peer, params.MessageID, params.Text, normalizeParseMode(deref(params.ParseMode)))
+		msg, err := client.EditMessage(ctx, peer, params.MessageID, params.Text, normalizeParseMode(params.ParseMode))
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesEditResult{},
 				telegramErr("failed to edit message", err)
@@ -77,8 +77,10 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 // MessagesEditTool returns the MCP tool definition for tg_messages_edit.
 func MessagesEditTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_messages_edit",
-		Description: "Edit an existing message in a Telegram chat (supports markdown formatting)",
+		Name: "tg_messages_edit",
+		Description: "Edit an existing message in a Telegram chat " +
+			"(parseMode is required: 'plain' or 'commonmark')",
+		InputSchema: inputSchemaWithEnum[MessagesEditParams]("parseMode", parseModeEnum()),
 		Annotations: idempotentAnnotations(),
 	}
 }

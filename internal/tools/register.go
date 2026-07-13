@@ -4,8 +4,37 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// parseModeEnum locks the parseMode schema property to the telegram
+// constants, so the protocol itself rejects anything but the two modes
+// before a handler runs.
+func parseModeEnum() []any {
+	return []any{telegram.ParseModePlain, telegram.ParseModeCommonMark}
+}
+
+// inputSchemaWithEnum infers the input schema for P exactly as
+// mcp.AddTool would, then constrains one property to an enum. It
+// panics on a bad property name at registration time — the same
+// failure mode mcp.AddTool itself has for an invalid schema.
+func inputSchemaWithEnum[P any](property string, values []any) *jsonschema.Schema {
+	schema, err := jsonschema.For[P](nil)
+	if err != nil {
+		panic(err)
+	}
+
+	prop, ok := schema.Properties[property]
+	if !ok {
+		panic("inputSchemaWithEnum: no property " + property)
+	}
+
+	prop.Enum = values
+
+	return schema
+}
 
 // BoolFieldRegistry mirrors middleware.BoolFieldRegistry without creating a
 // dependency on the middleware package. The cmd/mcp-tg entry point passes

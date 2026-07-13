@@ -14,7 +14,7 @@ type MessagesSendParams struct {
 	Text         string  `json:"text"                   jsonschema:"Message text to send"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
-	ParseMode    *string `json:"parseMode,omitempty"    jsonschema:"'' plain; 'commonmark' (CommonMark subset, see README); 'markdown' alias"`
+	ParseMode    string  `json:"parseMode"              jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset, see README)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`
@@ -85,14 +85,14 @@ func validateSendParams(params *MessagesSendParams) error {
 		return ErrTextRequired
 	}
 
-	return validateParseMode(deref(params.ParseMode))
+	return validateParseMode(params.ParseMode)
 }
 
 func sendOptsFrom(params *MessagesSendParams) telegram.SendOpts {
 	return telegram.SendOpts{
 		ReplyTo:      deref(params.ReplyTo),
 		TopicID:      deref(params.TopicID),
-		ParseMode:    normalizeParseMode(deref(params.ParseMode)),
+		ParseMode:    normalizeParseMode(params.ParseMode),
 		Silent:       deref(params.Silent),
 		NoWebpage:    deref(params.NoWebpage),
 		ScheduleDate: deref(params.ScheduleDate),
@@ -102,8 +102,10 @@ func sendOptsFrom(params *MessagesSendParams) telegram.SendOpts {
 // MessagesSendTool returns the MCP tool definition for tg_messages_send.
 func MessagesSendTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_messages_send",
-		Description: "Send a text message to a Telegram chat (supports markdown, silent mode, and scheduling)",
+		Name: "tg_messages_send",
+		Description: "Send a text message to a Telegram chat (silent mode, scheduling; " +
+			"parseMode is required: 'plain' or 'commonmark')",
+		InputSchema: inputSchemaWithEnum[MessagesSendParams]("parseMode", parseModeEnum()),
 		Annotations: writeAnnotations(),
 	}
 }

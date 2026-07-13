@@ -12,25 +12,26 @@ import (
 // — a client-side classification applied after fetching — these map 1:1
 // onto Telegram's server-side InputMessagesFilter constructors, so the
 // server returns only matching messages.
+// Telegram's chatPhotos and phoneCalls filters are deliberately not
+// offered: they match service messages (messageActionChatEditPhoto,
+// messageActionPhoneCall), which convertMessages does not surface, so
+// every result page would come back empty while total reports matches.
 const (
-	SearchFilterPhotos      = "photos"
-	SearchFilterVideo       = "video"
-	SearchFilterPhotoVideo  = "photo_video"
-	SearchFilterDocument    = "document"
-	SearchFilterURL         = "url"
-	SearchFilterGif         = "gif"
-	SearchFilterVoice       = "voice"
-	SearchFilterMusic       = "music"
-	SearchFilterChatPhotos  = "chat_photos"
-	SearchFilterRoundVoice  = "round_voice"
-	SearchFilterRoundVideo  = "round_video"
-	SearchFilterMyMentions  = "my_mentions"
-	SearchFilterGeo         = "geo"
-	SearchFilterContacts    = "contacts"
-	SearchFilterPinned      = "pinned"
-	SearchFilterPoll        = "poll"
-	SearchFilterPhoneCalls  = "phone_calls"
-	SearchFilterMissedCalls = "missed_calls"
+	SearchFilterPhotos     = "photos"
+	SearchFilterVideo      = "video"
+	SearchFilterPhotoVideo = "photo_video"
+	SearchFilterDocument   = "document"
+	SearchFilterURL        = "url"
+	SearchFilterGif        = "gif"
+	SearchFilterVoice      = "voice"
+	SearchFilterMusic      = "music"
+	SearchFilterRoundVoice = "round_voice"
+	SearchFilterRoundVideo = "round_video"
+	SearchFilterMyMentions = "my_mentions"
+	SearchFilterGeo        = "geo"
+	SearchFilterContacts   = "contacts"
+	SearchFilterPinned     = "pinned"
+	SearchFilterPoll       = "poll"
 )
 
 // Search scope names accepted by SearchGlobalOpts.Scope, restricting a
@@ -47,37 +48,27 @@ var ErrUnknownSearchFilter = errors.New("unknown search filter")
 
 // searchFilterFactories maps filter names onto constructors of the
 // corresponding TL filter. A map rather than a switch keeps the mapping
-// a single lookup regardless of how many filters exist. Factories are
-// necessary because the missed_calls entry must set a conditional flag
-// bit — a shared instance mutated in place would leak into later calls.
+// a single lookup regardless of how many filters exist, and factories
+// (rather than shared instances) keep a future conditional-flag filter
+// from leaking state between calls.
 func searchFilterFactories() map[string]func() tg.MessagesFilterClass {
 	return map[string]func() tg.MessagesFilterClass{
-		SearchFilterPhotos:      func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPhotos{} },
-		SearchFilterVideo:       func() tg.MessagesFilterClass { return &tg.InputMessagesFilterVideo{} },
-		SearchFilterPhotoVideo:  func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPhotoVideo{} },
-		SearchFilterDocument:    func() tg.MessagesFilterClass { return &tg.InputMessagesFilterDocument{} },
-		SearchFilterURL:         func() tg.MessagesFilterClass { return &tg.InputMessagesFilterURL{} },
-		SearchFilterGif:         func() tg.MessagesFilterClass { return &tg.InputMessagesFilterGif{} },
-		SearchFilterVoice:       func() tg.MessagesFilterClass { return &tg.InputMessagesFilterVoice{} },
-		SearchFilterMusic:       func() tg.MessagesFilterClass { return &tg.InputMessagesFilterMusic{} },
-		SearchFilterChatPhotos:  func() tg.MessagesFilterClass { return &tg.InputMessagesFilterChatPhotos{} },
-		SearchFilterRoundVoice:  func() tg.MessagesFilterClass { return &tg.InputMessagesFilterRoundVoice{} },
-		SearchFilterRoundVideo:  func() tg.MessagesFilterClass { return &tg.InputMessagesFilterRoundVideo{} },
-		SearchFilterMyMentions:  func() tg.MessagesFilterClass { return &tg.InputMessagesFilterMyMentions{} },
-		SearchFilterGeo:         func() tg.MessagesFilterClass { return &tg.InputMessagesFilterGeo{} },
-		SearchFilterContacts:    func() tg.MessagesFilterClass { return &tg.InputMessagesFilterContacts{} },
-		SearchFilterPinned:      func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPinned{} },
-		SearchFilterPoll:        func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPoll{} },
-		SearchFilterPhoneCalls:  func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPhoneCalls{} },
-		SearchFilterMissedCalls: missedCallsFilter,
+		SearchFilterPhotos:     func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPhotos{} },
+		SearchFilterVideo:      func() tg.MessagesFilterClass { return &tg.InputMessagesFilterVideo{} },
+		SearchFilterPhotoVideo: func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPhotoVideo{} },
+		SearchFilterDocument:   func() tg.MessagesFilterClass { return &tg.InputMessagesFilterDocument{} },
+		SearchFilterURL:        func() tg.MessagesFilterClass { return &tg.InputMessagesFilterURL{} },
+		SearchFilterGif:        func() tg.MessagesFilterClass { return &tg.InputMessagesFilterGif{} },
+		SearchFilterVoice:      func() tg.MessagesFilterClass { return &tg.InputMessagesFilterVoice{} },
+		SearchFilterMusic:      func() tg.MessagesFilterClass { return &tg.InputMessagesFilterMusic{} },
+		SearchFilterRoundVoice: func() tg.MessagesFilterClass { return &tg.InputMessagesFilterRoundVoice{} },
+		SearchFilterRoundVideo: func() tg.MessagesFilterClass { return &tg.InputMessagesFilterRoundVideo{} },
+		SearchFilterMyMentions: func() tg.MessagesFilterClass { return &tg.InputMessagesFilterMyMentions{} },
+		SearchFilterGeo:        func() tg.MessagesFilterClass { return &tg.InputMessagesFilterGeo{} },
+		SearchFilterContacts:   func() tg.MessagesFilterClass { return &tg.InputMessagesFilterContacts{} },
+		SearchFilterPinned:     func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPinned{} },
+		SearchFilterPoll:       func() tg.MessagesFilterClass { return &tg.InputMessagesFilterPoll{} },
 	}
-}
-
-func missedCallsFilter() tg.MessagesFilterClass {
-	filter := &tg.InputMessagesFilterPhoneCalls{}
-	filter.SetMissed(true)
-
-	return filter
 }
 
 // SearchFilters returns the accepted filter names in sorted order, for

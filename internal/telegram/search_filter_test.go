@@ -11,24 +11,21 @@ import (
 
 func searchFilterCases() map[string]tg.MessagesFilterClass {
 	return map[string]tg.MessagesFilterClass{
-		SearchFilterPhotos:      &tg.InputMessagesFilterPhotos{},
-		SearchFilterVideo:       &tg.InputMessagesFilterVideo{},
-		SearchFilterPhotoVideo:  &tg.InputMessagesFilterPhotoVideo{},
-		SearchFilterDocument:    &tg.InputMessagesFilterDocument{},
-		SearchFilterURL:         &tg.InputMessagesFilterURL{},
-		SearchFilterGif:         &tg.InputMessagesFilterGif{},
-		SearchFilterVoice:       &tg.InputMessagesFilterVoice{},
-		SearchFilterMusic:       &tg.InputMessagesFilterMusic{},
-		SearchFilterChatPhotos:  &tg.InputMessagesFilterChatPhotos{},
-		SearchFilterRoundVoice:  &tg.InputMessagesFilterRoundVoice{},
-		SearchFilterRoundVideo:  &tg.InputMessagesFilterRoundVideo{},
-		SearchFilterMyMentions:  &tg.InputMessagesFilterMyMentions{},
-		SearchFilterGeo:         &tg.InputMessagesFilterGeo{},
-		SearchFilterContacts:    &tg.InputMessagesFilterContacts{},
-		SearchFilterPinned:      &tg.InputMessagesFilterPinned{},
-		SearchFilterPoll:        &tg.InputMessagesFilterPoll{},
-		SearchFilterPhoneCalls:  &tg.InputMessagesFilterPhoneCalls{},
-		SearchFilterMissedCalls: &tg.InputMessagesFilterPhoneCalls{},
+		SearchFilterPhotos:     &tg.InputMessagesFilterPhotos{},
+		SearchFilterVideo:      &tg.InputMessagesFilterVideo{},
+		SearchFilterPhotoVideo: &tg.InputMessagesFilterPhotoVideo{},
+		SearchFilterDocument:   &tg.InputMessagesFilterDocument{},
+		SearchFilterURL:        &tg.InputMessagesFilterURL{},
+		SearchFilterGif:        &tg.InputMessagesFilterGif{},
+		SearchFilterVoice:      &tg.InputMessagesFilterVoice{},
+		SearchFilterMusic:      &tg.InputMessagesFilterMusic{},
+		SearchFilterRoundVoice: &tg.InputMessagesFilterRoundVoice{},
+		SearchFilterRoundVideo: &tg.InputMessagesFilterRoundVideo{},
+		SearchFilterMyMentions: &tg.InputMessagesFilterMyMentions{},
+		SearchFilterGeo:        &tg.InputMessagesFilterGeo{},
+		SearchFilterContacts:   &tg.InputMessagesFilterContacts{},
+		SearchFilterPinned:     &tg.InputMessagesFilterPinned{},
+		SearchFilterPoll:       &tg.InputMessagesFilterPoll{},
 	}
 }
 
@@ -47,35 +44,20 @@ func TestSearchFilterToTG_MapsEveryName(t *testing.T) {
 	}
 }
 
-func TestSearchFilterToTG_MissedCallsSetsMissed(t *testing.T) {
-	got, err := searchFilterToTG(SearchFilterMissedCalls)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+// TestSearchFilterToTG_ServiceMessageFiltersRejected pins that the
+// filters matching only service messages stay out of the accepted set:
+// convertMessages drops tg.MessageService, so offering them would
+// return permanently empty pages while total reports matches.
+func TestSearchFilterToTG_ServiceMessageFiltersRejected(t *testing.T) {
+	for _, name := range []string{"chat_photos", "phone_calls", "missed_calls"} {
+		if IsSearchFilter(name) {
+			t.Errorf("IsSearchFilter(%q) = true, want false until service messages are surfaced", name)
+		}
 
-	calls, ok := got.(*tg.InputMessagesFilterPhoneCalls)
-	if !ok {
-		t.Fatalf("got %T, want *tg.InputMessagesFilterPhoneCalls", got)
-	}
-
-	if !calls.GetMissed() {
-		t.Error("missed_calls filter must set the Missed flag")
-	}
-}
-
-func TestSearchFilterToTG_PhoneCallsKeepsMissedClear(t *testing.T) {
-	got, err := searchFilterToTG(SearchFilterPhoneCalls)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	calls, ok := got.(*tg.InputMessagesFilterPhoneCalls)
-	if !ok {
-		t.Fatalf("got %T, want *tg.InputMessagesFilterPhoneCalls", got)
-	}
-
-	if calls.GetMissed() {
-		t.Error("phone_calls filter must not set the Missed flag")
+		_, err := searchFilterToTG(name)
+		if !errors.Is(err, ErrUnknownSearchFilter) {
+			t.Errorf("searchFilterToTG(%q) must reject the name, got err = %v", name, err)
+		}
 	}
 }
 

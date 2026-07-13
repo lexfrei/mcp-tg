@@ -10,7 +10,7 @@ import (
 // MessagesSearchParams defines the parameters for the tg_messages_search tool.
 type MessagesSearchParams struct {
 	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
-	Query          string `json:"query,omitempty"          jsonschema:"Search query (optional when filter is set)"`
+	Query          string `json:"query,omitempty"          jsonschema:"Search query (optional when filter or from is set)"`
 	TopicID        *int   `json:"topicId,omitempty"        jsonschema:"Forum topic ID to search within"`
 	From           string `json:"from,omitempty"           jsonschema:"Only messages from this sender (@username, t.me/ link, or numeric ID)"`
 	Filter         string `json:"filter,omitempty"         jsonschema:"Server-side kind filter (photos, video, document, url, voice, ...)"`
@@ -80,8 +80,8 @@ func validateSearchParams(params *MessagesSearchParams) error {
 		return ErrPeerRequired
 	}
 
-	if params.Query == "" && params.Filter == "" {
-		return ErrQueryOrFilterRequired
+	if params.Query == "" && params.Filter == "" && params.From == "" {
+		return ErrSearchCriteriaRequired
 	}
 
 	limitErr := validateLimit(deref(params.Limit))

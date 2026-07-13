@@ -92,8 +92,36 @@ func TestMessagesSearchHandler_EmptyQueryWithoutFilterRejected(t *testing.T) {
 
 	_, _, err := handler(context.Background(), searchRequest(),
 		MessagesSearchParams{Peer: testChatPeer})
-	if !errors.Is(err, ErrQueryOrFilterRequired) {
-		t.Errorf("err = %v, want ErrQueryOrFilterRequired", err)
+	if !errors.Is(err, ErrSearchCriteriaRequired) {
+		t.Errorf("err = %v, want ErrSearchCriteriaRequired", err)
+	}
+}
+
+// TestMessagesSearchHandler_FromOnlyAllowed pins that a bare sender
+// filter is a valid search — "all messages from this member" is what
+// official clients send as q="" + from_id — so the empty-criteria
+// check must count from as a qualifier.
+func TestMessagesSearchHandler_FromOnlyAllowed(t *testing.T) {
+	mock := &mockClient{peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1, AccessHash: 2}}
+	handler := NewMessagesSearchHandler(mock)
+
+	_, _, err := handler(context.Background(), searchRequest(),
+		MessagesSearchParams{Peer: testChatPeer, From: "@sender"})
+	if err != nil {
+		t.Fatalf("from-only search must be valid, got: %v", err)
+	}
+
+	if mock.lastSearchOpts.FromID == nil {
+		t.Error("FromID must be threaded into the search opts")
+	}
+}
+
+func TestMessagesSearchHandler_PeerRequired(t *testing.T) {
+	handler := NewMessagesSearchHandler(&mockClient{})
+
+	_, _, err := handler(context.Background(), searchRequest(), MessagesSearchParams{Query: "q"})
+	if !errors.Is(err, ErrPeerRequired) {
+		t.Errorf("err = %v, want ErrPeerRequired", err)
 	}
 }
 

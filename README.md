@@ -226,6 +226,8 @@ Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the wind
 
 ## Parse Mode
 
+**Breaking change in this release.** `parseMode` is now REQUIRED on the four text tools, and the `'markdown'` alias is gone. Migration: a call that omitted `parseMode` (which meant plain text) must now pass `parseMode: "plain"`; a call passing `'markdown'` must pass `'commonmark'`. Both are rejected by schema validation before the request reaches Telegram, so the failure is loud rather than silent. Plain-mode text that looks like markdown is also rejected now — see the lint below.
+
 The four text tools (`tg_messages_send`, `tg_messages_edit`, `tg_messages_send_file`, `tg_media_send_album`) require `parseMode` on every call — `'plain'` or `'commonmark'`, no default. The input schema carries the enum, so a call without a mode (or with the retired `'markdown'` alias) is rejected before it reaches Telegram.
 
 In plain mode, text or captions that look like markdown — code fences, `` `inline code` ``, `**bold**`, `[text](url)`, `<https://autolink>`, `__underline__`, `~~strike~~`, `||spoiler||` — are rejected with "text looks like markdown; pass parseMode='commonmark' to format it, or set allowRawMarkdown=true to send the characters literally". Set `allowRawMarkdown: true` to intentionally send such characters unformatted; it applies to plain mode only and is rejected elsewhere rather than silently ignored. Single `*italic*`/`_italic_` and `>` quotes do not trigger the lint.

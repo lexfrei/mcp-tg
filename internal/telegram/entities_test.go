@@ -201,4 +201,13 @@ func TestIsFormattingEntity_ExcludesServerAutoDetected(t *testing.T) {
 			t.Errorf("IsFormattingEntity(%q) = true, want false — the server adds it unasked", entityType)
 		}
 	}
+
+	// The allow-list must fail safe: an unmapped or future type (Telegram
+	// auto-detects bank cards today, and this package may convert them
+	// tomorrow) counts as formatting only if it is explicitly listed.
+	for _, entityType := range []string{"bank_card", "", "some_future_type"} {
+		if IsFormattingEntity(entityType) {
+			t.Errorf("IsFormattingEntity(%q) = true — unknown types must not count as parsed markdown", entityType)
+		}
+	}
 }

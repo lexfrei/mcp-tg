@@ -469,7 +469,7 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 			"nextRate/nextOffsetId/nextOffsetPeer back as offsetRate/offsetId/offsetPeer verbatim. " +
 			"Text tools require parseMode ('plain' or 'commonmark'); results report entitiesParsed, " +
 			"the formatting-entity count of the sent message (auto-detected links and hashtags excluded) — " +
-			"0 after a commonmark send means nothing parsed. " +
+			"0 after a commonmark send whose text CONTAINED formatting means the markdown did not parse. " +
 			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
 		Logger:            logger,
 		KeepAlive:         keepAliveInterval,

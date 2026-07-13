@@ -157,7 +157,7 @@ func TestServerInstructions_MentionTheCompoundCursor(t *testing.T) {
 func TestServerInstructions_MentionRequiredParseMode(t *testing.T) {
 	opts := newServerOptions(testutil.NoopClient{})
 
-	for _, needle := range []string{"parseMode", "entitiesParsed"} {
+	for _, needle := range []string{"parseMode", "entitiesParsed", "CONTAINED formatting"} {
 		if !strings.Contains(opts.Instructions, needle) {
 			t.Errorf("server instructions no longer mention %s", needle)
 		}
@@ -182,5 +182,9 @@ func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
 
 	if strings.Contains(body, "'markdown' alias") {
 		t.Error("README still documents the retired 'markdown' alias")
+	}
+
+	if !strings.Contains(body, "Breaking change in this release.") {
+		t.Error("README no longer carries the parse-mode migration note")
 	}
 }

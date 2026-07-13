@@ -77,28 +77,23 @@ func NewMessagesSearchGlobalHandler(
 		}
 
 		result := MessagesSearchGlobalResult{
-			Count: len(page.Messages),
-			Total: page.Total,
-			// The cursor is the exact continuation signal: a complete
-			// result carries no next_rate, so a full final page must
-			// not advertise a next page the way the page-saturation
-			// heuristic would.
-			HasMore:  page.NextRate > 0,
-			NextRate: page.NextRate,
+			Count:    len(page.Messages),
+			Total:    page.Total,
 			Messages: messagesToItems(page.Messages),
 			Output:   fmt.Sprintf("Found %d of %d message(s)", len(page.Messages), page.Total),
 		}
 
-		// The cursor exists to fetch the next page; a final page
-		// (no nextRate) must not carry one, or a caller keying on the
-		// cursor fields instead of hasMore fetches an empty page.
-		if page.NextRate > 0 && len(page.Messages) > 0 {
-			last := page.Messages[len(page.Messages)-1]
+		// hasMore and the cursor are one atomic signal: the three
+		// cursor fields travel together (partial cursors fail this
+		// tool's own validation), and advertising a next page the
+		// caller cannot address would strand the pagination. A page
+		// that yields no complete cursor — no next_rate, no messages,
+		// or a privacy-hidden last peer — is therefore terminal.
+		if last, ok := nextPageCursor(page); ok {
+			result.HasMore = true
+			result.NextRate = page.NextRate
 			result.NextOffsetID = last.ID
-
-			if last.PeerID.ID != 0 {
-				result.NextOffsetPeer = formatPeer(last.PeerID)
-			}
+			result.NextOffsetPeer = formatPeer(last.PeerID)
 		}
 
 		return nil, result, nil
@@ -131,6 +126,18 @@ func validateSearchGlobalParams(params *MessagesSearchGlobalParams) error {
 	}
 
 	return validateDateRange(deref(params.MinDate), deref(params.MaxDate))
+}
+
+// nextPageCursor returns the message anchoring the next-page cursor,
+// and whether a complete cursor can be built at all.
+func nextPageCursor(page telegram.SearchGlobalPage) (telegram.Message, bool) {
+	if page.NextRate <= 0 || len(page.Messages) == 0 {
+		return telegram.Message{}, false
+	}
+
+	last := page.Messages[len(page.Messages)-1]
+
+	return last, last.PeerID.ID != 0
 }
 
 // validateGlobalCursor rejects a partial pagination cursor: the three

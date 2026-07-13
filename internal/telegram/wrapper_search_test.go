@@ -299,6 +299,35 @@ func TestSearchGlobal_NextRateFallsBackToLastMessageDate(t *testing.T) {
 	}
 }
 
+// TestSearchGlobal_ChannelMessagesSeedsCache pins the symmetry with
+// extractMessages: the schema reserves messages.channelMessages for
+// peer-scoped requests, but if the server ever answers a global search
+// with it, the peers must still land in the cache and the total must
+// still be extracted.
+func TestSearchGlobal_ChannelMessagesSeedsCache(t *testing.T) {
+	inv := &searchInvoker{resp: &tg.MessagesChannelMessages{
+		Count: 7,
+		Messages: []tg.MessageClass{
+			&tg.Message{ID: 10, Message: "hit", PeerID: &tg.PeerChannel{ChannelID: 555}},
+		},
+		Chats: []tg.ChatClass{&tg.Channel{ID: 555, AccessHash: 666, Photo: &tg.ChatPhotoEmpty{}}},
+	}}
+	wrapper := newSearchWrapper(inv)
+
+	page, err := wrapper.SearchGlobal(context.Background(), "q", &SearchGlobalOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if page.Total != 7 {
+		t.Errorf("Total = %d, want 7", page.Total)
+	}
+
+	if _, ok := wrapper.cache.Lookup(PeerChannel, 555); !ok {
+		t.Error("the reply's channel must be cached")
+	}
+}
+
 func TestSearchGlobal_UnknownFilterFailsBeforeRPC(t *testing.T) {
 	inv := &searchInvoker{resp: searchSliceResponse()}
 

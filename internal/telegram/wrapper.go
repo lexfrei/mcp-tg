@@ -2006,6 +2006,11 @@ func (w *Wrapper) searchGlobalPage(result tg.MessagesMessagesClass) SearchGlobal
 		w.cachePeersOf(res.Chats, res.Users)
 	case *tg.MessagesMessages:
 		w.cachePeersOf(res.Chats, res.Users)
+	case *tg.MessagesChannelMessages:
+		// The schema reserves this constructor for peer-scoped
+		// requests, but seeding the cache keeps the symmetry with
+		// extractMessages should the server ever answer with it.
+		w.cachePeersOf(res.Chats, res.Users)
 	}
 
 	return page

@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/cockroachdb/errors"
@@ -79,6 +80,100 @@ func TestMessagesSearchGlobalHandler_NextRateAndTotalPropagated(t *testing.T) {
 
 	if res.Total != 42 {
 		t.Errorf("Total = %d, want 42", res.Total)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_ReadyMadeCursor pins that the result
+// carries the full next-page cursor in directly reusable form: the JSON
+// messages[].peerId is a structured object, so callers would otherwise
+// have to convert it to the bot-style string offsetPeer expects.
+func TestMessagesSearchGlobalHandler_ReadyMadeCursor(t *testing.T) {
+	msgs := []telegram.Message{
+		{ID: 20, Date: 2000, Text: "newer", PeerID: telegram.InputPeer{Type: telegram.PeerUser, ID: 5}},
+		{ID: 10, Date: 1000, Text: "older", PeerID: telegram.InputPeer{Type: telegram.PeerChannel, ID: 555}},
+	}
+	mock := &mockClient{messages: msgs, total: 42, nextRate: 99}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextOffsetID != 10 {
+		t.Errorf("NextOffsetID = %d, want the last message's id 10", res.NextOffsetID)
+	}
+
+	if res.NextOffsetPeer != "-1000000000555" {
+		t.Errorf("NextOffsetPeer = %q, want the bot-style channel ID", res.NextOffsetPeer)
+	}
+}
+
+// TestMessagesSearchGlobalHandler_OffsetPeerResolveFailureNamesTheParam
+// pins that a failing cursor-peer resolution blames the offsetPeer
+// parameter, since the tool has no other peer argument to confuse it
+// with but the error would otherwise read as a generic resolve failure.
+func TestMessagesSearchGlobalHandler_OffsetPeerResolveFailureNamesTheParam(t *testing.T) {
+	mock := &mockClient{
+		resolvePeerFn: func(string) (telegram.InputPeer, error) {
+			return telegram.InputPeer{}, errors.New("PEER_ID_INVALID")
+		},
+	}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	res, _, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", OffsetPeer: "-100999"})
+	if err == nil || !strings.Contains(err.Error(), "failed to resolve the offsetPeer peer") {
+		t.Errorf("err = %v, want it to name the offsetPeer parameter", err)
+	}
+
+	if res == nil || !res.IsError {
+		t.Error("result must be marked IsError")
+	}
+}
+
+// TestMessagesSearchGlobalHandler_HasMoreFollowsCursor pins that
+// hasMore is derived from the cursor, not from page saturation: a
+// complete result carries no nextRate, and a full final page must not
+// advertise a next page that does not exist.
+func TestMessagesSearchGlobalHandler_HasMoreFollowsCursor(t *testing.T) {
+	limit := 2
+	mock := &mockClient{messages: messagesWithReply(), total: 2, nextRate: 0}
+	handler := NewMessagesSearchGlobalHandler(mock)
+
+	_, res, err := handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", Limit: &limit})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.HasMore {
+		t.Error("a full page without a cursor must report hasMore=false")
+	}
+
+	mock.nextRate = 99
+
+	_, res, err = handler(context.Background(), nil,
+		MessagesSearchGlobalParams{Query: "q", Limit: &limit})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !res.HasMore {
+		t.Error("a page with a cursor must report hasMore=true")
+	}
+}
+
+func TestMessagesSearchGlobalHandler_EmptyPageHasNoCursor(t *testing.T) {
+	handler := NewMessagesSearchGlobalHandler(&mockClient{})
+
+	_, res, err := handler(context.Background(), nil, MessagesSearchGlobalParams{Query: "q"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.NextOffsetID != 0 || res.NextOffsetPeer != "" {
+		t.Errorf("empty page must carry no cursor, got id=%d peer=%q", res.NextOffsetID, res.NextOffsetPeer)
 	}
 }
 

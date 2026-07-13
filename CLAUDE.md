@@ -124,7 +124,7 @@ Tools that send messages (`messages_send`, `messages_send_file`, `media_send_alb
 
 Per-chat search scoping to a forum topic uses `messages.search`'s native `top_msg_id` — no extra `GetReplies` RPC like `tg_messages_list`'s `topicId` path needs. The `from` sender filter resolves through `resolveOptionalPeer` (`tools/helpers.go`), which deliberately lacks `resolveSendAs`'s access-hash-zero rejection — that check is send-as-specific.
 
-Global search pagination is a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`), with `nextRate` returned in the result. `SearchGlobal` seeds the peer cache from the reply's `Users[]`/`Chats[]` (same pattern as `tg_chats_get_send_as`) — that is what makes a result's numeric `peerId` usable as `offsetPeer` for chats the account never resolved. Do not remove the seeding: without it, page-2 requests fail on unresolvable numeric peers.
+Global search pagination is a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`); the result returns it ready-made as `nextRate`/`nextOffsetId`/`nextOffsetPeer` (the JSON `messages[].peerId` is a structured object, not the bot-style string `offsetPeer` expects, so callers must not have to convert). When the reply carries no `next_rate`, the wrapper falls back to the last message's date per the documented cursor contract. `SearchGlobal` seeds the peer cache from the reply's `Users[]`/`Chats[]` (same pattern as `tg_chats_get_send_as`) — that is what makes a result's numeric `peerId` usable as `offsetPeer` for chats the account never resolved. Do not remove the seeding: without it, page-2 requests fail on unresolvable numeric peers.
 
 ### Reply metadata
 

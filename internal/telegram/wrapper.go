@@ -1990,7 +1990,15 @@ func (w *Wrapper) searchGlobalPage(result tg.MessagesMessagesClass) SearchGlobal
 
 	switch res := result.(type) {
 	case *tg.MessagesMessagesSlice:
-		page.NextRate, _ = res.GetNextRate()
+		// The documented cursor contract: when the slice carries no
+		// next_rate, the next call's offset_rate is the date of the
+		// last returned message.
+		rate, ok := res.GetNextRate()
+		if !ok && len(msgs) > 0 {
+			rate = msgs[len(msgs)-1].Date
+		}
+
+		page.NextRate = rate
 
 		w.cachePeersOf(res.Chats, res.Users)
 	case *tg.MessagesMessages:

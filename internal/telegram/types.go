@@ -328,10 +328,15 @@ type SearchGlobalOpts struct {
 }
 
 // SearchGlobalPage is one page of cross-chat search results.
+//
+// NextRate is the next page's OffsetRate. When the server omits
+// next_rate on a partial result, it falls back to the last message's
+// date per the documented cursor contract; it is 0 only when there is
+// no further page at all (a complete result or an empty page).
 type SearchGlobalPage struct {
 	Messages []Message
 	Total    int // server's total match count across all pages
-	NextRate int // next page's OffsetRate; 0 when the server sent none
+	NextRate int
 }
 
 // ParseMode values understood by the Telegram wrapper.

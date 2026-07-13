@@ -16,8 +16,8 @@ import (
 // Structural replyTo metadata is still populated.
 //
 // offsetRate/offsetId/offsetPeer form one compound pagination cursor:
-// to fetch the next page, pass the previous result's nextRate together
-// with the last returned message's id and peerId.
+// to fetch the next page, copy the previous result's nextRate,
+// nextOffsetId and nextOffsetPeer into them verbatim.
 type MessagesSearchGlobalParams struct {
 	Query      string `json:"query,omitempty"      jsonschema:"Search query (optional when filter is set)"`
 	Filter     string `json:"filter,omitempty"     jsonschema:"Server-side kind filter (photos, video, document, url, voice, ...)"`
@@ -26,18 +26,25 @@ type MessagesSearchGlobalParams struct {
 	Scope      string `json:"scope,omitempty"      jsonschema:"Restrict to one dialog kind: users, groups, or channels"`
 	Limit      *int   `json:"limit,omitempty"      jsonschema:"Maximum results (default 100)"`
 	OffsetRate *int   `json:"offsetRate,omitempty" jsonschema:"Pagination cursor: nextRate from the previous page"`
-	OffsetID   *int   `json:"offsetId,omitempty"   jsonschema:"Pagination cursor: id of the previous page's last message"`
-	OffsetPeer string `json:"offsetPeer,omitempty" jsonschema:"Pagination cursor: peerId of the previous page's last message"`
+	OffsetID   *int   `json:"offsetId,omitempty"   jsonschema:"Pagination cursor: nextOffsetId from the previous page"`
+	OffsetPeer string `json:"offsetPeer,omitempty" jsonschema:"Pagination cursor: nextOffsetPeer from the previous page"`
 }
 
 // MessagesSearchGlobalResult is the output of tg_messages_search_global.
+//
+// nextRate/nextOffsetId/nextOffsetPeer are the ready-made cursor for
+// the next page: pass them back as offsetRate/offsetId/offsetPeer.
+// They exist because messages[].peerId is a structured object, not the
+// bot-style string offsetPeer expects.
 type MessagesSearchGlobalResult struct {
-	Count    int           `json:"count"`
-	Total    int           `json:"total"`
-	HasMore  bool          `json:"hasMore"`
-	NextRate int           `json:"nextRate,omitempty"`
-	Messages []MessageItem `json:"messages"`
-	Output   string        `json:"output"`
+	Count          int           `json:"count"`
+	Total          int           `json:"total"`
+	HasMore        bool          `json:"hasMore"`
+	NextRate       int           `json:"nextRate,omitempty"`
+	NextOffsetID   int           `json:"nextOffsetId,omitempty"`
+	NextOffsetPeer string        `json:"nextOffsetPeer,omitempty"`
+	Messages       []MessageItem `json:"messages"`
+	Output         string        `json:"output"`
 }
 
 // NewMessagesSearchGlobalHandler creates a handler for tg_messages_search_global.
@@ -69,14 +76,29 @@ func NewMessagesSearchGlobalHandler(
 				telegramErr("failed to search global", err)
 		}
 
-		return nil, MessagesSearchGlobalResult{
-			Count:    len(page.Messages),
-			Total:    page.Total,
-			HasMore:  hasMorePage(len(page.Messages), opts.Limit),
+		result := MessagesSearchGlobalResult{
+			Count: len(page.Messages),
+			Total: page.Total,
+			// The cursor is the exact continuation signal: a complete
+			// result carries no next_rate, so a full final page must
+			// not advertise a next page the way the page-saturation
+			// heuristic would.
+			HasMore:  page.NextRate > 0,
 			NextRate: page.NextRate,
 			Messages: messagesToItems(page.Messages),
 			Output:   fmt.Sprintf("Found %d message(s)", len(page.Messages)),
-		}, nil
+		}
+
+		if len(page.Messages) > 0 {
+			last := page.Messages[len(page.Messages)-1]
+			result.NextOffsetID = last.ID
+
+			if last.PeerID.ID != 0 {
+				result.NextOffsetPeer = formatPeer(last.PeerID)
+			}
+		}
+
+		return nil, result, nil
 	}
 }
 

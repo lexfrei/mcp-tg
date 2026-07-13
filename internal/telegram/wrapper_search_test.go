@@ -243,6 +243,31 @@ func TestSearchGlobal_ExtractsNextRateAndSeedsCache(t *testing.T) {
 	}
 }
 
+// TestSearchGlobal_NextRateFallsBackToLastMessageDate pins the
+// documented cursor contract: when messages.messagesSlice carries no
+// next_rate, the caller must continue with the date of the last
+// returned message. Returning 0 there would break pagination for
+// exactly those pages.
+func TestSearchGlobal_NextRateFallsBackToLastMessageDate(t *testing.T) {
+	resp := &tg.MessagesMessagesSlice{
+		Count: 42,
+		Messages: []tg.MessageClass{
+			&tg.Message{ID: 11, Date: 2000, Message: "newer", PeerID: &tg.PeerUser{UserID: 1}},
+			&tg.Message{ID: 10, Date: 1000, Message: "older", PeerID: &tg.PeerUser{UserID: 1}},
+		},
+	}
+	inv := &searchInvoker{resp: resp}
+
+	page, err := newSearchWrapper(inv).SearchGlobal(context.Background(), "q", &SearchGlobalOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if page.NextRate != 1000 {
+		t.Errorf("NextRate = %d, want the last message's date 1000", page.NextRate)
+	}
+}
+
 func TestSearchGlobal_UnknownFilterFailsBeforeRPC(t *testing.T) {
 	inv := &searchInvoker{resp: searchSliceResponse()}
 

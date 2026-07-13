@@ -209,7 +209,7 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 
 Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the window, and both return `total` — the server's full match count across all pages. `tg_messages_search` additionally takes `topicId` (restrict to one forum topic) and `from` (restrict to one sender; same peer formats as `peer`).
 
-`tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: pass the previous result's `nextRate` as `offsetRate`, the last returned message's `id` as `offsetId`, and its `peerId` as `offsetPeer`. All three omitted means the first page. The peers named in each result page are cached with their access hashes, so a numeric `peerId` from the previous page resolves even for channels the account has never opened.
+`tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: every result carries ready-made `nextRate`, `nextOffsetId` and `nextOffsetPeer` fields — copy them into `offsetRate`, `offsetId` and `offsetPeer` verbatim to fetch the next page. All three omitted means the first page. The peers named in each result page are cached with their access hashes, so the returned `nextOffsetPeer` resolves even for channels the account has never opened.
 
 ## Markdown — Known Limitations
 

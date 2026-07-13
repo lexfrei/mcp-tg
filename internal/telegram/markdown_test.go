@@ -1176,3 +1176,21 @@ func TestParseMarkdown_BlockquoteFullReproFromBugReport(t *testing.T) {
 
 	assertEntitySlice(t, text, code.Offset, code.Length, "requires design and/or consultation", "code")
 }
+
+// TestParseMarkdown_SpacedSpoilerMarkersStillParse pins a parser trait
+// the plain-mode lint deliberately does NOT flag: doubled markers with
+// spaces inside still produce an entity in commonmark mode. The lint's
+// negative fixture "a || b || c" is about plain mode, where the text
+// ships literally; in commonmark the parser transforms it, and that
+// asymmetry is intended, not an oversight.
+func TestParseMarkdown_SpacedSpoilerMarkersStillParse(t *testing.T) {
+	_, entities := ParseMarkdown("a || b || c")
+
+	if len(entities) != 1 {
+		t.Fatalf("got %d entities, want 1 spoiler — commonmark transforms spaced markers", len(entities))
+	}
+
+	if _, ok := entities[0].(*tg.MessageEntitySpoiler); !ok {
+		t.Errorf("got %T, want *tg.MessageEntitySpoiler", entities[0])
+	}
+}

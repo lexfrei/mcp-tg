@@ -226,7 +226,7 @@ Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the wind
 
 ## Parse Mode
 
-**Breaking change in this release.** `parseMode` is now REQUIRED on the four text tools, and the `'markdown'` alias is gone. Migration: a call that omitted `parseMode` (which meant plain text) must now pass `parseMode: "plain"`; a call passing `'markdown'` must pass `'commonmark'`. Both are rejected by schema validation before the request reaches Telegram, so the failure is loud rather than silent. Plain-mode text that looks like markdown is also rejected now — see the lint below.
+**Breaking change — ships in the next major version (v2.0.0).** `parseMode` is now REQUIRED on the four text tools, and the `'markdown'` alias is gone. Migration: a call that omitted `parseMode` (which meant plain text) must now pass `parseMode: "plain"`; a call passing `'markdown'` must pass `'commonmark'`. Both are rejected by schema validation before the request reaches Telegram, so the failure is loud rather than silent. Plain-mode text that looks like markdown is also rejected now — see the lint below.
 
 The four text tools (`tg_messages_send`, `tg_messages_edit`, `tg_messages_send_file`, `tg_media_send_album`) require `parseMode` on every call — `'plain'` or `'commonmark'`, no default. The input schema carries the enum, so a call without a mode (or with the retired `'markdown'` alias) is rejected before it reaches Telegram.
 

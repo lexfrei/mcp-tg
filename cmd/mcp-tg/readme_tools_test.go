@@ -184,7 +184,7 @@ func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
 		t.Error("README still documents the retired 'markdown' alias")
 	}
 
-	if !strings.Contains(body, "Breaking change in this release.") {
+	if !strings.Contains(body, "**Breaking change") {
 		t.Error("README no longer carries the parse-mode migration note")
 	}
 }

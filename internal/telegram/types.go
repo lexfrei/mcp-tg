@@ -341,15 +341,18 @@ type SearchGlobalPage struct {
 
 // ParseMode values understood by the Telegram wrapper.
 //
-// ParseModeMarkdown is the legacy alias kept for backward compatibility.
-// New callers should prefer ParseModeCommonMark — both map onto the same
-// parser, but the new name advertises its actual dialect (CommonMark
-// subset: `**bold**`, `*italic*`, “ `code` “, `[text](url)`, etc.).
+// ParseModePlain is the explicit "no formatting" mode; the tool layer
+// requires callers to choose it or ParseModeCommonMark on every call.
+//
+// ParseModeMarkdown is a legacy alias for the same parser as
+// ParseModeCommonMark. The tool boundary no longer accepts it — the
+// wrapper keeps recognising it purely as internal defense in depth.
 //
 // ParseModeMarkdownV2 and ParseModeHTML are recognised for validation
 // but not yet implemented; the wrapper returns a clear error instead
 // of silently dropping formatting.
 const (
+	ParseModePlain      = "plain"
 	ParseModeMarkdown   = "markdown"
 	ParseModeCommonMark = "commonmark"
 	ParseModeMarkdownV2 = "markdownv2"

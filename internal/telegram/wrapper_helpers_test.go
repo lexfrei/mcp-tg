@@ -403,7 +403,7 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditMessage{Message: raw}},
 	}
 
-	got := editedMessageFromUpdate(updates, nil)
+	got := editedMessageFromUpdate(updates, 7)
 	if got == nil {
 		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditMessage")
 	}
@@ -489,9 +489,9 @@ func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
 // is blind to edit updates: a send response can carry an edit update for
 // the parent message (the topic root's reply-counter bump), and the send
 // result must never report that parent's ID as the message it just sent.
-// TestEditedMessageFromUpdate_IgnoresNewMessages is the mirror of
-// TestMessageFromUpdate_IgnoresEditUpdates: an edit echo must report the
-// edited message, never some other new message the envelope bundled.
+// TestEditedMessageFromUpdate_IgnoresNewMessages is the mirror of the
+// send-side rule: an edit echo must report the edited message, never
+// some other new message the envelope bundled.
 func TestEditedMessageFromUpdate_IgnoresNewMessages(t *testing.T) {
 	bundled := &tg.Updates{
 		Updates: []tg.UpdateClass{
@@ -499,8 +499,43 @@ func TestEditedMessageFromUpdate_IgnoresNewMessages(t *testing.T) {
 		},
 	}
 
-	if got := editedMessageFromUpdate(bundled, nil); got != nil {
+	if got := editedMessageFromUpdate(bundled, 99); got != nil {
 		t.Errorf("an edit echo without an edit update must yield nil, got ID=%d", got.ID)
+	}
+}
+
+// TestEditedMessageFromUpdate_MatchesTheEditedID pins that the edit echo
+// is matched by ID: an envelope can bundle edits of other messages (a
+// channel post's edit propagating into the linked discussion group), and
+// taking the first one would report a foreign ID and a foreign entity
+// count as the caller's own edit.
+func TestEditedMessageFromUpdate_MatchesTheEditedID(t *testing.T) {
+	stranger := &tg.Message{ID: 137, Date: 100, Message: "someone else's edit"}
+	stranger.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 8},
+		&tg.MessageEntityCode{Offset: 9, Length: 4},
+	})
+
+	mine := &tg.Message{ID: 42, Date: 100, Message: "my edit"}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: stranger},
+			&tg.UpdateEditMessage{Message: mine},
+		},
+	}
+
+	got := editedMessageFromUpdate(updates, 42)
+	if got == nil {
+		t.Fatal("editedMessageFromUpdate returned nil for the edited message")
+	}
+
+	if got.ID != 42 {
+		t.Errorf("got ID=%d, want the edited message 42, not the bundled stranger", got.ID)
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("got %d entities — the stranger's count leaked into the caller's result", len(got.Entities))
 	}
 }
 
@@ -547,7 +582,7 @@ func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditChannelMessage{Message: raw}},
 	}
 
-	got := editedMessageFromUpdate(updates, nil)
+	got := editedMessageFromUpdate(updates, 9)
 	if got == nil {
 		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditChannelMessage")
 	}

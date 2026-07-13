@@ -187,4 +187,12 @@ func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
 	if !strings.Contains(body, "**Breaking change") {
 		t.Error("README no longer carries the parse-mode migration note")
 	}
+
+	// The word-opening rule applies to doubled markers and links only —
+	// backticks, fences and autolink brackets trigger anywhere. A README
+	// that claims otherwise sends people to debug a lint that is working
+	// as designed.
+	if !strings.Contains(body, "trigger wherever they appear") {
+		t.Error("README no longer scopes the lint's word-opening rule correctly")
+	}
 }

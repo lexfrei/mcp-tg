@@ -991,33 +991,37 @@ func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]pe
 	return nil
 }
 
-// editedMessageFromUpdate converts the messages.editMessage echo, which
-// carries an edit update and no new-message update at all. Kept apart
-// from messageFromUpdate so the send paths cannot reach it.
-func editedMessageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntityClass) *Message {
+// editedMessageFromUpdate converts the messages.editMessage echo. It is
+// kept apart from messageFromUpdate so the send paths cannot reach the
+// edit updates, and it matches on msgID rather than taking the first
+// edit update it sees: an envelope can bundle edits of OTHER messages
+// (a channel post's edit propagating to the linked discussion group is
+// the obvious candidate), and the server's update order is not a
+// contract. Returning a stranger would report a foreign ID and a
+// foreign entity count as the caller's own edit.
+//
+// There is deliberately no new-message fallback either — that would be
+// the mirror of the bug the send path just closed.
+func editedMessageFromUpdate(result tg.UpdatesClass, msgID int) *Message {
 	if result == nil {
 		return nil
 	}
 
 	updates, users, chats, ok := unwrapUpdates(result)
 	if !ok {
-		return messageFromUpdate(result, submitted)
+		return nil
 	}
 
 	userRefs := buildUserRefs(users)
 	chatRefs := buildChatRefs(chats)
 
 	for _, update := range updates {
-		if msg := extractEditedMessage(update, userRefs, chatRefs); msg != nil {
+		msg := extractEditedMessage(update, userRefs, chatRefs)
+		if msg != nil && msg.ID == msgID {
 			return msg
 		}
 	}
 
-	// Deliberately no new-message fallback: an editMessage envelope
-	// carries an edit update, and returning some other new message the
-	// envelope happened to bundle would report a foreign ID as "the
-	// message you edited" — the mirror image of the bug the send path
-	// just closed.
 	return nil
 }
 

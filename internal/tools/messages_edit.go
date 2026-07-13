@@ -53,10 +53,10 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 				telegramErr("failed to edit message", err)
 		}
 
+		// Telegram does not renumber an edited message, so the ID the
+		// caller passed IS the message's ID. Deriving it from the echo
+		// could only ever replace a known-good value with a guess.
 		msgID := params.MessageID
-		if msg != nil {
-			msgID = msg.ID
-		}
 
 		return nil, MessagesEditResult{
 			MessageID:      msgID,

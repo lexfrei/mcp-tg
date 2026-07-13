@@ -71,6 +71,12 @@ func TestParseModeSchema_RequiredEnumOnTheWire(t *testing.T) {
 func callSendTool(t *testing.T, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 
+	return callParseModeTool(t, "tg_messages_send", args)
+}
+
+func callParseModeTool(t *testing.T, tool string, args map[string]any) *mcp.CallToolResult {
+	t.Helper()
+
 	ctx := context.Background()
 
 	authDone := make(chan struct{})
@@ -91,7 +97,7 @@ func callSendTool(t *testing.T, args map[string]any) *mcp.CallToolResult {
 		t.Fatalf("client connect: %v", err)
 	}
 
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "tg_messages_send", Arguments: args})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		t.Fatalf("CallTool transport error: %v", err)
 	}
@@ -136,5 +142,36 @@ func TestParseModeSchema_RejectsBeforeHandler(t *testing.T) {
 	valid := callSendTool(t, map[string]any{"peer": "@x", "text": "hi", "parseMode": "plain"})
 	if valid.IsError {
 		t.Errorf("a valid plain call must pass schema validation, got: %+v", valid.Content)
+	}
+}
+
+// TestParseModeSchema_RejectsBeforeHandlerOnEveryTool extends the
+// behavioral pin to all four text tools: they share one helper, but the
+// contract is what a client experiences, not what the helper promises.
+func TestParseModeSchema_RejectsBeforeHandlerOnEveryTool(t *testing.T) {
+	baseArgs := map[string]map[string]any{
+		"tg_messages_send":      {"peer": "@x", "text": "hi"},
+		"tg_messages_edit":      {"peer": "@x", "messageId": 1, "text": "hi"},
+		"tg_messages_send_file": {"peer": "@x", "path": "/tmp/f"},
+		"tg_media_send_album":   {"peer": "@x", "paths": []any{"/tmp/a"}},
+	}
+
+	for _, tool := range parseModeTools() {
+		args := baseArgs[tool]
+
+		missing := callParseModeTool(t, tool, args)
+		if text := callToolErrorText(t, missing); !strings.Contains(text, "parseMode") {
+			t.Errorf("%s: missing-mode error does not name parseMode: %s", tool, text)
+		}
+
+		withAlias := map[string]any{"parseMode": "markdown"}
+		for k, v := range args {
+			withAlias[k] = v
+		}
+
+		alias := callParseModeTool(t, tool, withAlias)
+		if text := callToolErrorText(t, alias); !strings.Contains(text, "enum") {
+			t.Errorf("%s: alias error is not the schema enum rejection: %s", tool, text)
+		}
 	}
 }

@@ -180,7 +180,7 @@ The two extractors are deliberately separate: a send echo may carry an edit upda
 
 On the SINGLE-message paths (`SendMessage`, `EditMessage`, `SendFile`) an echo that cannot be read at all — an unhandled envelope shape, or no update matching the edited ID — is repaired by `echoOrSubmitted` with the submitted entity set. Without it a nil echo reads as `entitiesParsed: 0`, which the documented recipe treats as "the markdown did not parse", and a caller would re-edit correct text forever with nothing erroring. A readable echo always wins, including one that genuinely reports zero.
 
-`SendAlbum` is deliberately NOT repaired: an unreadable album echo yields no messages at all, and reporting `entitiesParsed: 2` beside `count: 0` would be incoherent. The album's anomaly surfaces as `count: 0` ("Sent album with 0 file(s)"), which is visibly wrong rather than quietly plausible — pinned by `TestMediaSendAlbumHandler_UnreadableEchoReportsNothing`.
+`SendAlbum` is deliberately NOT repaired: there is no single ID to attach a repaired count to, and the album's anomaly already surfaces as `count: 0` ("Sent album with 0 file(s)"), which is visibly wrong rather than quietly plausible — pinned by `TestMediaSendAlbumHandler_UnreadableEchoReportsNothing`. The single-message repair has its own oddity for symmetry's sake — `entitiesParsed: N` beside `messageId: 0` — which is equally loud: a follow-up edit on id 0 fails outright rather than silently editing the wrong message.
 
 Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 
@@ -231,6 +231,7 @@ Strict config in `.golangci.yml`:
 - `github.com/gotd/td` — Telegram MTProto client
 - `github.com/cockroachdb/errors` — Error wrapping
 - `github.com/modelcontextprotocol/go-sdk` — MCP protocol SDK
+- `github.com/google/jsonschema-go` — the SDK's schema inference, imported directly by `inputSchemaWithEnum` to constrain `parseMode` to an enum
 - `github.com/lexfrei/keychain` — cgo-free OS secret store (macOS Keychain / Linux Secret Service / Windows Credential Manager) for the default session backend; pulls `purego` + `godbus/dbus` indirectly
 - `golang.org/x/sync` — errgroup for concurrent transports
 - `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`

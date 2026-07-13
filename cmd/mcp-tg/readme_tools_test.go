@@ -180,8 +180,8 @@ func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
 		}
 	}
 
-	if strings.Contains(body, "'markdown' alias") {
-		t.Error("README still documents the retired 'markdown' alias")
+	if strings.Contains(body, "legacy alias for") {
+		t.Error("README still documents the retired 'markdown' alias as usable")
 	}
 
 	if !strings.Contains(body, "**Breaking change") {

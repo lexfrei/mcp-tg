@@ -489,6 +489,21 @@ func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
 // is blind to edit updates: a send response can carry an edit update for
 // the parent message (the topic root's reply-counter bump), and the send
 // result must never report that parent's ID as the message it just sent.
+// TestEditedMessageFromUpdate_IgnoresNewMessages is the mirror of
+// TestMessageFromUpdate_IgnoresEditUpdates: an edit echo must report the
+// edited message, never some other new message the envelope bundled.
+func TestEditedMessageFromUpdate_IgnoresNewMessages(t *testing.T) {
+	bundled := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 99, Date: 100, Message: "someone else"}},
+		},
+	}
+
+	if got := editedMessageFromUpdate(bundled, nil); got != nil {
+		t.Errorf("an edit echo without an edit update must yield nil, got ID=%d", got.ID)
+	}
+}
+
 func TestMessageFromUpdate_IgnoresEditUpdates(t *testing.T) {
 	parentOnly := &tg.Updates{
 		Updates: []tg.UpdateClass{

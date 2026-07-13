@@ -11,8 +11,13 @@ import (
 // *italic* / _italic_ emphasis and > quotes are deliberately excluded
 // as too false-positive-prone in ordinary prose (multiplication,
 // snake_case, quoted replies). Doubled markers require
-// non-whitespace-flanked content so "a || b || c" (shell OR) and
-// "x ** y ** z" don't trigger. Note that __init__ IS a true positive
+// non-whitespace-flanked content, AND the opening marker must start a
+// word (line start or whitespace before it) — CommonMark's left-flanking
+// rule in miniature. Without that second half the lint fired on code:
+// "(a||b)", "2**3**2" and the Go generic "Foo[T](x)" all look like
+// spoilers, bold and a link when scanned naively, and code is the most
+// common thing anyone pastes into Telegram. Note that __init__ IS a
+// true positive
 // by design — the parser really would underline "init" in commonmark
 // mode — and allowRawMarkdown is the documented escape.
 //
@@ -23,14 +28,15 @@ import (
 //
 //nolint:gochecknoglobals // compile the hint set once, not on every plain-mode send.
 var markdownHints = sync.OnceValue(func() []*regexp.Regexp {
+	// (?m)(?:^|\s) — the opening marker must start a word.
 	return []*regexp.Regexp{
-		regexp.MustCompile("`[^`\n]+`"),                // inline code
-		regexp.MustCompile(`\*\*\S(?:[^*\n]*\S)?\*\*`), // bold
-		regexp.MustCompile(`__\S(?:[^_\n]*\S)?__`),     // underline
-		regexp.MustCompile(`~~\S(?:[^~\n]*\S)?~~`),     // strikethrough
-		regexp.MustCompile(`\|\|\S(?:[^|\n]*\S)?\|\|`), // spoiler
-		regexp.MustCompile(`\[[^\]\n]+\]\([^)\s]+\)`),  // [text](url)
-		regexp.MustCompile(`<https?://[^>\s]+>`),       // <autolink>
+		regexp.MustCompile("`[^`\n]+`"),                            // inline code
+		regexp.MustCompile(`(?m)(?:^|\s)\*\*\S(?:[^*\n]*\S)?\*\*`), // bold
+		regexp.MustCompile(`(?m)(?:^|\s)__\S(?:[^_\n]*\S)?__`),     // underline
+		regexp.MustCompile(`(?m)(?:^|\s)~~\S(?:[^~\n]*\S)?~~`),     // strikethrough
+		regexp.MustCompile(`(?m)(?:^|\s)\|\|\S(?:[^|\n]*\S)?\|\|`), // spoiler
+		regexp.MustCompile(`(?m)(?:^|\s)\[[^\]\n]+\]\([^)\s]+\)`),  // [text](url)
+		regexp.MustCompile(`<https?://[^>\s]+>`),                   // <autolink>
 	}
 })
 

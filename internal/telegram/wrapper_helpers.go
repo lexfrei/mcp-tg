@@ -1013,7 +1013,12 @@ func editedMessageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntit
 		}
 	}
 
-	return firstMessageFromUpdates(updates, userRefs, chatRefs)
+	// Deliberately no new-message fallback: an editMessage envelope
+	// carries an edit update, and returning some other new message the
+	// envelope happened to bundle would report a foreign ID as "the
+	// message you edited" — the mirror image of the bug the send path
+	// just closed.
+	return nil
 }
 
 func extractNewMessage(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {

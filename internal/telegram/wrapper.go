@@ -439,7 +439,7 @@ func (w *Wrapper) EditMessage(
 		return nil, errors.Wrap(err, "editing message")
 	}
 
-	return messageFromUpdate(result, req.Entities), nil
+	return editedMessageFromUpdate(result, req.Entities), nil
 }
 
 // DeleteMessages deletes messages from a chat.

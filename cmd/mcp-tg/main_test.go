@@ -36,8 +36,8 @@ func TestRegisterTools(t *testing.T) {
 	// these is missing, someone registered the tool via mcp.AddTool instead
 	// of tools.AddTool — silently disabling bool-coercion for its params.
 	cases := map[string][]string{
-		"tg_messages_send":      {"silent", "noWebpage"},
-		"tg_messages_send_file": {"silent"},
+		"tg_messages_send":      {"silent", "noWebpage", "allowRawMarkdown"},
+		"tg_messages_send_file": {"silent", "allowRawMarkdown"},
 		"tg_dialogs_pin":        {"pinned"},
 		"tg_groups_admin_set":   {"banUsers", "addAdmins"},
 		"tg_chats_create":       {"isChannel"},

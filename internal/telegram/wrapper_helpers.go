@@ -975,12 +975,12 @@ func messageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntityClass
 	return firstMessageFromUpdates(updates, buildUserRefs(users), buildChatRefs(chats))
 }
 
-// firstMessageFromUpdates scans in two passes: a send response can
-// carry an edit update for a PARENT message (e.g. the topic root's
-// reply-counter bump) alongside the new-message update, and the
-// server's update order is not a contract. New messages win; edited
-// messages are the fallback that makes EditMessage work — the
-// messages.editMessage response carries no new-message update at all.
+// firstMessageFromUpdates returns the NEW message an echo carries. A
+// send response can also carry an edit update for a PARENT message —
+// the topic root's reply-counter bump — and the server's update order
+// is not a contract, so edited messages are deliberately not eligible
+// here: a send must never report the parent's ID as the message it
+// just sent. The edit echo has its own extractor.
 func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	for _, update := range updates {
 		if msg := extractNewMessage(update, users, chats); msg != nil {
@@ -988,13 +988,32 @@ func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]pe
 		}
 	}
 
+	return nil
+}
+
+// editedMessageFromUpdate converts the messages.editMessage echo, which
+// carries an edit update and no new-message update at all. Kept apart
+// from messageFromUpdate so the send paths cannot reach it.
+func editedMessageFromUpdate(result tg.UpdatesClass, submitted []tg.MessageEntityClass) *Message {
+	if result == nil {
+		return nil
+	}
+
+	updates, users, chats, ok := unwrapUpdates(result)
+	if !ok {
+		return messageFromUpdate(result, submitted)
+	}
+
+	userRefs := buildUserRefs(users)
+	chatRefs := buildChatRefs(chats)
+
 	for _, update := range updates {
-		if msg := extractEditedMessage(update, users, chats); msg != nil {
+		if msg := extractEditedMessage(update, userRefs, chatRefs); msg != nil {
 			return msg
 		}
 	}
 
-	return nil
+	return firstMessageFromUpdates(updates, userRefs, chatRefs)
 }
 
 func extractNewMessage(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {

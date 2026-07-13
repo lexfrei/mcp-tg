@@ -403,9 +403,9 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditMessage{Message: raw}},
 	}
 
-	got := messageFromUpdate(updates, nil)
+	got := editedMessageFromUpdate(updates, nil)
 	if got == nil {
-		t.Fatal("messageFromUpdate returned nil for UpdateEditMessage")
+		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditMessage")
 	}
 
 	if got.ID != 7 || len(got.Entities) != 1 {
@@ -485,10 +485,25 @@ func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
 	}
 }
 
-// TestMessageFromUpdate_PrefersNewOverEdit pins the two-pass scan: a
-// send response can carry an edit update for the parent message (the
-// topic root's reply-counter bump) BEFORE the new-message update, and
-// the send result must report the sent message, not the parent.
+// TestMessageFromUpdate_IgnoresEditUpdates pins that the send echo path
+// is blind to edit updates: a send response can carry an edit update for
+// the parent message (the topic root's reply-counter bump), and the send
+// result must never report that parent's ID as the message it just sent.
+func TestMessageFromUpdate_IgnoresEditUpdates(t *testing.T) {
+	parentOnly := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: &tg.Message{ID: 1, Date: 90, Message: "parent"}},
+		},
+	}
+
+	if got := messageFromUpdate(parentOnly, nil); got != nil {
+		t.Errorf("a send echo carrying only an edit update must yield nil, got ID=%d", got.ID)
+	}
+}
+
+// TestMessageFromUpdate_PrefersNewOverEdit pins the ordering: an edit
+// update for the parent may arrive BEFORE the new-message update, and
+// the send result must still report the sent message.
 func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
 	parent := &tg.Message{ID: 1, Date: 90, Message: "parent bumped"}
 	sent := &tg.Message{ID: 2, Date: 100, Message: "the actual send"}
@@ -517,9 +532,9 @@ func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
 		Updates: []tg.UpdateClass{&tg.UpdateEditChannelMessage{Message: raw}},
 	}
 
-	got := messageFromUpdate(updates, nil)
+	got := editedMessageFromUpdate(updates, nil)
 	if got == nil {
-		t.Fatal("messageFromUpdate returned nil for UpdateEditChannelMessage")
+		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditChannelMessage")
 	}
 
 	if got.ID != 9 {

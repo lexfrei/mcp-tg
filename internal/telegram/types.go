@@ -348,9 +348,11 @@ type SearchGlobalPage struct {
 // ParseModeCommonMark. The tool boundary no longer accepts it — the
 // wrapper keeps recognising it purely as internal defense in depth.
 //
-// ParseModeMarkdownV2 and ParseModeHTML are recognised for validation
-// but not yet implemented; the wrapper returns a clear error instead
-// of silently dropping formatting.
+// ParseModeMarkdownV2 and ParseModeHTML are names the tool layer knows
+// (it rejects them with ErrParseModeNotImplemented, and the input
+// schema's enum turns them away earlier still) — the wrapper itself
+// implements neither: it formats only what IsCommonMarkParseMode
+// accepts and treats every other value as plain.
 const (
 	ParseModePlain      = "plain"
 	ParseModeMarkdown   = "markdown"

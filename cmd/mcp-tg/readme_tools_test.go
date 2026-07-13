@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
 var (
@@ -100,5 +103,35 @@ func TestReadmeToolList_MatchesRegisteredTools(t *testing.T) {
 		if !documentedNames[name] {
 			t.Errorf("registered tool %s is missing from the README tool list", name)
 		}
+	}
+}
+
+var readmeFilterValues = regexp.MustCompile(`Values: ([^.]+)\.`)
+
+// TestReadmeFilterValues_MatchSearchFilters pins the documented filter
+// value list against telegram.SearchFilters, the single source of
+// truth — the same drift-by-hand failure mode as the tool census.
+func TestReadmeFilterValues_MatchSearchFilters(t *testing.T) {
+	raw, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+
+	match := readmeFilterValues.FindStringSubmatch(string(raw))
+	if match == nil {
+		t.Fatal("README no longer contains a 'Values: ...' filter list")
+	}
+
+	documented := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(match[1], -1)
+
+	names := make([]string, 0, len(documented))
+	for _, m := range documented {
+		names = append(names, m[1])
+	}
+
+	slices.Sort(names)
+
+	if want := telegram.SearchFilters(); !slices.Equal(names, want) {
+		t.Errorf("README documents filter values %v, code accepts %v", names, want)
 	}
 }

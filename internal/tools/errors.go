@@ -143,6 +143,14 @@ var ErrQueryOrFilterRequired = errors.New("query or filter is required")
 // is also a valid search.
 var ErrSearchCriteriaRequired = errors.New("query, filter or from is required")
 
+// ErrFromUnresolved is returned when the sender filter resolves without
+// an access hash — a numeric ID the client has never seen resolves with
+// hash 0 and a nil error, and sending it on would fail with a server
+// error naming neither the parameter nor the remedy.
+var ErrFromUnresolved = errors.New(
+	"from resolved without an access hash; pass @username, or look the peer up via tg_dialogs_list first",
+)
+
 // ErrOffsetPeerUnresolved is returned when the pagination cursor's peer
 // resolves without an access hash — typical after a restart cleared the
 // peer cache that the previous page had seeded. Sending it on would

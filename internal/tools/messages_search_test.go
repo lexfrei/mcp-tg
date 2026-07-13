@@ -116,6 +116,65 @@ func TestMessagesSearchHandler_FromOnlyAllowed(t *testing.T) {
 	}
 }
 
+// TestMessagesSearchHandler_UnresolvedFromRejected pins the cold-cache
+// path for the sender filter: a numeric ID the client has never seen
+// resolves with a zero access hash and a nil error, and sending it on
+// would fail with a server error naming neither the parameter nor the
+// remedy.
+func TestMessagesSearchHandler_UnresolvedFromRejected(t *testing.T) {
+	mock := &mockClient{
+		resolvePeerFn: func(identifier string) (telegram.InputPeer, error) {
+			if identifier == "123456789" {
+				return telegram.InputPeer{Type: telegram.PeerUser, ID: 123456789}, nil
+			}
+
+			return telegram.InputPeer{Type: telegram.PeerChannel, ID: 1, AccessHash: 2}, nil
+		},
+	}
+	handler := NewMessagesSearchHandler(mock)
+
+	_, _, err := handler(context.Background(), searchRequest(),
+		MessagesSearchParams{Peer: testChatPeer, Query: "q", From: "123456789"})
+	if !errors.Is(err, ErrFromUnresolved) {
+		t.Errorf("err = %v, want ErrFromUnresolved", err)
+	}
+}
+
+// TestMessagesSearchHandler_HasMoreRespectsTotal pins that a page
+// containing every match does not advertise a next page just because
+// it is exactly limit-sized.
+func TestMessagesSearchHandler_HasMoreRespectsTotal(t *testing.T) {
+	limit := 2
+	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: messagesWithReply(),
+		total:    2,
+	}
+	handler := NewMessagesSearchHandler(mock)
+
+	_, res, err := handler(context.Background(), searchRequest(),
+		MessagesSearchParams{Peer: testChatPeer, Query: "q", Limit: &limit})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.HasMore {
+		t.Error("a full page holding all matches must report hasMore=false")
+	}
+
+	mock.total = 40
+
+	_, res, err = handler(context.Background(), searchRequest(),
+		MessagesSearchParams{Peer: testChatPeer, Query: "q", Limit: &limit})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !res.HasMore {
+		t.Error("a full page of a larger result must report hasMore=true")
+	}
+}
+
 func TestMessagesSearchHandler_PeerRequired(t *testing.T) {
 	handler := NewMessagesSearchHandler(&mockClient{})
 

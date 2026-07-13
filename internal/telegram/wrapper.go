@@ -1992,7 +1992,10 @@ func (w *Wrapper) searchGlobalPage(result tg.MessagesMessagesClass) SearchGlobal
 	case *tg.MessagesMessagesSlice:
 		// The documented cursor contract: when the slice carries no
 		// next_rate, the next call's offset_rate is the date of the
-		// last returned message.
+		// last returned message. msgs holds converted messages only —
+		// a page whose tail were service messages would shift the
+		// fallback slightly. Unreachable with the current filter set,
+		// which excludes every service-message kind.
 		rate, ok := res.GetNextRate()
 		if !ok && len(msgs) > 0 {
 			rate = msgs[len(msgs)-1].Date

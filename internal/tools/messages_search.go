@@ -106,6 +106,13 @@ func searchOptsFromParams(
 		return telegram.SearchOpts{}, err
 	}
 
+	// A sender without an access hash cannot go on the wire. Senders
+	// are users or channels, never legacy basic groups, so unlike the
+	// offsetPeer guard there is no PeerChat exemption to carve out.
+	if fromPeer != nil && fromPeer.AccessHash == 0 {
+		return telegram.SearchOpts{}, validationErr(ErrFromUnresolved)
+	}
+
 	return telegram.SearchOpts{
 		Limit:    deref(params.Limit),
 		OffsetID: deref(params.OffsetID),
@@ -127,9 +134,11 @@ func executeSearch(
 	}
 
 	return MessagesSearchResult{
-		Count:        len(msgs),
-		Total:        total,
-		HasMore:      hasMorePage(len(msgs), opts.Limit),
+		Count: len(msgs),
+		Total: total,
+		// Page saturation alone overstates hasMore when the page holds
+		// every match; the server's total makes that case exact.
+		HasMore:      hasMorePage(len(msgs), opts.Limit) && len(msgs) < total,
 		Participants: participantsFromMessages(msgs),
 		Messages:     messagesToItems(msgs),
 		Output:       formatMessages(msgs),

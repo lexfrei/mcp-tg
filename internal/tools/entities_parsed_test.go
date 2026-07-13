@@ -108,3 +108,45 @@ func TestMediaSendAlbumHandler_EntitiesParsedSumsAllMessages(t *testing.T) {
 		t.Errorf("EntitiesParsed = %d, want the sum 3", res.EntitiesParsed)
 	}
 }
+
+func TestMessagesSendFileHandler_EntitiesParsedFromEcho(t *testing.T) {
+	mock := &mockClient{
+		peer:    telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		message: twoEntityMessage(),
+	}
+	handler := NewMessagesSendFileHandler(mock)
+
+	_, res, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
+		Peer: "@chat", Path: "/tmp/f", ParseMode: "plain",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.EntitiesParsed != 2 {
+		t.Errorf("EntitiesParsed = %d, want 2", res.EntitiesParsed)
+	}
+}
+
+// TestEntitiesParsed_ZeroSerializesInEveryResult pins the no-omitempty
+// contract across all four result shapes — 0 is the signal, so a
+// silently omitted field would defeat it on any of them.
+func TestEntitiesParsed_ZeroSerializesInEveryResult(t *testing.T) {
+	results := map[string]any{
+		"send":     MessagesSendResult{},
+		"edit":     MessagesEditResult{},
+		"sendFile": MessagesSendFileResult{},
+		"album":    MediaSendAlbumResult{},
+	}
+
+	for name, result := range results {
+		raw, err := json.Marshal(result)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", name, err)
+		}
+
+		if !strings.Contains(string(raw), `"entitiesParsed":0`) {
+			t.Errorf("%s: zero entitiesParsed must serialize, got: %s", name, raw)
+		}
+	}
+}

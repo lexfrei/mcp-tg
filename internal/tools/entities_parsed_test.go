@@ -235,3 +235,28 @@ func TestMediaSendAlbumHandler_ScheduledAlbumIsNotEmpty(t *testing.T) {
 		t.Errorf("count=%d entitiesParsed=%d, want 2/1 — the scheduled echo was dropped", res.Count, res.EntitiesParsed)
 	}
 }
+
+// TestMediaSendAlbumHandler_UnreadableEchoReportsNothing pins the one
+// path deliberately left unrepaired: an unreadable album echo yields no
+// messages, and reporting entities beside count 0 would be incoherent.
+// The anomaly must surface as count 0, not as a plausible-looking zero
+// entity count on a phantom album.
+func TestMediaSendAlbumHandler_UnreadableEchoReportsNothing(t *testing.T) {
+	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		messages: nil, // the wrapper could not read the envelope
+	}
+	handler := NewMediaSendAlbumHandler(mock)
+
+	_, res, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
+		Peer: "@chat", Paths: []string{"/tmp/a"}, ParseMode: "commonmark",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if res.Count != 0 || res.EntitiesParsed != 0 {
+		t.Errorf("count=%d entitiesParsed=%d, want 0/0 — no entities may be invented for an album that echoed nothing",
+			res.Count, res.EntitiesParsed)
+	}
+}

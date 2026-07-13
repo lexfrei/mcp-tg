@@ -72,6 +72,8 @@ func NewMessagesSendHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesS
 				sendErr("failed to send message", err, opts.SendAs)
 		}
 
+		// echoOrSubmitted guarantees a non-nil message on the wrapper
+		// path; the guard still covers direct callers and mocks.
 		msgID := 0
 		if msg != nil {
 			msgID = msg.ID

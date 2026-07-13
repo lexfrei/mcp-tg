@@ -413,6 +413,31 @@ func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
 	}
 }
 
+// TestMessageFromUpdate_PrefersNewOverEdit pins the two-pass scan: a
+// send response can carry an edit update for the parent message (the
+// topic root's reply-counter bump) BEFORE the new-message update, and
+// the send result must report the sent message, not the parent.
+func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
+	parent := &tg.Message{ID: 1, Date: 90, Message: "parent bumped"}
+	sent := &tg.Message{ID: 2, Date: 100, Message: "the actual send"}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: parent},
+			&tg.UpdateNewChannelMessage{Message: sent},
+		},
+	}
+
+	got := messageFromUpdate(updates)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if got.ID != 2 {
+		t.Errorf("got ID=%d, want the new message 2, not the edited parent", got.ID)
+	}
+}
+
 func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
 	raw := &tg.Message{ID: 9, Date: 100, Message: "edited"}
 

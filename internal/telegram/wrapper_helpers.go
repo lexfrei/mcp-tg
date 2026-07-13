@@ -948,9 +948,21 @@ func messageFromUpdate(result tg.UpdatesClass) *Message {
 	return firstMessageFromUpdates(updates, buildUserRefs(users), buildChatRefs(chats))
 }
 
+// firstMessageFromUpdates scans in two passes: a send response can
+// carry an edit update for a PARENT message (e.g. the topic root's
+// reply-counter bump) alongside the new-message update, and the
+// server's update order is not a contract. New messages win; edited
+// messages are the fallback that makes EditMessage work — the
+// messages.editMessage response carries no new-message update at all.
 func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	for _, update := range updates {
-		if msg := extractMessageFromUpdate(update, users, chats); msg != nil {
+		if msg := extractNewMessage(update, users, chats); msg != nil {
+			return msg
+		}
+	}
+
+	for _, update := range updates {
+		if msg := extractEditedMessage(update, users, chats); msg != nil {
 			return msg
 		}
 	}
@@ -958,7 +970,7 @@ func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]pe
 	return nil
 }
 
-func extractMessageFromUpdate(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {
+func extractNewMessage(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	switch upd := update.(type) {
 	case *tg.UpdateNewMessage:
 		return enrichFromMessageClass(upd.Message, users, chats)
@@ -966,9 +978,14 @@ func extractMessageFromUpdate(update tg.UpdateClass, users, chats map[int64]peer
 		return enrichFromMessageClass(upd.Message, users, chats)
 	case *tg.UpdateNewScheduledMessage:
 		return enrichFromMessageClass(upd.Message, users, chats)
+	}
+
+	return nil
+}
+
+func extractEditedMessage(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {
+	switch upd := update.(type) {
 	case *tg.UpdateEditMessage:
-		// messages.editMessage echoes through the edit updates, not
-		// UpdateNewMessage; without these cases EditMessage returns nil.
 		return enrichFromMessageClass(upd.Message, users, chats)
 	case *tg.UpdateEditChannelMessage:
 		return enrichFromMessageClass(upd.Message, users, chats)

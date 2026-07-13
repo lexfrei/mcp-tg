@@ -174,7 +174,7 @@ func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
 
 	body := string(raw)
 
-	for _, needle := range []string{"'plain'", "'commonmark'", "allowRawMarkdown", "entitiesParsed"} {
+	for _, needle := range []string{"'plain'", "'commonmark'", "allowRawMarkdown", "entitiesParsed", "<https://autolink>"} {
 		if !strings.Contains(body, needle) {
 			t.Errorf("README no longer mentions %s", needle)
 		}

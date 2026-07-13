@@ -934,6 +934,9 @@ func messageFromUpdate(result tg.UpdatesClass) *Message {
 		return &Message{
 			ID:   upd.ID,
 			Date: upd.Date,
+			// The short echo carries the entities the server accepted;
+			// they are the caller's only proof that formatting parsed.
+			Entities: ConvertEntities(upd.Entities),
 		}
 	}
 
@@ -958,26 +961,33 @@ func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]pe
 func extractMessageFromUpdate(update tg.UpdateClass, users, chats map[int64]peerRef) *Message {
 	switch upd := update.(type) {
 	case *tg.UpdateNewMessage:
-		if msg, ok := upd.Message.(*tg.Message); ok {
-			enriched := enrichUpdateMessage(msg, users, chats)
-
-			return &enriched
-		}
+		return enrichFromMessageClass(upd.Message, users, chats)
 	case *tg.UpdateNewChannelMessage:
-		if msg, ok := upd.Message.(*tg.Message); ok {
-			enriched := enrichUpdateMessage(msg, users, chats)
-
-			return &enriched
-		}
+		return enrichFromMessageClass(upd.Message, users, chats)
 	case *tg.UpdateNewScheduledMessage:
-		if msg, ok := upd.Message.(*tg.Message); ok {
-			enriched := enrichUpdateMessage(msg, users, chats)
-
-			return &enriched
-		}
+		return enrichFromMessageClass(upd.Message, users, chats)
+	case *tg.UpdateEditMessage:
+		// messages.editMessage echoes through the edit updates, not
+		// UpdateNewMessage; without these cases EditMessage returns nil.
+		return enrichFromMessageClass(upd.Message, users, chats)
+	case *tg.UpdateEditChannelMessage:
+		return enrichFromMessageClass(upd.Message, users, chats)
 	}
 
 	return nil
+}
+
+// enrichFromMessageClass converts one update's message payload when it
+// is a regular message; service messages and empty stubs yield nil.
+func enrichFromMessageClass(mc tg.MessageClass, users, chats map[int64]peerRef) *Message {
+	msg, ok := mc.(*tg.Message)
+	if !ok {
+		return nil
+	}
+
+	enriched := enrichUpdateMessage(msg, users, chats)
+
+	return &enriched
 }
 
 func extractPhotos(result tg.PhotosPhotosClass) []Photo {

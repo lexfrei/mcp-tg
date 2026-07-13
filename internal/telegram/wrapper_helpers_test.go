@@ -370,6 +370,66 @@ func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
 	}
 }
 
+func TestMessageFromUpdate_ShortSentMessageKeepsEntities(t *testing.T) {
+	// The common echo for a plain text send is UpdateShortSentMessage,
+	// and it carries the entities the server accepted. Dropping them
+	// would blind any caller that wants to verify formatting parsed —
+	// entitiesParsed would read 0 after a perfectly rendered send.
+	short := &tg.UpdateShortSentMessage{ID: 42, Date: 100}
+	short.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 4},
+		&tg.MessageEntityCode{Offset: 5, Length: 3},
+	})
+
+	got := messageFromUpdate(short)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil for *tg.UpdateShortSentMessage")
+	}
+
+	if len(got.Entities) != 2 {
+		t.Errorf("got %d entities, want 2 — the server echo was discarded", len(got.Entities))
+	}
+}
+
+func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
+	// messages.editMessage answers with UpdateEditMessage (or the
+	// channel variant), not UpdateNewMessage. Without these cases the
+	// whole EditMessage return value is nil and callers cannot see the
+	// edited message's entities.
+	raw := &tg.Message{ID: 7, Date: 100, Message: "edited"}
+	raw.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 6}})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateEditMessage{Message: raw}},
+	}
+
+	got := messageFromUpdate(updates)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil for UpdateEditMessage")
+	}
+
+	if got.ID != 7 || len(got.Entities) != 1 {
+		t.Errorf("got ID=%d entities=%d, want 7/1", got.ID, len(got.Entities))
+	}
+}
+
+func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
+	raw := &tg.Message{ID: 9, Date: 100, Message: "edited"}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateEditChannelMessage{Message: raw}},
+	}
+
+	got := messageFromUpdate(updates)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil for UpdateEditChannelMessage")
+	}
+
+	if got.ID != 9 {
+		t.Errorf("got ID=%d, want 9", got.ID)
+	}
+}
+
 func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 	// SendMessage/EditMessage/ForwardMessages return values flow through
 	// messageFromUpdate; the single-message path must apply the same

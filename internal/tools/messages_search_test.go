@@ -236,6 +236,18 @@ func TestMessagesSearchHandler_FromResolveFailureNamesTheParam(t *testing.T) {
 	}
 }
 
+func TestMessagesSearchHandler_NegativeDateRejected(t *testing.T) {
+	handler := NewMessagesSearchHandler(&mockClient{})
+
+	minDate := -5
+	_, _, err := handler(context.Background(), searchRequest(), MessagesSearchParams{
+		Peer: testChatPeer, Query: "q", MinDate: &minDate,
+	})
+	if !errors.Is(err, ErrNegativeDate) {
+		t.Errorf("err = %v, want ErrNegativeDate", err)
+	}
+}
+
 func TestMessagesSearchHandler_TotalPropagated(t *testing.T) {
 	mock := &mockClient{
 		peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},

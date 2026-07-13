@@ -128,6 +128,10 @@ var ErrUnknownMessageFilter = errors.New(
 // inverted.
 var ErrInvalidDateRange = errors.New("minDate must not exceed maxDate")
 
+// ErrNegativeDate is returned when a date bound is negative — unix
+// timestamps only, mirroring ErrNegativeLimit.
+var ErrNegativeDate = errors.New("minDate and maxDate must not be negative")
+
 // ErrUnknownSearchScope is returned when a global search scope is not
 // one of the dialog kinds Telegram can restrict a search to.
 var ErrUnknownSearchScope = errors.New("unknown scope; allowed: users, groups, channels")

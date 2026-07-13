@@ -107,10 +107,14 @@ func resolveOptionalPeer(
 	return &peer, nil
 }
 
-// validateDateRange rejects a date window whose lower bound exceeds its
-// upper bound. Zero means unbounded on that side, so only a window with
-// both ends set can be inverted.
+// validateDateRange rejects negative bounds and a window whose lower
+// bound exceeds its upper bound. Zero means unbounded on that side, so
+// only a window with both ends set can be inverted.
 func validateDateRange(minDate, maxDate int) error {
+	if minDate < 0 || maxDate < 0 {
+		return ErrNegativeDate
+	}
+
 	if minDate > 0 && maxDate > 0 && minDate > maxDate {
 		return ErrInvalidDateRange
 	}

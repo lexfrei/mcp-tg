@@ -26,18 +26,19 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **FLOOD_WAIT retry** — automatic sleep and retry (up to 3 times) when Telegram rate-limits the client
 - **Connection re-init** — when the server forgets a long-lived connection's `initConnection` state and answers `CONNECTION_LAYER_INVALID` / `CONNECTION_NOT_INITED`, the request is retried once wrapped in `initConnection`, recovering the connection in place
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
-- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`
+- **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`; `tg_messages_search_global` pages through a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`)
 
-## Tools (78 registered; 67 listed below)
+## Tools (78 registered; 68 listed below)
 
-The categorised list below documents 67 of the 78 registered tools — the remaining 11 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
+The categorised list below documents 68 of the 78 registered tools — the remaining 10 are wired in `cmd/mcp-tg/main.go` but have not been written up in this file yet. See the source for the full surface area.
 
-### Messages (12)
+### Messages (13)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
 - `tg_messages_context` — Get messages around a specific message
-- `tg_messages_search` — Search messages in a chat
+- `tg_messages_search` — Search messages in a chat (optional topic, sender, kind and date filters)
+- `tg_messages_search_global` — Search messages across all chats (optional kind, date and dialog-kind filters, cursor pagination)
 - `tg_messages_transcribe_audio` — Transcribe a Telegram voice message or video note by message ID
 - `tg_messages_send` — Send a text message
 - `tg_messages_edit` — Edit an existing message
@@ -201,6 +202,14 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 **`accessHash` is omitted from every serialized `InputPeer` shape when zero** — that includes `messages[].peerId`, `messages[].replyTo.fromPeerId`, and `messages[].forward.from.peer`. The omission is deliberate: a zero hash looks like a valid one to MTProto but raises `PEER_ID_INVALID` when passed back. For follow-up tool calls against a peer whose `accessHash` field is missing, resolve it through `@username` (if exposed) or look it up via `tg_dialogs_list` to obtain a usable access hash.
 
 `tg_messages_search_global` is an exception — its `output` is a one-line summary; per-message structure lives only in the JSON `messages` array because results span arbitrary peers. It does NOT return a `participants` field (the per-peer `accessHash` resolution would be unreliable across arbitrary chats). Callers that need to act on a sender or forward-author surfaced by global search must first resolve the peer via `@username` (if present in `messages[].fromUsername`) or `tg_dialogs_list` before passing it back into MTProto — `accessHash` on the embedded `InputPeer` will be omitted whenever it is unknown.
+
+## Search Filters and Pagination
+
+`tg_messages_search` and `tg_messages_search_global` accept an optional `filter` — Telegram's server-side kind filter, applied before results leave the server. Values: `photos`, `video`, `photo_video`, `document`, `url`, `gif`, `voice`, `music`, `chat_photos`, `round_voice`, `round_video`, `my_mentions`, `geo`, `contacts`, `pinned`, `poll`, `phone_calls`, `missed_calls`. This is a different mechanism from `tg_messages_list`'s `type` parameter: `type` classifies already-fetched messages client-side (and so supports labels like `webpage` or `invoice` that no server filter expresses), while `filter` restricts the search on the server and covers kinds the client labels cannot (`url`, `pinned`, `my_mentions`, `missed_calls`).
+
+Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the window, and both return `total` — the server's full match count across all pages. `tg_messages_search` additionally takes `topicId` (restrict to one forum topic) and `from` (restrict to one sender; same peer formats as `peer`).
+
+`tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: pass the previous result's `nextRate` as `offsetRate`, the last returned message's `id` as `offsetId`, and its `peerId` as `offsetPeer`. All three omitted means the first page. The peers named in each result page are cached with their access hashes, so a numeric `peerId` from the previous page resolves even for channels the account has never opened.
 
 ## Markdown — Known Limitations
 

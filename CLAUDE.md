@@ -118,6 +118,14 @@ Both paths build the server through `buildServer`. The headless path passes `onI
 
 Tools that send messages (`messages_send`, `messages_send_file`, `media_send_album`) accept `topicId` to target a specific forum topic. `messages_list` accepts `topicId` to filter messages by topic (uses `MessagesGetReplies` API instead of `MessagesGetHistory`). Message output includes `topicId` extracted from `MessageReplyHeader.ReplyToTopID`.
 
+### Search filters and global pagination
+
+`tg_messages_search` / `tg_messages_search_global` take `filter` — Telegram's server-side `InputMessagesFilter*` kind filter (`internal/telegram/search_filter.go`, a factory map keyed by snake_case names; a map, not a switch, because 18 cases would blow gocyclo). This is NOT `tg_messages_list`'s `type`: `type` is a client-side label match over fetched history (`convert.go` labels), `filter` filters on the server; the value sets overlap but don't coincide (`url`, `pinned`, `my_mentions`, `missed_calls` exist only as filters; `webpage`, `invoice`, `unsupported` only as types).
+
+Per-chat search scoping to a forum topic uses `messages.search`'s native `top_msg_id` — no extra `GetReplies` RPC like `tg_messages_list`'s `topicId` path needs. The `from` sender filter resolves through `resolveOptionalPeer` (`tools/helpers.go`), which deliberately lacks `resolveSendAs`'s access-hash-zero rejection — that check is send-as-specific.
+
+Global search pagination is a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`), with `nextRate` returned in the result. `SearchGlobal` seeds the peer cache from the reply's `Users[]`/`Chats[]` (same pattern as `tg_chats_get_send_as`) — that is what makes a result's numeric `peerId` usable as `offsetPeer` for chats the account never resolved. Do not remove the seeding: without it, page-2 requests fail on unresolvable numeric peers.
+
 ### Reply metadata
 
 Reading tools (`messages_list`, `messages_context`, `messages_get`, `messages_search`, `messages_search_global`) expose reply-header fields on each `MessageItem`:

@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
+	"github.com/lexfrei/mcp-tg/internal/testutil"
 )
 
 var (
@@ -133,5 +134,20 @@ func TestReadmeFilterValues_MatchSearchFilters(t *testing.T) {
 
 	if want := telegram.SearchFilters(); !slices.Equal(names, want) {
 		t.Errorf("README documents filter values %v, code accepts %v", names, want)
+	}
+}
+
+// TestServerInstructions_MentionTheCompoundCursor pins the MCP server
+// instructions — the first documentation an MCP client reads — to the
+// global search cursor contract. They described plain offsetId
+// pagination while the tool already demanded the full compound cursor,
+// steering clients straight into ErrPartialCursor.
+func TestServerInstructions_MentionTheCompoundCursor(t *testing.T) {
+	opts := newServerOptions(testutil.NoopClient{})
+
+	for _, field := range []string{"offsetRate", "nextRate", "nextOffsetId", "nextOffsetPeer"} {
+		if !strings.Contains(opts.Instructions, field) {
+			t.Errorf("server instructions no longer mention the cursor field %s", field)
+		}
 	}
 }

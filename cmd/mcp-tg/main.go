@@ -464,7 +464,9 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 			"All tools accepting 'peer' support: @username, bare username, " +
 			"https://t.me/username, t.me/+invite_hash, or numeric bot-API style ID " +
 			"(positive=user, negative=chat, -100xxx=channel). Prefer @username over numeric IDs. " +
-			"Tools with 'limit' accept pagination: use offsetId or offsetDate from previous results. " +
+			"Tools with 'limit' accept pagination: use offsetId or offsetDate from previous results; " +
+			"tg_messages_search_global pages through a compound cursor — copy the result's " +
+			"nextRate/nextOffsetId/nextOffsetPeer back as offsetRate/offsetId/offsetPeer verbatim. " +
 			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
 		Logger:            logger,
 		KeepAlive:         keepAliveInterval,

@@ -86,7 +86,7 @@ func NewMessagesSearchGlobalHandler(
 			HasMore:  page.NextRate > 0,
 			NextRate: page.NextRate,
 			Messages: messagesToItems(page.Messages),
-			Output:   fmt.Sprintf("Found %d message(s)", len(page.Messages)),
+			Output:   fmt.Sprintf("Found %d of %d message(s)", len(page.Messages), page.Total),
 		}
 
 		// The cursor exists to fetch the next page; a final page

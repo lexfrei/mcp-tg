@@ -81,6 +81,12 @@ func TestMessagesSearchGlobalHandler_NextRateAndTotalPropagated(t *testing.T) {
 	if res.Total != 42 {
 		t.Errorf("Total = %d, want 42", res.Total)
 	}
+
+	// The summary line is quoted in the project docs; pin it so the
+	// next format change cannot drift past them unnoticed.
+	if res.Output != "Found 2 of 42 message(s)" {
+		t.Errorf("Output = %q, want the documented 'Found N of M message(s)' shape", res.Output)
+	}
 }
 
 // TestMessagesSearchGlobalHandler_ReadyMadeCursor pins that the result

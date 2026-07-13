@@ -74,8 +74,10 @@ func searchFilterFactories() map[string]func() tg.MessagesFilterClass {
 // SearchFilters returns the accepted filter names in sorted order, for
 // validation error messages and documentation.
 func SearchFilters() []string {
-	names := make([]string, 0, len(searchFilterFactories()))
-	for name := range searchFilterFactories() {
+	factories := searchFilterFactories()
+
+	names := make([]string, 0, len(factories))
+	for name := range factories {
 		names = append(names, name)
 	}
 

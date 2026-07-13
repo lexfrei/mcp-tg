@@ -224,6 +224,14 @@ Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the wind
 
 `tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: when the result carries the ready-made `nextRate`, `nextOffsetId` and `nextOffsetPeer` fields (`hasMore: true` — "probably more"; the terminal signal is an empty page) — copy them into `offsetRate`, `offsetId` and `offsetPeer` verbatim to fetch it; pass either the whole cursor or none of it (the first page). A final or empty page carries no cursor fields. The peers named in each result page are cached with their access hashes, so the returned `nextOffsetPeer` resolves even for channels the account has never opened. The cache is in-memory, so the cursor does not survive a server restart — a continuation whose peer can no longer be resolved is rejected with a clear error asking to re-run the first page.
 
+## Parse Mode
+
+The four text tools (`tg_messages_send`, `tg_messages_edit`, `tg_messages_send_file`, `tg_media_send_album`) require `parseMode` on every call — `'plain'` or `'commonmark'`, no default. The input schema carries the enum, so a call without a mode (or with the retired `'markdown'` alias) is rejected before it reaches Telegram.
+
+In plain mode, text or captions that look like markdown — code fences, `` `inline code` ``, `**bold**`, `[text](url)`, `__underline__`, `~~strike~~`, `||spoiler||` — are rejected with "text looks like markdown; pass parseMode='commonmark' to format it, or set allowRawMarkdown=true to send the characters literally". Set `allowRawMarkdown: true` to intentionally send such characters unformatted. Single `*italic*`/`_italic_` and `>` quotes do not trigger the lint.
+
+Every result reports `entitiesParsed` — how many formatting entities the server actually accepted, present even when 0. The self-correction recipe: if a `commonmark` send returns `entitiesParsed: 0` despite formatting in the text, the markdown did not parse — fix the text and call `tg_messages_edit` with `parseMode: "commonmark"`.
+
 ## Markdown — Known Limitations
 
 The CommonMark subset supported via `parseMode: "commonmark"` covers most everyday formatting, but a handful of CommonMark spec features are intentionally not implemented. Each is captured as a commented-out test in `internal/telegram/markdown_audit_test.go` ready to be unblocked when work begins.

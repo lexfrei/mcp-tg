@@ -467,6 +467,8 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 			"Tools with 'limit' accept pagination: use offsetId or offsetDate from previous results; " +
 			"tg_messages_search_global pages through a compound cursor — copy the result's " +
 			"nextRate/nextOffsetId/nextOffsetPeer back as offsetRate/offsetId/offsetPeer verbatim. " +
+			"Text tools require parseMode ('plain' or 'commonmark'); results report entitiesParsed — " +
+			"0 after a commonmark send means nothing parsed. " +
 			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
 		Logger:            logger,
 		KeepAlive:         keepAliveInterval,

@@ -161,13 +161,15 @@ Each message in `output` is a block of `key: value` lines (`from:`, `forwarded f
 
 ### Parse mode (formatting on write)
 
-Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_file`, `media_send_album`) accept `parseMode`:
+Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_file`, `media_send_album`) REQUIRE `parseMode` — no default, deliberately: optional formatting params get systematically omitted by LLM callers and markdown then ships as literal asterisks. The choice is enforced at the protocol layer — each tool's input schema carries `enum: [plain, commonmark]` (built by `inputSchemaWithEnum` in `tools/register.go`, which infers the schema exactly as `mcp.AddTool` would and patches one property), validated by the SDK before the handler runs. The schema enum is strict lowercase; `normalizeParseMode`'s case-insensitivity survives only as defense in depth for direct handler calls (tests). `TestParseModeSchema_RequiredEnumOnTheWire` pins required+enum on the wire representation.
 
-- `""` (empty / omitted) — plain text, no formatting.
+- `"plain"` — no formatting. Text (or caption) that looks like markdown is REJECTED with `ErrPlainLooksLikeMarkdown` unless `allowRawMarkdown=true`; the lint (`telegram.LooksLikeMarkdown`, `markdown_lint.go`) conservatively matches fences, inline code, doubled-marker emphasis (`**`/`__`/`~~`/`||` with non-whitespace-flanked content) and `[text](url)` links, and deliberately excludes single `*italic*`/`_italic_` and `>` quotes as false-positive-prone. `__init__` is a true positive by design — the parser really would transform it.
 - `"commonmark"` — CommonMark subset: `**bold**`, `*italic*`, `` `code` ``, ` ```pre``` `, `~~~pre~~~`, 4-space indented code blocks, `[text](url)`, `<https://autolink>`, `> quote`, `>quote` (no space ok), `~~strike~~`, `__underline__`, `||spoiler||`. Parsed into `tg.MessageEntity` on the server side.
-- `"markdown"` — legacy alias for `commonmark`.
+- `"markdown"` — RETIRED alias; rejected with a steering error pointing at `commonmark`. The wrapper's `IsCommonMarkParseMode` still recognises it internally as harmless defense.
 - `"html"` / `"markdownv2"` — recognised but not yet implemented; return a clear error.
-- Anything else — rejected with the list of allowed values.
+- `""` (omitted) — rejected by the schema (`required`), and by `ErrParseModeRequired` on the direct-handler path.
+
+All four results carry `entitiesParsed` — the count of formatting entities in the SERVER echo, serialized even at 0 (0 after a commonmark send means nothing parsed; the caller can self-correct via `tg_messages_edit`). The echo is the source, not a client-side recount: `messageFromUpdate` converts `updateShortSentMessage.Entities`, and the extractor handles `updateEditMessage`/`updateEditChannelMessage` (before that fix `EditMessage` returned nil — an edit-based self-correction loop would have seen 0 forever). Albums report the SUM across echoed messages, since the server's update order is not a contract.
 
 Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 

@@ -151,3 +151,36 @@ func TestServerInstructions_MentionTheCompoundCursor(t *testing.T) {
 		}
 	}
 }
+
+// TestServerInstructions_MentionRequiredParseMode pins the parseMode
+// contract in the first documentation an MCP client reads.
+func TestServerInstructions_MentionRequiredParseMode(t *testing.T) {
+	opts := newServerOptions(testutil.NoopClient{})
+
+	for _, needle := range []string{"parseMode", "entitiesParsed"} {
+		if !strings.Contains(opts.Instructions, needle) {
+			t.Errorf("server instructions no longer mention %s", needle)
+		}
+	}
+}
+
+// TestReadmeParseMode_MatchesTheContract pins the README section to the
+// shipped contract: both enum values named, the retired alias absent.
+func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
+	raw, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+
+	body := string(raw)
+
+	for _, needle := range []string{"'plain'", "'commonmark'", "allowRawMarkdown", "entitiesParsed"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("README no longer mentions %s", needle)
+		}
+	}
+
+	if strings.Contains(body, "'markdown' alias") {
+		t.Error("README still documents the retired 'markdown' alias")
+	}
+}

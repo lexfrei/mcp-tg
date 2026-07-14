@@ -70,7 +70,7 @@ brews:
       end
 
       (libexec/"mcp-tg-daemon").write <<~SH
-        #!/bin/bash
+        #!/bin/sh
         set -a
         [ -f "#{etc}/mcp-tg/mcp-tg.env" ] && . "#{etc}/mcp-tg/mcp-tg.env"
         set +a
@@ -115,6 +115,12 @@ brews:
 
            Do this AFTER step 1 — started with the file still empty, the daemon
            exits on every launch and the service manager keeps restarting it.
+
+           Do NOT use `sudo brew services start`: that installs a LaunchDaemon,
+           which runs as root and reads the SYSTEM keychain, while `mcp-tg
+           login` wrote the session to YOUR login keychain (and root's HOME is
+           different too). The daemon would report a missing session and tell
+           you to log in, which you already did.
 
       The service sources that file on every start, so nothing depends on your
       login shell. If it crash-loops, the config is the first suspect: check

@@ -42,6 +42,27 @@ func TestLdflagsSymbols_ExistInMain(t *testing.T) {
 	}
 }
 
+// TestLdflagsValues_MatchTheContainer pins the SHAPE of what gets injected, not
+// only the symbol names: the container passes what docker/metadata-action emits
+// (v-prefixed, full SHA), so GoReleaser must do the same, or one release
+// introduces itself two ways — v1.2.0 over MCP from the image, 1.2.0 from brew.
+func TestLdflagsValues_MatchTheContainer(t *testing.T) {
+	raw, err := os.ReadFile("../../.goreleaser.yaml")
+	if err != nil {
+		t.Fatalf("read .goreleaser.yaml: %v", err)
+	}
+
+	body := string(raw)
+
+	if !strings.Contains(body, "-X main.version=v{{.Version}}") {
+		t.Error("GoReleaser must inject a v-prefixed version — the container's is v-prefixed")
+	}
+
+	if !strings.Contains(body, "-X main.revision={{.FullCommit}}") {
+		t.Error("GoReleaser must inject the full commit — the container's revision is the full SHA")
+	}
+}
+
 func packageLevelVars(t *testing.T, filename string) map[string]struct{} {
 	t.Helper()
 

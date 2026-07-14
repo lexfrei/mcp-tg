@@ -77,12 +77,15 @@ jobs:
           test -s dist/checksums.txt.bundle \
             || { echo "::error::cosign produced no bundle — the release would ship unsigned"; exit 1; }
 
-      - name: Verify the formula parses
+      - name: Verify the formula parses and lints
         # install/service/test/caveats are hand-written Ruby pasted into YAML.
         # GoReleaser substitutes them as strings and never parses them, so a
-        # missing `end` writes a broken formula and still exits 0 — every
-        # brew install would then fail with a SyntaxError.
-        run: ruby -c dist/homebrew/Formula/mcp-tg.rb
+        # missing `end` writes a broken formula and still exits 0 — every brew
+        # install would then fail. ruby -c catches syntax; brew style also
+        # catches DSL mistakes that parse fine and blow up at install time.
+        run: |
+          ruby -c dist/homebrew/Formula/mcp-tg.rb
+          brew style dist/homebrew/Formula/mcp-tg.rb
 
   test:
     name: Test

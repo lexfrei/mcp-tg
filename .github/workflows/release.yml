@@ -50,13 +50,20 @@ jobs:
           # Contents: write grant.
           # --config - keeps the token out of argv; --retry stops a network
           # blip from being reported as a bad token.
+          # The trailing || is load-bearing: the step runs under `bash -e`, and a
+          # transport failure makes curl exit non-zero, which would kill the step
+          # before the case below could explain what happened.
           code=$(printf 'user = "x-access-token:%s"\n' "${GH_TOKEN}" | curl --config - \
             --silent --output /dev/null --write-out '%{http_code}' \
             --retry 3 --retry-connrefused \
-            "https://github.com/lexfrei/homebrew-tap.git/info/refs?service=git-receive-pack")
+            "https://github.com/lexfrei/homebrew-tap.git/info/refs?service=git-receive-pack") || code="000"
 
           case "${code}" in
             200) ;;
+            404)
+              echo "::error::lexfrei/homebrew-tap is not visible to this token — renamed, deleted, or out of the token's repository scope." >&2
+              exit 1
+              ;;
             000)
               echo "::error::Could not reach github.com to check the tap token — this is a network failure, not a bad token." >&2
               exit 1

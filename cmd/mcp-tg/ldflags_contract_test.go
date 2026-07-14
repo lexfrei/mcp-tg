@@ -61,6 +61,19 @@ func TestLdflagsValues_MatchTheContainer(t *testing.T) {
 	if !strings.Contains(body, "-X main.revision={{.FullCommit}}") {
 		t.Error("GoReleaser must inject the full commit — the container's revision is the full SHA")
 	}
+
+	// The container's v prefix does not come from the Containerfile: it comes
+	// from the semver tag pattern, which feeds org.opencontainers.image.version
+	// and then the VERSION build-arg. Flip that pattern and the two channels
+	// desync while the assertions above still pass.
+	workflow, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatalf("read release.yml: %v", err)
+	}
+
+	if !strings.Contains(string(workflow), "type=semver,pattern=v{{version}}") {
+		t.Error("the container tag pattern is no longer v-prefixed — the binary's version would not match the image's")
+	}
 }
 
 func packageLevelVars(t *testing.T, filename string) map[string]struct{} {

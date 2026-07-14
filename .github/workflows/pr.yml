@@ -85,6 +85,8 @@ jobs:
         # catches DSL mistakes that parse fine and blow up at install time.
         run: |
           ruby -c dist/homebrew/Formula/mcp-tg.rb
+          # Homebrew ships on the runner image but is NOT on PATH.
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew style dist/homebrew/Formula/mcp-tg.rb
 
   test:

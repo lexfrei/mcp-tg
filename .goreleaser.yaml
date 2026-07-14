@@ -113,6 +113,9 @@ brews:
 
              brew services start mcp-tg
 
+           Do this AFTER step 1 — started with the file still empty, the daemon
+           exits on every launch and the service manager keeps restarting it.
+
       The service sources that file on every start, so nothing depends on your
       login shell. If it crash-loops, the config is the first suspect: check
       `brew services list` and $(brew --prefix)/var/log/mcp-tg.log.
@@ -154,3 +157,9 @@ release:
   # key off the semver hyphen, and GoReleaser does update the flag on the
   # existing release.
   prerelease: auto
+  # Asset upload is the only step in the publish chain that is not idempotent:
+  # it answers 422 already_exists and GoReleaser treats that as unrecoverable.
+  # So re-running this job after a failed tap push — the obvious thing to do —
+  # would die on the first archive and never reach the tap at all. With this,
+  # the asset is deleted and re-uploaded, and the re-run gets to the formula.
+  replace_existing_artifacts: true

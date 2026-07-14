@@ -34,12 +34,23 @@ jobs:
             exit 1
           fi
 
-          # A non-empty secret is not the interesting case. A fine-grained PAT
-          # expires (366 days, tops), and an expired one is still non-empty:
-          # preflight would pass, the container and the release would go out,
-          # and only the tap push would fail — on top of a public release.
-          if ! gh api repos/lexfrei/homebrew-tap --jq '.permissions.push' | grep --quiet true; then
-            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot push to lexfrei/homebrew-tap (expired, revoked, or under-scoped)." >&2
+          # A non-empty secret is not the interesting case: a fine-grained PAT
+          # expires within a year, and an expired one is still non-empty.
+          #
+          # The check probes the WRITE path itself. GET /repos would not do:
+          # its `permissions` field reports the authenticated USER's role in the
+          # repository, not what the token is allowed to do, and a fine-grained
+          # PAT can read any public repository regardless of its repository
+          # scope — so a read-only or wrongly-scoped token would sail through.
+          # An info/refs?service=git-receive-pack request is the first exchange
+          # of a real `git push`, mutates nothing, and answers 403 without the
+          # Contents: write grant.
+          code=$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --user "x-access-token:${GH_TOKEN}" \
+            "https://github.com/lexfrei/homebrew-tap.git/info/refs?service=git-receive-pack")
+
+          if [ "${code}" != "200" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot push to lexfrei/homebrew-tap (HTTP ${code} — expired, revoked, or missing Contents: write)." >&2
             exit 1
           fi
 
@@ -273,7 +284,7 @@ jobs:
             echo ""
             echo "## Verify the Binaries"
             echo ""
-            echo "The checksums file is signed; the archives are covered by it."
+            echo "The checksums file is signed; the archives are covered by it. Needs cosign v3+ (the bundle format)."
             echo ""
             echo '```bash'
             echo "cosign verify-blob checksums.txt \\"

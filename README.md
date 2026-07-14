@@ -429,6 +429,12 @@ A container has no OS keychain, so the image defaults to the plaintext file back
 
 ```bash
 brew install lexfrei/tap/mcp-tg
+
+# The public build bakes in no credentials — get an app id and hash at
+# https://my.telegram.org/apps first.
+export TELEGRAM_APP_ID=12345
+export TELEGRAM_APP_HASH=your_app_hash
+
 mcp-tg login                      # interactive, writes the session to the OS keychain
 brew services start mcp-tg        # shared HTTP daemon on 127.0.0.1:8787
 ```

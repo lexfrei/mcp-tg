@@ -122,6 +122,68 @@ func validateDateRange(minDate, maxDate int) error {
 	return nil
 }
 
+// entityCount returns how many FORMATTING entities the server echoed
+// back for a sent or edited message. Auto-detected entities (a bare
+// URL, an @mention, a #hashtag) are excluded: the server adds those to
+// any message regardless of parseMode, so counting them would report a
+// non-zero "your markdown parsed" for a plain send that merely
+// contained a link. Nil-safe — some echo shapes yield no message.
+func entityCount(msg *telegram.Message) int {
+	if msg == nil {
+		return 0
+	}
+
+	return countFormatting(msg.Entities)
+}
+
+// entityCountAll sums the echoed formatting entities across an album's
+// messages. The sum is used instead of "the first message" because the
+// server's update order is not a contract — only the captioned item
+// carries entities, so the result is the same either way.
+func entityCountAll(msgs []telegram.Message) int {
+	total := 0
+	for i := range msgs {
+		total += countFormatting(msgs[i].Entities)
+	}
+
+	return total
+}
+
+func countFormatting(entities []telegram.Entity) int {
+	count := 0
+
+	for _, entity := range entities {
+		if telegram.IsFormattingEntity(entity.Type) {
+			count++
+		}
+	}
+
+	return count
+}
+
+// validatePlainText rejects markdown-looking text sent with
+// parseMode=plain unless allowRaw overrides. Empty text (a file or
+// album without a caption) always passes.
+func validatePlainText(mode string, allowRaw bool, text string) error {
+	if mode != telegram.ParseModePlain {
+		if allowRaw {
+			return ErrAllowRawMarkdownWithoutPlain
+		}
+
+		return nil
+	}
+
+	if allowRaw || text == "" {
+		return nil
+	}
+
+	if telegram.LooksLikeMarkdown(text) {
+		return ErrPlainLooksLikeMarkdown
+	}
+
+	return nil
+}
+
 // normalizeParseMode lowercases the input so callers can pass
 // "Markdown", "COMMONMARK" etc. without getting a validation error.
 func normalizeParseMode(mode string) string {
@@ -213,14 +275,19 @@ func validSlowmode(sec int) bool {
 	}
 }
 
-// validateParseMode rejects unknown parseMode values and flags modes
-// that are recognised but not yet implemented. Empty string means
-// "plain text" and is always accepted. Comparison is case-insensitive
-// so callers can pass "Markdown" or "COMMONMARK" without error.
+// validateParseMode accepts exactly 'plain' and 'commonmark'. There is
+// deliberately no default and no legacy alias: an omitted mode and the
+// retired 'markdown' spelling each get their own steering error.
+// Comparison is case-insensitive here as defense in depth — the schema
+// enum enforces strict lowercase before the handler ever runs.
 func validateParseMode(mode string) error {
 	switch normalizeParseMode(mode) {
-	case "", telegram.ParseModeMarkdown, telegram.ParseModeCommonMark:
+	case telegram.ParseModePlain, telegram.ParseModeCommonMark:
 		return nil
+	case "":
+		return ErrParseModeRequired
+	case telegram.ParseModeMarkdown:
+		return ErrMarkdownAliasRemoved
 	case telegram.ParseModeHTML, telegram.ParseModeMarkdownV2:
 		return ErrParseModeNotImplemented
 	default:

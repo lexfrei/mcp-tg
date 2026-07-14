@@ -151,3 +151,71 @@ func TestServerInstructions_MentionTheCompoundCursor(t *testing.T) {
 		}
 	}
 }
+
+// TestServerInstructions_MentionRequiredParseMode pins the parseMode
+// contract in the first documentation an MCP client reads.
+func TestServerInstructions_MentionRequiredParseMode(t *testing.T) {
+	opts := newServerOptions(testutil.NoopClient{})
+
+	for _, needle := range []string{"parseMode", "entitiesParsed", "CONTAINED formatting"} {
+		if !strings.Contains(opts.Instructions, needle) {
+			t.Errorf("server instructions no longer mention %s", needle)
+		}
+	}
+}
+
+// TestReadmeParseMode_MatchesTheContract pins the README section to the
+// shipped contract: both enum values named, the retired alias absent.
+func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
+	raw, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+
+	body := string(raw)
+
+	for _, needle := range []string{"'plain'", "'commonmark'", "allowRawMarkdown", "entitiesParsed", "<https://autolink>"} {
+		if !strings.Contains(body, needle) {
+			t.Errorf("README no longer mentions %s", needle)
+		}
+	}
+
+	if strings.Contains(body, "legacy alias for") {
+		t.Error("README still documents the retired 'markdown' alias as usable")
+	}
+
+	if !strings.Contains(body, "**Breaking change") {
+		t.Error("README no longer carries the parse-mode migration note")
+	}
+
+	// The word-opening rule applies to doubled markers and links only —
+	// backticks, fences and autolink brackets trigger anywhere. A README
+	// that claims otherwise sends people to debug a lint that is working
+	// as designed.
+	if !strings.Contains(body, "trigger wherever they appear") {
+		t.Error("README no longer scopes the lint's word-opening rule correctly")
+	}
+}
+
+// TestReadmeMajorVersion_MatchesTheModulePath pins the promise the README
+// makes about versioning against what the module can actually carry: a
+// vN>=2 tag requires a matching /vN suffix in go.mod, or `go install
+// ...@vN` fails while `@latest` silently keeps resolving to v1.
+func TestReadmeMajorVersion_MatchesTheModulePath(t *testing.T) {
+	gomod, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+
+	readme, err := os.ReadFile("../../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+
+	hasSuffix := regexp.MustCompile(`(?m)^module .+/v[2-9]\d*$`).Match(gomod)
+	promisesMajor := regexp.MustCompile(`v[2-9]\d*\.0\.0`).Match(readme)
+
+	if promisesMajor && !hasSuffix {
+		t.Error("README promises a major version the module path cannot carry — add the /vN suffix to go.mod or drop the promise")
+	}
+}

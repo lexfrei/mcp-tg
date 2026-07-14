@@ -36,11 +36,16 @@ func TestRegisterTools(t *testing.T) {
 	// these is missing, someone registered the tool via mcp.AddTool instead
 	// of tools.AddTool — silently disabling bool-coercion for its params.
 	cases := map[string][]string{
-		"tg_messages_send":      {"silent", "noWebpage"},
-		"tg_messages_send_file": {"silent"},
-		"tg_dialogs_pin":        {"pinned"},
-		"tg_groups_admin_set":   {"banUsers", "addAdmins"},
-		"tg_chats_create":       {"isChannel"},
+		"tg_messages_send":      {"silent", "noWebpage", "allowRawMarkdown"},
+		"tg_messages_send_file": {"silent", "allowRawMarkdown"},
+		// tg_messages_edit had no bool params at all before
+		// allowRawMarkdown, so this PR is what puts it in the registry —
+		// exactly the transition this map guards.
+		"tg_messages_edit":    {"allowRawMarkdown"},
+		"tg_media_send_album": {"silent", "allowRawMarkdown"},
+		"tg_dialogs_pin":      {"pinned"},
+		"tg_groups_admin_set": {"banUsers", "addAdmins"},
+		"tg_chats_create":     {"isChannel"},
 	}
 
 	for name, expected := range cases {

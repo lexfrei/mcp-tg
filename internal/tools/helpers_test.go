@@ -207,7 +207,7 @@ func TestTruncateText_ZeroMax(t *testing.T) {
 }
 
 func TestValidateParseMode_Allowed(t *testing.T) {
-	cases := []string{"", "markdown", "commonmark", "Markdown", "COMMONMARK"}
+	cases := []string{"plain", "commonmark", "Plain", "COMMONMARK"}
 
 	for _, mode := range cases {
 		err := validateParseMode(mode)
@@ -224,6 +224,22 @@ func TestValidateParseMode_NotImplemented(t *testing.T) {
 		err := validateParseMode(mode)
 		if !errors.Is(err, ErrParseModeNotImplemented) {
 			t.Errorf("validateParseMode(%q) = %v, want ErrParseModeNotImplemented", mode, err)
+		}
+	}
+}
+
+func TestValidateParseMode_EmptyRequired(t *testing.T) {
+	err := validateParseMode("")
+	if !errors.Is(err, ErrParseModeRequired) {
+		t.Errorf("validateParseMode(\"\") = %v, want ErrParseModeRequired", err)
+	}
+}
+
+func TestValidateParseMode_MarkdownAliasRemoved(t *testing.T) {
+	for _, mode := range []string{"markdown", "Markdown"} {
+		err := validateParseMode(mode)
+		if !errors.Is(err, ErrMarkdownAliasRemoved) {
+			t.Errorf("validateParseMode(%q) = %v, want ErrMarkdownAliasRemoved", mode, err)
 		}
 	}
 }

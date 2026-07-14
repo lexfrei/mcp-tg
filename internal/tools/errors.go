@@ -103,10 +103,39 @@ var ErrInvalidSlowmode = errors.New(
 	"invalid slowmode seconds; allowed: 0,10,30,60,300,900,3600,21600,43200",
 )
 
+// ErrParseModeRequired is returned when parseMode is missing. There is
+// no default on purpose: optional formatting params get systematically
+// omitted by LLM callers, and markdown then ships as literal asterisks.
+var ErrParseModeRequired = errors.New(
+	"parseMode is required; pass 'plain' (no formatting) or 'commonmark'",
+)
+
+// ErrMarkdownAliasRemoved is returned for the retired 'markdown' alias.
+// Over MCP the schema enum rejects the value first with its own message;
+// this error covers the direct-handler path and documents the retirement.
+var ErrMarkdownAliasRemoved = errors.New(
+	"parseMode 'markdown' is no longer accepted; use 'commonmark'",
+)
+
+// ErrPlainLooksLikeMarkdown is returned when plain-mode text contains
+// constructs the CommonMark parser would transform — the formatting
+// would otherwise ship as literal characters with no error.
+var ErrPlainLooksLikeMarkdown = errors.New(
+	"text looks like markdown; pass parseMode='commonmark' to format it, " +
+		"or set allowRawMarkdown=true to send the characters literally",
+)
+
+// ErrAllowRawMarkdownWithoutPlain is returned when allowRawMarkdown is
+// set outside plain mode, where it does nothing — a silently dropped
+// flag is harder to debug than a refusal.
+var ErrAllowRawMarkdownWithoutPlain = errors.New(
+	"allowRawMarkdown only applies to parseMode='plain'; drop it or switch the mode",
+)
+
 // ErrUnknownParseMode is returned when parseMode is a value the wrapper
 // does not recognise.
 var ErrUnknownParseMode = errors.New(
-	"unknown parseMode; allowed: '' (plain), 'commonmark', 'markdown' (alias for commonmark), 'html', 'markdownv2'",
+	"unknown parseMode; allowed: 'plain', 'commonmark'",
 )
 
 // ErrUnknownMessageType is returned when a messages_list type filter is

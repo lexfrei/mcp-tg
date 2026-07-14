@@ -65,6 +65,30 @@ type simpleEntityRange interface {
 	GetLength() int
 }
 
+// IsFormattingEntity reports whether an entity type is one a parseMode
+// can actually produce, as opposed to the types Telegram's server
+// detects on its own in ANY message regardless of parseMode — a bare
+// URL, an @mention, a #hashtag, a bank card number. Those are
+// formatting nobody asked for and must not count towards "did my
+// markdown parse".
+//
+// This is an allow-list on purpose. A deny-list would call every future
+// or unmapped entity type formatting, so the day Telegram adds another
+// auto-detected kind (or this package starts converting bank_card), a
+// plain send would silently start reporting parsed markdown again —
+// exactly the bug entitiesParsed exists to prevent. Unknown types do
+// not count.
+func IsFormattingEntity(entityType string) bool {
+	switch entityType {
+	case EntityTypeBold, EntityTypeItalic, EntityTypeUnderline, EntityTypeStrike,
+		EntityTypeSpoiler, EntityTypeCode, EntityTypePre, EntityTypeBlockquote,
+		EntityTypeTextURL, EntityTypeMentionName, EntityTypeCustomEmoji:
+		return true
+	default:
+		return false
+	}
+}
+
 // simpleEntityType maps an MTProto entity constructor ID to the domain
 // type label. Only types that carry nothing but Offset+Length belong
 // here — anything with URL/language/userID metadata goes through

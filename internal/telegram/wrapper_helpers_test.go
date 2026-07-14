@@ -355,7 +355,7 @@ func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
 		Users:   []tg.UserClass{&tg.User{ID: 10, FirstName: "Bob", Username: "bob"}},
 	}
 
-	got := messageFromUpdate(combined)
+	got := messageFromUpdate(combined, InputPeer{}, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil for *tg.UpdatesCombined")
 	}
@@ -367,6 +367,228 @@ func TestMessageFromUpdate_HandlesUpdatesCombined(t *testing.T) {
 	if got.FromName != "Bob" || got.FromUsername != "bob" {
 		t.Errorf("got FromName=%q FromUsername=%q, want Bob/bob — UpdatesCombined was not enriched",
 			got.FromName, got.FromUsername)
+	}
+}
+
+func TestMessageFromUpdate_ShortSentMessageKeepsEntities(t *testing.T) {
+	// The common echo for a plain text send is UpdateShortSentMessage,
+	// and it carries the entities the server accepted. Dropping them
+	// would blind any caller that wants to verify formatting parsed —
+	// entitiesParsed would read 0 after a perfectly rendered send.
+	short := &tg.UpdateShortSentMessage{ID: 42, Date: 100}
+	short.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 4},
+		&tg.MessageEntityCode{Offset: 5, Length: 3},
+	})
+
+	got := messageFromUpdate(short, InputPeer{}, 0, nil)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil for *tg.UpdateShortSentMessage")
+	}
+
+	if len(got.Entities) != 2 {
+		t.Errorf("got %d entities, want 2 — the server echo was discarded", len(got.Entities))
+	}
+}
+
+func TestMessageFromUpdate_EditMessageEcho(t *testing.T) {
+	// messages.editMessage answers with UpdateEditMessage (or the
+	// channel variant), not UpdateNewMessage. Without these cases the
+	// whole EditMessage return value is nil and callers cannot see the
+	// edited message's entities.
+	raw := &tg.Message{ID: 7, Date: 100, Message: "edited"}
+	raw.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 6}})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateEditMessage{Message: raw}},
+	}
+
+	got := editedMessageFromUpdate(updates, 7, InputPeer{})
+	if got == nil {
+		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditMessage")
+	}
+
+	if got.ID != 7 || len(got.Entities) != 1 {
+		t.Errorf("got ID=%d entities=%d, want 7/1", got.ID, len(got.Entities))
+	}
+}
+
+// TestMessagesFromUpdates_ScheduledMessages pins the scheduled path:
+// a scheduled album (or forward) echoes updateNewScheduledMessage, and
+// dropping those left the caller with count 0 and entitiesParsed 0 —
+// which the documented contract reads as "nothing parsed".
+func TestMessagesFromUpdates_ScheduledMessages(t *testing.T) {
+	raw := &tg.Message{ID: 5, Date: 100, Message: "scheduled"}
+	raw.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 9}})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateNewScheduledMessage{Message: raw}},
+	}
+
+	msgs := messagesFromUpdates(updates, InputPeer{})
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1 — the scheduled echo was dropped", len(msgs))
+	}
+
+	if len(msgs[0].Entities) != 1 {
+		t.Errorf("got %d entities, want 1", len(msgs[0].Entities))
+	}
+}
+
+// TestShortSentEntities_FallsBackToSubmitted pins the repair of the one
+// echo shape whose entity flag is unobservable: when the short echo
+// carries no entities, the submitted set is reported instead.
+func TestShortSentEntities_FallsBackToSubmitted(t *testing.T) {
+	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
+
+	silent := &tg.UpdateShortSentMessage{ID: 1, Date: 100}
+
+	got := messageFromUpdate(silent, InputPeer{}, 0, submitted)
+	if got == nil || len(got.Entities) != 1 {
+		t.Errorf("a silent short echo must report the submitted entities, got %+v", got)
+	}
+
+	// An echo that DID carry entities is authoritative.
+	echoed := &tg.UpdateShortSentMessage{ID: 1, Date: 100}
+	echoed.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityCode{Offset: 0, Length: 2},
+		&tg.MessageEntityItalic{Offset: 3, Length: 2},
+	})
+
+	got = messageFromUpdate(echoed, InputPeer{}, 0, submitted)
+	if got == nil || len(got.Entities) != 2 {
+		t.Errorf("a non-empty short echo must win, got %+v", got)
+	}
+}
+
+// TestMessageFromUpdate_FullEchoZeroIsAuthoritative pins the scope of
+// that fallback: on the full-updates path the server sends its own
+// message, so a zero there means the server applied no entities — the
+// exact signal entitiesParsed exists to carry. Filling it in from the
+// submitted set would erase the signal.
+func TestMessageFromUpdate_FullEchoZeroIsAuthoritative(t *testing.T) {
+	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewMessage{Message: &tg.Message{ID: 3, Date: 100, Message: "no entities"}},
+		},
+	}
+
+	got := messageFromUpdate(updates, InputPeer{}, 0, submitted)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("a server echo reporting no entities must stay at 0, got %+v", got.Entities)
+	}
+}
+
+// TestMessageFromUpdate_IgnoresEditUpdates pins that the send echo path
+// is blind to edit updates: a send response can carry an edit update for
+// the parent message (the topic root's reply-counter bump), and the send
+// result must never report that parent's ID as the message it just sent.
+// TestEditedMessageFromUpdate_IgnoresNewMessages is the mirror of the
+// send-side rule: an edit echo must report the edited message, never
+// some other new message the envelope bundled.
+func TestEditedMessageFromUpdate_IgnoresNewMessages(t *testing.T) {
+	bundled := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 99, Date: 100, Message: "someone else"}},
+		},
+	}
+
+	if got := editedMessageFromUpdate(bundled, 99, InputPeer{}); got != nil {
+		t.Errorf("an edit echo without an edit update must yield nil, got ID=%d", got.ID)
+	}
+}
+
+// TestEditedMessageFromUpdate_MatchesTheEditedID pins that the edit echo
+// is matched by ID: an envelope can bundle edits of other messages (a
+// channel post's edit propagating into the linked discussion group), and
+// taking the first one would report a foreign ID and a foreign entity
+// count as the caller's own edit.
+func TestEditedMessageFromUpdate_MatchesTheEditedID(t *testing.T) {
+	stranger := &tg.Message{ID: 137, Date: 100, Message: "someone else's edit"}
+	stranger.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 8},
+		&tg.MessageEntityCode{Offset: 9, Length: 4},
+	})
+
+	mine := &tg.Message{ID: 42, Date: 100, Message: "my edit"}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: stranger},
+			&tg.UpdateEditMessage{Message: mine},
+		},
+	}
+
+	got := editedMessageFromUpdate(updates, 42, InputPeer{})
+	if got == nil {
+		t.Fatal("editedMessageFromUpdate returned nil for the edited message")
+	}
+
+	if got.ID != 42 {
+		t.Errorf("got ID=%d, want the edited message 42, not the bundled stranger", got.ID)
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("got %d entities — the stranger's count leaked into the caller's result", len(got.Entities))
+	}
+}
+
+func TestMessageFromUpdate_IgnoresEditUpdates(t *testing.T) {
+	parentOnly := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: &tg.Message{ID: 1, Date: 90, Message: "parent"}},
+		},
+	}
+
+	if got := messageFromUpdate(parentOnly, InputPeer{}, 0, nil); got != nil {
+		t.Errorf("a send echo carrying only an edit update must yield nil, got ID=%d", got.ID)
+	}
+}
+
+// TestMessageFromUpdate_PrefersNewOverEdit pins the ordering: an edit
+// update for the parent may arrive BEFORE the new-message update, and
+// the send result must still report the sent message.
+func TestMessageFromUpdate_PrefersNewOverEdit(t *testing.T) {
+	parent := &tg.Message{ID: 1, Date: 90, Message: "parent bumped"}
+	sent := &tg.Message{ID: 2, Date: 100, Message: "the actual send"}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: parent},
+			&tg.UpdateNewChannelMessage{Message: sent},
+		},
+	}
+
+	got := messageFromUpdate(updates, InputPeer{}, 0, nil)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if got.ID != 2 {
+		t.Errorf("got ID=%d, want the new message 2, not the edited parent", got.ID)
+	}
+}
+
+func TestMessageFromUpdate_EditChannelMessageEcho(t *testing.T) {
+	raw := &tg.Message{ID: 9, Date: 100, Message: "edited"}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{&tg.UpdateEditChannelMessage{Message: raw}},
+	}
+
+	got := editedMessageFromUpdate(updates, 9, InputPeer{})
+	if got == nil {
+		t.Fatal("editedMessageFromUpdate returned nil for UpdateEditChannelMessage")
+	}
+
+	if got.ID != 9 {
+		t.Errorf("got ID=%d, want 9", got.ID)
 	}
 }
 
@@ -384,7 +606,7 @@ func TestMessageFromUpdate_EnrichesSenderFromUsersArray(t *testing.T) {
 		},
 	}
 
-	got := messageFromUpdate(updates)
+	got := messageFromUpdate(updates, InputPeer{}, 0, nil)
 	if got == nil {
 		t.Fatal("messageFromUpdate returned nil")
 	}
@@ -553,5 +775,182 @@ func TestFillReplyToRef_SameChat_NoResolve(t *testing.T) {
 
 	if msg.ReplyTo.FromName != "" {
 		t.Errorf("ReplyTo.FromName populated for same-chat reply, want empty")
+	}
+}
+
+// TestEchoOrSubmitted_UnreadableEchoReportsSubmitted pins the split
+// between "the server applied no entities" (a real zero the caller must
+// act on) and "the echo could not be read" (a zero that would send the
+// caller into an endless correction loop over text that is already
+// right).
+func TestEchoOrSubmitted_UnreadableEchoReportsSubmitted(t *testing.T) {
+	submitted := []tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}}
+
+	repaired := echoOrSubmitted(nil, 42, submitted)
+	if repaired == nil || repaired.ID != 42 || len(repaired.Entities) != 1 {
+		t.Errorf("an unreadable echo must report the submitted set, got %+v", repaired)
+	}
+
+	// A readable echo always wins, including one that genuinely reports
+	// no entities.
+	echoed := echoOrSubmitted(&Message{ID: 42}, 42, submitted)
+	if len(echoed.Entities) != 0 {
+		t.Errorf("a readable echo reporting zero must stay zero, got %+v", echoed.Entities)
+	}
+}
+
+// TestMessageFromUpdate_IdentifiesOwnMessageByRandomID pins the identity
+// signal MTProto actually gives: the server pairs our random_id with the
+// ID it assigned. An envelope can also carry a message from a completely
+// different chat (a channel post fanning out into its linked discussion
+// group), and taking the first new message would report a stranger's ID
+// — which the caller would then edit, delete or pin.
+func TestMessageFromUpdate_IdentifiesOwnMessageByRandomID(t *testing.T) {
+	const ourRand int64 = 4242
+
+	stranger := &tg.Message{ID: 999, Date: 100, Message: "another chat", PeerID: &tg.PeerChannel{ChannelID: 222}}
+
+	mine := &tg.Message{ID: 57, Date: 100, Message: "mine", PeerID: &tg.PeerChannel{ChannelID: 111}}
+	mine.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 4},
+		&tg.MessageEntityCode{Offset: 5, Length: 2},
+	})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateNewChannelMessage{Message: stranger},
+			&tg.UpdateMessageID{ID: 57, RandomID: ourRand},
+			&tg.UpdateNewChannelMessage{Message: mine},
+		},
+	}
+
+	got := messageFromUpdate(updates, InputPeer{Type: PeerChannel, ID: 111}, ourRand, nil)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if got.ID != 57 {
+		t.Errorf("got ID=%d, want 57 — the envelope's stranger was reported as ours", got.ID)
+	}
+
+	if len(got.Entities) != 2 {
+		t.Errorf("got %d entities, want 2 — the stranger's count leaked", len(got.Entities))
+	}
+}
+
+// TestMessagesFromUpdates_AlbumCountsOwnItemsOnly pins the same rule for
+// albums: Telegram fans a channel album out into the linked discussion
+// group, and counting the copies would report more files than were sent
+// and double the caption's entities.
+func TestMessagesFromUpdates_AlbumCountsOwnItemsOnly(t *testing.T) {
+	const randA, randB int64 = 11, 22
+
+	captioned := &tg.Message{ID: 1, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 111}}
+	captioned.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 3}})
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateMessageID{ID: 1, RandomID: randA},
+			&tg.UpdateMessageID{ID: 2, RandomID: randB},
+			&tg.UpdateNewChannelMessage{Message: captioned},
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 2, Date: 100}},
+			// The linked discussion group's copies.
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 900, Date: 100}},
+			&tg.UpdateNewChannelMessage{Message: &tg.Message{ID: 901, Date: 100}},
+		},
+	}
+
+	msgs := messagesFromUpdates(updates, InputPeer{Type: PeerChannel, ID: 111}, randA, randB)
+	if len(msgs) != 2 {
+		t.Errorf("got %d messages for a 2-item album — the group copies were counted", len(msgs))
+	}
+}
+
+// TestEditedMessageFromUpdate_RejectsSamIDInAnotherPeer pins the peer
+// check: message IDs are numbered per peer, so an ID match alone can
+// land on the linked group's copy of the post being edited.
+func TestEditedMessageFromUpdate_RejectsSameIDInAnotherPeer(t *testing.T) {
+	stranger := &tg.Message{ID: 57, Date: 100, Message: "same id, other peer", PeerID: &tg.PeerChannel{ChannelID: 222}}
+	stranger.SetEntities([]tg.MessageEntityClass{&tg.MessageEntityBold{Offset: 0, Length: 4}})
+
+	mine := &tg.Message{ID: 57, Date: 100, Message: "mine", PeerID: &tg.PeerChannel{ChannelID: 111}}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateEditChannelMessage{Message: stranger},
+			&tg.UpdateEditChannelMessage{Message: mine},
+		},
+	}
+
+	got := editedMessageFromUpdate(updates, 57, InputPeer{Type: PeerChannel, ID: 111})
+	if got == nil {
+		t.Fatal("editedMessageFromUpdate returned nil for the edited message")
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("got %d entities — the other peer's copy was reported as ours", len(got.Entities))
+	}
+}
+
+// TestMessageFromUpdate_RejectsCollidingIDFromAnotherPeer pins that the
+// random_id match is not enough on its own: a channel's ID counter runs
+// close to its linked discussion group's, so the group's copy of our
+// post can carry the very same ID. Matching on the number alone reads
+// the entity count off a stranger.
+func TestMessageFromUpdate_RejectsCollidingIDFromAnotherPeer(t *testing.T) {
+	const ourRand int64 = 77
+
+	copyInGroup := &tg.Message{ID: 5, Date: 100, Message: "copy", PeerID: &tg.PeerChannel{ChannelID: 222}}
+	copyInGroup.SetEntities([]tg.MessageEntityClass{
+		&tg.MessageEntityBold{Offset: 0, Length: 4},
+		&tg.MessageEntityCode{Offset: 5, Length: 2},
+	})
+
+	mine := &tg.Message{ID: 5, Date: 100, Message: "mine", PeerID: &tg.PeerChannel{ChannelID: 111}}
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateMessageID{ID: 5, RandomID: ourRand},
+			&tg.UpdateNewChannelMessage{Message: copyInGroup},
+			&tg.UpdateNewChannelMessage{Message: mine},
+		},
+	}
+
+	got := messageFromUpdate(updates, InputPeer{Type: PeerChannel, ID: 111}, ourRand, nil)
+	if got == nil {
+		t.Fatal("messageFromUpdate returned nil")
+	}
+
+	if len(got.Entities) != 0 {
+		t.Errorf("got %d entities — the linked group's copy was read as ours", len(got.Entities))
+	}
+}
+
+// TestMessagesFromUpdates_AlbumRejectsCollidingIDs is the album mirror:
+// a copy whose ID collides with one of our items must not inflate the
+// file count or the caption's entity total.
+func TestMessagesFromUpdates_AlbumRejectsCollidingIDs(t *testing.T) {
+	const randA, randB int64 = 11, 22
+
+	updates := &tg.Updates{
+		Updates: []tg.UpdateClass{
+			&tg.UpdateMessageID{ID: 1, RandomID: randA},
+			&tg.UpdateMessageID{ID: 2, RandomID: randB},
+			&tg.UpdateNewChannelMessage{
+				Message: &tg.Message{ID: 1, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 111}},
+			},
+			&tg.UpdateNewChannelMessage{
+				Message: &tg.Message{ID: 2, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 111}},
+			},
+			// The linked group's copy, whose counter happens to collide.
+			&tg.UpdateNewChannelMessage{
+				Message: &tg.Message{ID: 2, Date: 100, PeerID: &tg.PeerChannel{ChannelID: 222}},
+			},
+		},
+	}
+
+	msgs := messagesFromUpdates(updates, InputPeer{Type: PeerChannel, ID: 111}, randA, randB)
+	if len(msgs) != 2 {
+		t.Errorf("got %d messages for a 2-item album — a colliding copy was counted", len(msgs))
 	}
 }

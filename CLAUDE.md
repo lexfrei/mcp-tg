@@ -34,6 +34,7 @@ internal/telegram/           Telegram abstraction layer
   markdown.go                Markdown → Telegram entities parser (entry point)
   markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
   markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal
+  markdown_lint.go           LooksLikeMarkdown — plain-mode lint approximating what the parser would transform
   send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
 internal/tools/              MCP tool handlers (78 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
@@ -43,7 +44,7 @@ internal/tools/              MCP tool handlers (78 tools)
   roots.go                   File path validation against client roots
   progress.go                Progress notification helper
   result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
-  register.go                tools.AddTool wrapper that records bool fields into the coercer registry
+  register.go                tools.AddTool wrapper (records bool fields into the coercer registry) + inputSchemaWithEnum for enum-constrained input schemas
   mock_test.go               Mock telegram.Client for tests
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
@@ -161,13 +162,25 @@ Each message in `output` is a block of `key: value` lines (`from:`, `forwarded f
 
 ### Parse mode (formatting on write)
 
-Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_file`, `media_send_album`) accept `parseMode`:
+Tools that send or edit text (`messages_send`, `messages_edit`, `messages_send_file`, `media_send_album`) REQUIRE `parseMode` — no default, deliberately: optional formatting params get systematically omitted by LLM callers and markdown then ships as literal asterisks. The choice is enforced at the protocol layer — each tool's input schema carries `enum: [plain, commonmark]` (built by `inputSchemaWithEnum` in `tools/register.go`, which infers the schema exactly as `mcp.AddTool` would and patches one property), validated by the SDK before the handler runs. The schema enum is strict lowercase; `normalizeParseMode`'s case-insensitivity survives only as defense in depth for direct handler calls (tests). `TestParseModeSchema_RequiredEnumOnTheWire` pins required+enum on the wire representation.
 
-- `""` (empty / omitted) — plain text, no formatting.
+- `"plain"` — no formatting. Text (or caption) that looks like markdown is REJECTED with `ErrPlainLooksLikeMarkdown` unless `allowRawMarkdown=true`; the lint (`telegram.LooksLikeMarkdown`, `markdown_lint.go`) conservatively matches fences, inline code, doubled-marker emphasis (`**`/`__`/`~~`/`||` with non-whitespace-flanked content), `[text](url)` links and `<https://...>` autolinks, and deliberately excludes single `*italic*`/`_italic_` and `>` quotes as false-positive-prone. `__init__` is a true positive by design — the parser really would transform it.
 - `"commonmark"` — CommonMark subset: `**bold**`, `*italic*`, `` `code` ``, ` ```pre``` `, `~~~pre~~~`, 4-space indented code blocks, `[text](url)`, `<https://autolink>`, `> quote`, `>quote` (no space ok), `~~strike~~`, `__underline__`, `||spoiler||`. Parsed into `tg.MessageEntity` on the server side.
-- `"markdown"` — legacy alias for `commonmark`.
-- `"html"` / `"markdownv2"` — recognised but not yet implemented; return a clear error.
-- Anything else — rejected with the list of allowed values.
+- `"markdown"` — RETIRED alias; rejected with a steering error pointing at `commonmark`. The wrapper's `IsCommonMarkParseMode` still recognises it internally as harmless defense.
+- `"html"` / `"markdownv2"` — recognised but not yet implemented; return a clear error (direct-handler path only — over MCP the schema enum rejects them first, like every non-enum value).
+- `""` (omitted) — rejected by the schema (`required`), and by `ErrParseModeRequired` on the direct-handler path.
+
+All four results carry `entitiesParsed` — the count of FORMATTING entities in the SERVER echo, serialized even at 0. Auto-detected types (`url`, `mention`, `hashtag`, `cashtag`, `bot_command`, `email`, `phone`, and anything unmapped — `IsFormattingEntity` is an ALLOW-list precisely so a future auto-detected kind cannot silently start counting) are excluded: the server adds them to any message regardless of `parseMode`, and counting them reported `entitiesParsed: 2` for a plain send that merely contained a link and a hashtag — verified live. Only the types a parseMode can produce count (0 after a commonmark send means nothing parsed; the caller can self-correct via `tg_messages_edit`). The echo is the source, not a client-side recount: `messageFromUpdate` converts `updateShortSentMessage.Entities`, and `editedMessageFromUpdate` handles `updateEditMessage`/`updateEditChannelMessage` (before that fix `EditMessage` returned nil — an edit-based self-correction loop would have seen 0 forever). **Identity in an echo envelope comes from `random_id`, not from position.** Every send generates a `random_id`, and the server pairs it with the ID it assigned in `updateMessageID` — that pairing is the ONLY identity signal MTProto gives. An envelope can also bundle other messages entirely: a channel post fans out into the linked discussion group, an album's copies land there too, a topic root's reply counter bumps. Taking the first new message would report a stranger's ID, which the caller would then edit, delete or pin. `ownMessageIDs` filters by our `random_id` set (`messageFromUpdate` for single sends, `messagesFromUpdates` for albums and forwards); when the server sends no `updateMessageID`, the old first-match behavior is the fallback. Every path additionally checks the peer, because message IDs are numbered PER PEER: a channel's counter runs close to its linked discussion group's, so the group's copy of our post can carry the very same ID. Matching on the number alone would read the entity count off a stranger, over-count an album, or (on edit) report the group's copy as the post you edited.
+
+The two extractors are deliberately separate: a send echo may carry an edit update for the topic root (its reply counter bumped), and the send path must never mistake that parent for the message it just sent. `editedMessageFromUpdate` additionally matches on the edited ID rather than taking the first edit update — an envelope can bundle edits of other messages (a channel post's edit propagating into the linked discussion group), and the tool keeps the caller's `messageId` rather than deriving it, since Telegram does not renumber an edited message. Albums report the SUM across echoed messages, since the server's update order is not a contract.
+
+**Verified against a live account (2026-07):** a Saved Messages send — precisely the case `updateShortSentMessage` exists for — answers with the full `*tg.Updates` envelope, in both plain and commonmark mode. The short form never fired, so whether its conditional `entities` flag is set on an unchanged entity set could NOT be observed, and Telegram documents neither. So `shortSentEntities` (`wrapper_helpers.go`) repairs THAT SHAPE ONLY: when the short echo carries no entities, the count falls back to the set the request submitted, which is safe because Telegram rejects malformed entities outright (`ENTITY_BOUND_INVALID` and friends) rather than dropping them silently. The fallback must NOT be widened to the full-updates path: there the server sends back its own message, and a zero means the server really applied nothing — the exact signal `entitiesParsed` exists to carry. Widening it would erase the signal in the name of protecting it.
+
+`messagesFromUpdates` (albums, forwards) shares `extractNewMessage` with the single-message path so scheduled sends (`updateNewScheduledMessage`) are not silently dropped — a scheduled album used to come back with `count: 0`. Of these two callers only albums can be scheduled — `tg_messages_forward` has no `scheduleDate` (`tg_messages_send` and `tg_messages_send_file` do, but they take the single-message path).
+
+On the SINGLE-message paths (`SendMessage`, `EditMessage`, `SendFile`) an echo that cannot be read at all — an unhandled envelope shape, or no update matching the edited ID — is repaired by `echoOrSubmitted` with the submitted entity set. Without it a nil echo reads as `entitiesParsed: 0`, which the documented recipe treats as "the markdown did not parse", and a caller would re-edit correct text forever with nothing erroring. A readable echo always wins, including one that genuinely reports zero.
+
+`SendAlbum` is deliberately NOT repaired: there is no single ID to attach a repaired count to, and the album's anomaly already surfaces as `count: 0` ("Sent album with 0 file(s)"), which is visibly wrong rather than quietly plausible — pinned by `TestMediaSendAlbumHandler_UnreadableEchoReportsNothing`. The single-message repair has its own oddity for symmetry's sake — `entitiesParsed: N` beside `messageId: 0` — which is equally loud: a follow-up edit on id 0 fails outright rather than silently editing the wrong message.
 
 Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 
@@ -218,6 +231,7 @@ Strict config in `.golangci.yml`:
 - `github.com/gotd/td` — Telegram MTProto client
 - `github.com/cockroachdb/errors` — Error wrapping
 - `github.com/modelcontextprotocol/go-sdk` — MCP protocol SDK
+- `github.com/google/jsonschema-go` — the SDK's schema inference, imported directly by `inputSchemaWithEnum` to constrain `parseMode` to an enum
 - `github.com/lexfrei/keychain` — cgo-free OS secret store (macOS Keychain / Linux Secret Service / Windows Credential Manager) for the default session backend; pulls `purego` + `godbus/dbus` indirectly
 - `golang.org/x/sync` — errgroup for concurrent transports
 - `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`

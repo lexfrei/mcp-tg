@@ -54,6 +54,8 @@ func TestMessagesSendHandler_PassesSendAs(t *testing.T) {
 	handler := NewMessagesSendHandler(mock)
 
 	_, _, err := handler(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer: "@group", Text: "hi", SendAs: new(sendAsRef),
 	})
 	if err != nil {
@@ -71,7 +73,7 @@ func TestMessagesSendHandler_OmitsSendAsWhenAbsent(t *testing.T) {
 	mock := sendAsMock()
 	handler := NewMessagesSendHandler(mock)
 
-	_, _, err := handler(context.Background(), nil, MessagesSendParams{Peer: "@group", Text: "hi"})
+	_, _, err := handler(context.Background(), nil, MessagesSendParams{ParseMode: "plain", Peer: "@group", Text: "hi"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,6 +88,8 @@ func TestMessagesSendFileHandler_PassesSendAs(t *testing.T) {
 	handler := NewMessagesSendFileHandler(mock)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
+		ParseMode: "plain",
+
 		Peer: "@group", Path: "/tmp/x", SendAs: new(sendAsRef),
 	})
 	if err != nil {
@@ -100,6 +104,8 @@ func TestMediaSendAlbumHandler_PassesSendAs(t *testing.T) {
 	handler := NewMediaSendAlbumHandler(mock)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
+		ParseMode: "plain",
+
 		Peer: "@group", Paths: []string{"/tmp/a"}, SendAs: new(sendAsRef),
 	})
 	if err != nil {
@@ -189,6 +195,8 @@ func TestMessagesSendHandler_RejectsUnresolvableSendAs(t *testing.T) {
 	}
 
 	result, _, err := NewMessagesSendHandler(mock)(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer: "@group", Text: "hi", SendAs: new(sendAsRef),
 	})
 	if !errors.Is(err, ErrSendAsUnresolved) {
@@ -344,6 +352,8 @@ func TestMessagesSendHandler_SurfacesTheIdentityHintOnRejection(t *testing.T) {
 	mock.err = errors.New("rpc error code 400: CHAT_ADMIN_REQUIRED")
 
 	result, _, err := NewMessagesSendHandler(mock)(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer: "@group", Text: "hi", SendAs: new(sendAsRef),
 	})
 	if err == nil {
@@ -369,6 +379,8 @@ func TestMessagesSendHandler_NoIdentityHintWhenNoneRequested(t *testing.T) {
 	mock.err = errors.New("rpc error code 400: CHAT_ADMIN_REQUIRED")
 
 	_, _, err := NewMessagesSendHandler(mock)(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer: "@group", Text: "hi",
 	})
 	if err == nil {

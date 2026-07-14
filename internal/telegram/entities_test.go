@@ -173,3 +173,41 @@ func TestConvertMessage_NoEntities(t *testing.T) {
 		t.Errorf("Entities = %v, want nil for plain message", got.Entities)
 	}
 }
+
+// TestIsFormattingEntity_ExcludesServerAutoDetected pins the split that
+// keeps entitiesParsed honest: Telegram adds url/mention/hashtag and
+// friends to any message on its own, so they are not evidence that a
+// parseMode did anything.
+func TestIsFormattingEntity_ExcludesServerAutoDetected(t *testing.T) {
+	formatting := []string{
+		EntityTypeBold, EntityTypeItalic, EntityTypeUnderline, EntityTypeStrike,
+		EntityTypeSpoiler, EntityTypeCode, EntityTypePre, EntityTypeBlockquote,
+		EntityTypeTextURL, EntityTypeMentionName, EntityTypeCustomEmoji,
+	}
+
+	for _, entityType := range formatting {
+		if !IsFormattingEntity(entityType) {
+			t.Errorf("IsFormattingEntity(%q) = false, want true", entityType)
+		}
+	}
+
+	autoDetected := []string{
+		EntityTypeURL, EntityTypeMention, EntityTypeHashtag, EntityTypeCashtag,
+		EntityTypeBotCommand, EntityTypeEmail, EntityTypePhone,
+	}
+
+	for _, entityType := range autoDetected {
+		if IsFormattingEntity(entityType) {
+			t.Errorf("IsFormattingEntity(%q) = true, want false — the server adds it unasked", entityType)
+		}
+	}
+
+	// The allow-list must fail safe: an unmapped or future type (Telegram
+	// auto-detects bank cards today, and this package may convert them
+	// tomorrow) counts as formatting only if it is explicitly listed.
+	for _, entityType := range []string{"bank_card", "", "some_future_type"} {
+		if IsFormattingEntity(entityType) {
+			t.Errorf("IsFormattingEntity(%q) = true — unknown types must not count as parsed markdown", entityType)
+		}
+	}
+}

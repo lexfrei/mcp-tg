@@ -63,7 +63,7 @@ func TestSendFileHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 	handler := NewMessagesSendFileHandler(mock)
 
 	_, _, err := handler(context.Background(), requestWithToken("tok"),
-		MessagesSendFileParams{Peer: "@x", Path: "/tmp/x"})
+		MessagesSendFileParams{ParseMode: "plain", Peer: "@x", Path: "/tmp/x"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestSendFileHandler_NoProgressWithoutToken(t *testing.T) {
 	handler := NewMessagesSendFileHandler(mock)
 
 	_, _, err := handler(context.Background(), requestWithToken(nil),
-		MessagesSendFileParams{Peer: "@x", Path: "/tmp/x"})
+		MessagesSendFileParams{ParseMode: "plain", Peer: "@x", Path: "/tmp/x"})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestMediaSendAlbumHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 	handler := NewMediaSendAlbumHandler(mock)
 
 	_, _, err := handler(context.Background(), requestWithToken("tok"),
-		MediaSendAlbumParams{Peer: "@x", Paths: []string{"/tmp/x"}})
+		MediaSendAlbumParams{ParseMode: "plain", Peer: "@x", Paths: []string{"/tmp/x"}})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestMediaSendAlbumHandler_NoProgressWithoutToken(t *testing.T) {
 	handler := NewMediaSendAlbumHandler(mock)
 
 	_, _, err := handler(context.Background(), requestWithToken(nil),
-		MediaSendAlbumParams{Peer: "@x", Paths: []string{"/tmp/x"}})
+		MediaSendAlbumParams{ParseMode: "plain", Peer: "@x", Paths: []string{"/tmp/x"}})
 	if err != nil {
 		t.Fatalf("handler: %v", err)
 	}

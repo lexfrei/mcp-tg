@@ -69,7 +69,7 @@ func TestCoerceBoolArgs_RealBoolUntouched(t *testing.T) {
 }
 
 func TestCoerceBoolArgs_StringNotInBoolFieldsUntouched(t *testing.T) {
-	// "parseMode" is *string in tg_messages_send. Even if a caller sends the
+	// "parseMode" is a plain string in tg_messages_send. Even if a caller sends the
 	// literal string "true", it must NOT be coerced — it would corrupt the
 	// string field.
 	raw := json.RawMessage(`{"parseMode":"true","silent":"true"}`)

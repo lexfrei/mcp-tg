@@ -45,6 +45,8 @@ func TestAudit_TopicIDOnNonForumChat(t *testing.T) {
 	topicID := 7
 
 	result, _, err := handler(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer:    "@plain",
 		Text:    "hello",
 		TopicID: &topicID,
@@ -76,6 +78,8 @@ func TestAudit_TopicIDOnUserPeerSkipsGroupInfo(t *testing.T) {
 	topicID := 7
 
 	_, _, err := handler(context.Background(), nil, MessagesSendParams{
+		ParseMode: "plain",
+
 		Peer:    "@user",
 		Text:    "hello",
 		TopicID: &topicID,
@@ -232,6 +236,8 @@ func TestAudit_TopicIDValidatedOnSendFile(t *testing.T) {
 	topicID := 7
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
+		ParseMode: "plain",
+
 		Peer:    "@user",
 		Path:    "/tmp/x",
 		TopicID: &topicID,
@@ -254,6 +260,8 @@ func TestAudit_TopicIDValidatedOnMediaAlbum(t *testing.T) {
 	topicID := 7
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
+		ParseMode: "plain",
+
 		Peer:    "@user",
 		Paths:   []string{"/tmp/a", "/tmp/b"},
 		TopicID: &topicID,

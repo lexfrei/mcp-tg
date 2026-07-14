@@ -1,0 +1,171 @@
+version: 2
+
+builds:
+  - main: ./cmd/mcp-tg
+    binary: mcp-tg
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      # Match what the container build injects (docker/metadata-action keeps
+      # the leading v, and passes the full SHA), so one release does not
+      # introduce itself two different ways over MCP and in Telegram's
+      # device list.
+      - -X main.version=v{{.Version}}
+      - -X main.revision={{.FullCommit}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+# A formula rather than a cask: casks are macOS-only, and a formula also
+# gives `brew services`, which is how this server is meant to run — one
+# shared HTTP daemon per machine. The section is deprecated in GoReleaser
+# in favour of homebrew_casks, which would cost both Linux and the
+# service block; Homebrew itself still supports formulae.
+brews:
+  - skip_upload: auto # a pre-release tag must not overwrite the formula: for Homebrew, the tap IS latest
+    repository:
+      owner: lexfrei
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/lexfrei/mcp-tg"
+    description: "MCP server for the Telegram Client API (MTProto, user account)"
+    license: "BSD-3-Clause"
+    install: |
+      bin.install "mcp-tg"
+
+      # brew services only passes the variables declared in `service` below,
+      # and the credentials cannot be baked into a public formula. Ship a
+      # config file under etc (Homebrew preserves it across upgrades) and a
+      # wrapper that sources it, so the daemon starts configured.
+      (etc/"mcp-tg").mkpath
+      env_file = etc/"mcp-tg/mcp-tg.env"
+      unless env_file.exist?
+        # Credentials, and the only file the docs tell people to edit. The
+        # session file is 0600 and the default backend is the OS keychain;
+        # this must not be the world-readable exception.
+        env_file.write <<~CONF
+          # Credentials from https://my.telegram.org/apps — required.
+          TELEGRAM_APP_ID=
+          TELEGRAM_APP_HASH=
+          # Uncomment ONLY if you logged in with --insecure-storage; the
+          # session backend must match on both sides.
+          # TELEGRAM_SESSION_INSECURE=true
+        CONF
+        chmod 0600, env_file
+      end
+
+      (libexec/"mcp-tg-daemon").write <<~SH
+        #!/bin/sh
+        set -a
+        [ -f "#{etc}/mcp-tg/mcp-tg.env" ] && . "#{etc}/mcp-tg/mcp-tg.env"
+        set +a
+        exec "#{opt_bin}/mcp-tg" "$@"
+      SH
+      chmod 0755, libexec/"mcp-tg-daemon"
+    test: |
+      # The binary has no --version flag and every real command talks to
+      # Telegram, so missing credentials is the only offline path. The vars
+      # must be cleared explicitly: the caveats tell users to export them, and
+      # with them set the process opens a live MTProto connection and never
+      # returns — brew test would hang.
+      assert_match "TELEGRAM_APP_ID is required",
+        shell_output("TELEGRAM_APP_ID= TELEGRAM_APP_HASH= #{bin}/mcp-tg 2>&1", 1)
+    service: |
+      run [opt_libexec/"mcp-tg-daemon"]
+      keep_alive true
+      log_path var/"log/mcp-tg.log"
+      error_log_path var/"log/mcp-tg.log"
+      environment_variables MCP_HTTP_ONLY: "true", MCP_HTTP_HOST: "127.0.0.1", MCP_HTTP_PORT: "8787"
+    caveats: |
+      The public build ships no Telegram credentials, and the daemon cannot log
+      in by itself. Three steps, then it survives reboots on its own:
+
+        1. Put an app id and hash from https://my.telegram.org/apps into
+
+             #{etc}/mcp-tg/mcp-tg.env
+
+        2. Log in interactively (the same file feeds this shell):
+
+             set -a; . #{etc}/mcp-tg/mcp-tg.env; set +a
+             mcp-tg login
+
+           The session goes to the OS keychain. Use --insecure-storage only if
+           the machine has no keychain (a container, or headless Linux without a
+           Secret Service) — and then uncomment TELEGRAM_SESSION_INSECURE in the
+           same file, because the backend must match on both sides.
+
+        3. Start the shared daemon on 127.0.0.1:8787:
+
+             brew services start mcp-tg
+
+           Do this AFTER step 1 — started with the file still empty, the daemon
+           exits on every launch and the service manager keeps restarting it.
+
+           Do NOT use `sudo brew services start`: that installs a LaunchDaemon,
+           which runs as root and reads the SYSTEM keychain, while `mcp-tg
+           login` wrote the session to YOUR login keychain (and root's HOME is
+           different too). The daemon would report a missing session and tell
+           you to log in, which you already did.
+
+      The service sources that file on every start, so nothing depends on your
+      login shell. If it crash-loops, the config is the first suspect: check
+      `brew services list` and $(brew --prefix)/var/log/mcp-tg.log.
+
+      Homebrew keeps files under etc across upgrades AND uninstalls, so the
+      credentials outlive `brew uninstall mcp-tg` — delete the file yourself if
+      you mean to remove them.
+
+checksum:
+  name_template: "checksums.txt"
+
+# The container is signed with cosign and the release notes teach people to
+# verify it. Binaries that hand out a full-access Telegram session should not
+# be the unsigned half of the same release.
+signs:
+  - cmd: cosign
+    # cosign v3 signs blobs into a single bundle (certificate + signature).
+    # The old --output-signature / --output-certificate flags are IGNORED there
+    # — cosign still exits 0, so the release would ship unsigned while the notes
+    # told people to verify a .sig and a .pem that never existed.
+    signature: "${artifact}.bundle"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+    output: true
+
+release:
+  # release.yml has already created the GitHub release, with its own notes and
+  # the container digest summary. Pinned rather than left implicit: mode governs
+  # the NOTES, not the artifacts, and the one plausible edit here — append —
+  # would stack a second, GoReleaser-generated changelog under the handwritten
+  # one on every release. keep-existing is the default; this says it out loud.
+  mode: keep-existing
+  # A tag like v1.3.0-rc1 must not become the latest release. This must agree
+  # with the prerelease expression in release.yml's create-release job — both
+  # key off the semver hyphen, and GoReleaser does update the flag on the
+  # existing release.
+  prerelease: auto
+  # Asset upload is the only step in the publish chain that is not idempotent:
+  # it answers 422 already_exists and GoReleaser treats that as unrecoverable.
+  # So re-running this job after a failed tap push — the obvious thing to do —
+  # would die on the first archive and never reach the tap at all. With this,
+  # the asset is deleted and re-uploaded, and the re-run gets to the formula.
+  replace_existing_artifacts: true

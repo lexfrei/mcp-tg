@@ -7,7 +7,10 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a release mid-flight: the archives and the formula land AFTER
+  # the release is public, so a cancelled run leaves exactly the empty release
+  # this workflow is built to avoid.
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -15,8 +18,65 @@ permissions:
   id-token: write
 
 jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      # The tap token is only used by the LAST job, long after the container is
+      # pushed and the release is public. A missing secret would therefore be
+      # discovered as a red run on top of a published release with no formula.
+      # Fail before anything leaves the runner instead.
+      - name: Require a working Homebrew tap token
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set — the formula could not be published." >&2
+            echo "Add a PAT with write access to lexfrei/homebrew-tap as a repository secret." >&2
+            exit 1
+          fi
+
+          # A non-empty secret is not the interesting case: a fine-grained PAT
+          # expires within a year, and an expired one is still non-empty.
+          #
+          # The check probes the WRITE path itself. GET /repos would not do:
+          # its `permissions` field reports the authenticated USER's role in the
+          # repository, not what the token is allowed to do, and a fine-grained
+          # PAT can read any public repository regardless of its repository
+          # scope — so a read-only or wrongly-scoped token would sail through.
+          # An info/refs?service=git-receive-pack request is the first exchange
+          # of a real `git push`, mutates nothing, and answers 403 without the
+          # Contents: write grant.
+          # --config - keeps the token out of argv; --retry stops a network
+          # blip from being reported as a bad token.
+          # The trailing || is load-bearing: the step runs under `bash -e`, and a
+          # transport failure makes curl exit non-zero, which would kill the step
+          # before the case below could explain what happened.
+          code=$(printf 'user = "x-access-token:%s"\n' "${GH_TOKEN}" | curl --config - \
+            --silent --output /dev/null --write-out '%{http_code}' \
+            --retry 3 --retry-connrefused \
+            "https://github.com/lexfrei/homebrew-tap.git/info/refs?service=git-receive-pack") || code="000"
+
+          case "${code}" in
+            200) ;;
+            404)
+              echo "::error::lexfrei/homebrew-tap is not visible to this token — renamed, deleted, or out of the token's repository scope." >&2
+              exit 1
+              ;;
+            000)
+              echo "::error::Could not reach github.com to check the tap token — this is a network failure, not a bad token." >&2
+              exit 1
+              ;;
+            *)
+              echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot push to lexfrei/homebrew-tap (HTTP ${code} — expired, revoked, or missing Contents: write)." >&2
+              exit 1
+              ;;
+          esac
+
   build-and-push:
     name: Build (${{ matrix.arch }})
+    needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -53,7 +113,7 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{major}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push by digest
         id: build
@@ -115,7 +175,7 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{major}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -166,7 +226,7 @@ jobs:
             echo "### Verify Signature"
             echo '```bash'
             echo "cosign verify ${IMAGE_TAG} \\"
-            echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
+            echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -183,9 +243,8 @@ jobs:
 
       - name: Generate release notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           CURRENT_TAG="${GITHUB_REF_NAME}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep --invert-match "^${CURRENT_TAG}$" | head --lines=1)
+          PREV_TAG=$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || true)
 
           if [ -n "$PREV_TAG" ]; then
             COMMITS=$(git log "${PREV_TAG}..HEAD" --format="%s" --no-merges)
@@ -231,16 +290,29 @@ jobs:
             echo "## Container Image"
             echo ""
             echo '```bash'
-            echo "docker pull ${IMAGE}:${VERSION}"
+            echo "docker pull ${IMAGE}:${GITHUB_REF_NAME}"
             echo '```'
             echo ""
-            echo "## Verify Signature"
+            echo "## Verify the Container"
             echo ""
             echo '```bash'
             echo "cosign verify \\"
-            echo "  ${IMAGE}:${VERSION} \\"
-            echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
+            echo "  ${IMAGE}:${GITHUB_REF_NAME} \\"
+            echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
+            echo '```'
+            echo ""
+            echo "## Verify the Binaries"
+            echo ""
+            echo "The checksums file is signed; the archives are covered by it. Needs cosign v3+ (the bundle format)."
+            echo ""
+            echo '```bash'
+            echo "cosign verify-blob checksums.txt \\"
+            echo "  --bundle checksums.txt.bundle \\"
+            echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
+            echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
+            echo ""
+            echo "shasum --algorithm 256 --check --ignore-missing checksums.txt  # sha256sum on Linux"
             echo '```'
           } > release-notes.md
 
@@ -249,4 +321,40 @@ jobs:
         with:
           body_path: release-notes.md
           draft: false
-          prerelease: false
+          # v1.3.0-rc1 and friends carry a hyphen; a plain vX.Y.Z never does.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+
+  binaries:
+    name: Binaries and Homebrew
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the archives to the existing release
+      id-token: write # keyless cosign signature over the checksums
+    # Runs after the GitHub release exists: GoReleaser uploads the archives to
+    # it and leaves the notes create-release wrote alone (release.mode:
+    # keep-existing).
+    needs: create-release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "v2.17.0"
+          # One build at a time: the runner OOM-kills parallel links of this
+          # dependency tree, and a killed process leaves no error to read.
+          args: release --clean --parallelism 1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}

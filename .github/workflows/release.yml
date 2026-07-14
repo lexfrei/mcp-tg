@@ -183,7 +183,6 @@ jobs:
 
       - name: Generate release notes
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           CURRENT_TAG="${GITHUB_REF_NAME}"
           PREV_TAG=$(git tag --sort=-v:refname | grep --invert-match "^${CURRENT_TAG}$" | head --lines=1)
 
@@ -249,11 +248,15 @@ jobs:
         with:
           body_path: release-notes.md
           draft: false
-          prerelease: false
+          # v1.3.0-rc1 and friends carry a hyphen; a plain vX.Y.Z never does.
+          prerelease: ${{ contains(github.ref_name, '-') }}
 
   binaries:
     name: Binaries and Homebrew
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # upload the archives to the existing release
+      id-token: write # keyless cosign signature over the checksums
     # Runs after the GitHub release exists: GoReleaser uploads the archives to
     # it and leaves the notes create-release wrote alone (release.mode:
     # keep-existing).
@@ -268,6 +271,9 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3

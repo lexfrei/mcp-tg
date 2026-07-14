@@ -46,6 +46,11 @@ brews:
     license: "BSD-3-Clause"
     install: |
       bin.install "mcp-tg"
+    test: |
+      # The binary has no --version flag, and every real command talks to
+      # Telegram. Missing credentials is the one deterministic offline path.
+      assert_match "TELEGRAM_APP_ID is required",
+        shell_output("#{bin}/mcp-tg 2>&1", 1)
     service: |
       run [opt_bin/"mcp-tg"]
       keep_alive true
@@ -71,18 +76,44 @@ brews:
 
         brew services start mcp-tg
 
-      The service reads TELEGRAM_APP_ID and TELEGRAM_APP_HASH from the
-      environment, so set them where the service manager can see them
-      (~/.zshrc is NOT enough for launchd — use `launchctl setenv`, or run the
-      binary directly from a shell instead of as a service).
+      The service reads its configuration from the environment, and a login
+      shell's rc file is NOT part of it — use `launchctl setenv` on macOS, or
+      the service manager's environment on Linux. It needs:
+
+        TELEGRAM_APP_ID, TELEGRAM_APP_HASH  — always
+        TELEGRAM_SESSION_INSECURE=true      — ONLY if you logged in with
+                                              --insecure-storage; the session
+                                              backend must match, or the daemon
+                                              cannot find the session it wrote
+
+      Miss any of them and the daemon exits at startup and keep_alive restarts
+      it forever. Check with `brew services list` and read the log at
+      $(brew --prefix)/var/log/mcp-tg.log.
 
 checksum:
   name_template: "checksums.txt"
 
+# The container is signed with cosign and the release notes teach people to
+# verify it. Binaries that hand out a full-access Telegram session should not
+# be the unsigned half of the same release.
+signs:
+  - cmd: cosign
+    certificate: "${artifact}.pem"
+    args:
+      - sign-blob
+      - "--output-certificate=${certificate}"
+      - "--output-signature=${signature}"
+      - "${artifact}"
+      - --yes
+    artifacts: checksum
+    output: true
+
 release:
   # release.yml has already created the GitHub release, with its own notes and
-  # the container digest summary. keep-existing leaves those notes untouched —
-  # GoReleaser only uploads the archives. (mode governs the NOTES, not the
-  # artifacts: append would add a second, GoReleaser-generated changelog under
-  # the handwritten one on every release.)
+  # the container digest summary. Pinned rather than left implicit: mode governs
+  # the NOTES, not the artifacts, and the one plausible edit here — append —
+  # would stack a second, GoReleaser-generated changelog under the handwritten
+  # one on every release. keep-existing is the default; this says it out loud.
   mode: keep-existing
+  # A tag like v1.3.0-rc1 must not become the latest release.
+  prerelease: auto

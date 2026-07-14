@@ -226,7 +226,9 @@ The two channels must inject the same version strings: the container passes `v{{
 
 The tap gets a FORMULA, not a cask, which is the deprecated path in GoReleaser (`goreleaser check` fails on it — the release command only warns). The reason is that both replacements cost something the daemon needs: casks are macOS-only, and they have no `brew services`. A formula gives Linux and `brew services start mcp-tg` (launchd on macOS, systemd on Linux), which is how the shared HTTP daemon is meant to run. Homebrew itself still supports formulae; only GoReleaser's generator is retiring them. Windows gets archives but no tap: Homebrew has no native Windows support at all.
 
-`HOMEBREW_TAP_GITHUB_TOKEN` (a PAT with write access to the tap) must exist as a repository secret, or the release job fails at the publish step.
+`HOMEBREW_TAP_GITHUB_TOKEN` (a PAT with write access to the tap) must exist as a repository secret. Without it the secret expands to an empty string, GoReleaser falls back to `GITHUB_TOKEN`, which cannot write to another repository, and the release ends with archives uploaded but no formula — a red run on top of an already-public release. The snapshot gate cannot catch this: it never publishes.
+
+The release archives are signed too (keyless cosign over the checksums file), because the container is signed and the notes teach `cosign verify` — a binary that hands out a full-access Telegram session should not be the unsigned half of the same release.
 
 ## Linter
 

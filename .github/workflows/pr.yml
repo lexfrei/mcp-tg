@@ -31,6 +31,8 @@ jobs:
   goreleaser:
     name: Release Config
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     # The release config is only executed on a v* tag, in the LAST job — after
     # the container is pushed and the GitHub release is already public. A broken
     # template or an unbuildable target would leave a published release with no
@@ -52,9 +54,9 @@ jobs:
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "~> v2"
-          args: release --snapshot --clean --skip=publish
-        env:
-          HOMEBREW_TAP_GITHUB_TOKEN: unused-in-snapshot
+          # A snapshot never publishes; signing is skipped because cosign's
+          # keyless flow needs an OIDC token this job deliberately cannot mint.
+          args: release --snapshot --clean --skip=sign
 
   test:
     name: Test

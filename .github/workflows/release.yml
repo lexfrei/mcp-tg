@@ -233,13 +233,27 @@ jobs:
             echo "docker pull ${IMAGE}:${GITHUB_REF_NAME}"
             echo '```'
             echo ""
-            echo "## Verify Signature"
+            echo "## Verify the Container"
             echo ""
             echo '```bash'
             echo "cosign verify \\"
             echo "  ${IMAGE}:${GITHUB_REF_NAME} \\"
             echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
+            echo '```'
+            echo ""
+            echo "## Verify the Binaries"
+            echo ""
+            echo "The checksums file is signed; the archives are covered by it."
+            echo ""
+            echo '```bash'
+            echo "cosign verify-blob checksums.txt \\"
+            echo "  --certificate checksums.txt.pem \\"
+            echo "  --signature checksums.txt.sig \\"
+            echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
+            echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
+            echo ""
+            echo "sha256sum --check --ignore-missing checksums.txt"
             echo '```'
           } > release-notes.md
 

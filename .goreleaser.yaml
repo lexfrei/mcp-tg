@@ -47,10 +47,13 @@ brews:
     install: |
       bin.install "mcp-tg"
     test: |
-      # The binary has no --version flag, and every real command talks to
-      # Telegram. Missing credentials is the one deterministic offline path.
+      # The binary has no --version flag and every real command talks to
+      # Telegram, so missing credentials is the only offline path. The vars
+      # must be cleared explicitly: the caveats tell users to export them, and
+      # with them set the process opens a live MTProto connection and never
+      # returns — brew test would hang.
       assert_match "TELEGRAM_APP_ID is required",
-        shell_output("#{bin}/mcp-tg 2>&1", 1)
+        shell_output("TELEGRAM_APP_ID= TELEGRAM_APP_HASH= #{bin}/mcp-tg 2>&1", 1)
     service: |
       run [opt_bin/"mcp-tg"]
       keep_alive true
@@ -115,5 +118,8 @@ release:
   # would stack a second, GoReleaser-generated changelog under the handwritten
   # one on every release. keep-existing is the default; this says it out loud.
   mode: keep-existing
-  # A tag like v1.3.0-rc1 must not become the latest release.
+  # A tag like v1.3.0-rc1 must not become the latest release. This must agree
+  # with the prerelease expression in release.yml's create-release job — both
+  # key off the semver hyphen, and GoReleaser does update the flag on the
+  # existing release.
   prerelease: auto

@@ -79,9 +79,8 @@ brews:
 
         brew services start mcp-tg
 
-      The service reads its configuration from the environment, and a login
-      shell's rc file is NOT part of it — use `launchctl setenv` on macOS, or
-      the service manager's environment on Linux. It needs:
+      The service reads its configuration from the service manager's
+      environment — a login shell's rc file is NOT part of it. It needs:
 
         TELEGRAM_APP_ID, TELEGRAM_APP_HASH  — always
         TELEGRAM_SESSION_INSECURE=true      — ONLY if you logged in with
@@ -89,9 +88,20 @@ brews:
                                               backend must match, or the daemon
                                               cannot find the session it wrote
 
-      Miss any of them and the daemon exits at startup and keep_alive restarts
-      it forever. Check with `brew services list` and read the log at
+      Miss any of them and the daemon exits at startup, and keep_alive restarts
+      it forever. Check `brew services list` and the log at
       $(brew --prefix)/var/log/mcp-tg.log.
+
+      Getting them there is NOT one-time. On macOS `launchctl setenv` applies to
+      the current login session only, so the daemon comes up unconfigured after
+      the next reboot; on Linux, `systemctl --user import-environment` is the
+      same story. Make it persistent:
+
+        macOS  — put the exports in a login-time LaunchAgent that runs
+                 `launchctl setenv`, or skip `brew services` and write your own
+                 LaunchAgent with an EnvironmentVariables dict.
+        Linux  — `~/.config/environment.d/mcp-tg.conf` (systemd user manager
+                 reads it on every start).
 
 checksum:
   name_template: "checksums.txt"

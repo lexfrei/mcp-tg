@@ -15,8 +15,28 @@ permissions:
   id-token: write
 
 jobs:
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      # The tap token is only used by the LAST job, long after the container is
+      # pushed and the release is public. A missing secret would therefore be
+      # discovered as a red run on top of a published release with no formula.
+      # Fail before anything leaves the runner instead.
+      - name: Require the Homebrew tap token
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+        run: |
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set — the Homebrew formula could not be published." >&2
+            echo "Add a PAT with write access to lexfrei/homebrew-tap as a repository secret." >&2
+            exit 1
+          fi
+
   build-and-push:
     name: Build (${{ matrix.arch }})
+    needs: preflight
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -53,7 +73,7 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{major}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Build and push by digest
         id: build
@@ -115,7 +135,7 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
             type=semver,pattern=v{{major}}
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
 
       - name: Create manifest list and push
         working-directory: /tmp/digests
@@ -166,7 +186,7 @@ jobs:
             echo "### Verify Signature"
             echo '```bash'
             echo "cosign verify ${IMAGE_TAG} \\"
-            echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
+            echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
@@ -238,7 +258,7 @@ jobs:
             echo '```bash'
             echo "cosign verify \\"
             echo "  ${IMAGE}:${GITHUB_REF_NAME} \\"
-            echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
+            echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
             echo '```'
             echo ""
@@ -250,7 +270,7 @@ jobs:
             echo "cosign verify-blob checksums.txt \\"
             echo "  --certificate checksums.txt.pem \\"
             echo "  --signature checksums.txt.sig \\"
-            echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
+            echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
             echo ""
             echo "sha256sum --check --ignore-missing checksums.txt"
@@ -292,7 +312,7 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
-          version: "~> v2"
+          version: "v2.17.0"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

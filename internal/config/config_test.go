@@ -16,6 +16,19 @@ func TestLoad_MissingAppID(t *testing.T) {
 	}
 }
 
+// TestErrAppIDRequired_MessageIsPinned guards a consumer outside this repo:
+// the Homebrew formula's `test do` block (see .goreleaser.yaml) asserts on
+// this exact string, because a credential-less start is the only path that
+// terminates without talking to Telegram. Reword the sentinel and CI here
+// stays green while `brew test mcp-tg` breaks in the tap, where nobody looks.
+func TestErrAppIDRequired_MessageIsPinned(t *testing.T) {
+	const want = "TELEGRAM_APP_ID is required"
+
+	if got := config.ErrAppIDRequired.Error(); got != want {
+		t.Errorf("ErrAppIDRequired = %q, want %q — update .goreleaser.yaml's brew test too", got, want)
+	}
+}
+
 func TestLoad_InvalidAppID(t *testing.T) {
 	t.Setenv("TELEGRAM_APP_ID", "notanumber")
 	t.Setenv("TELEGRAM_APP_HASH", "test")

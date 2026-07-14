@@ -439,7 +439,11 @@ mcp-tg login                      # interactive, writes the session to the OS ke
 brew services start mcp-tg        # shared HTTP daemon on 127.0.0.1:8787
 ```
 
-The service runs the headless HTTP mode, so a single daemon serves every MCP client on the machine. It reads its configuration from the environment, and a login shell's rc file is not part of that — use `launchctl setenv` (macOS) or the service manager's environment (Linux), or skip the service and run the binary from a shell. It needs `TELEGRAM_APP_ID` and `TELEGRAM_APP_HASH` always, plus `TELEGRAM_SESSION_INSECURE=true` if (and only if) you logged in with `--insecure-storage` — the session backend must match on both sides, or the daemon looks for the session in a place it was never written.
+The service runs the headless HTTP mode, so a single daemon serves every MCP client on the machine — point clients at it with `claude mcp add --transport http mcp-tg http://127.0.0.1:8787` (see [Shared daemon](#shared-daemon-http-only)).
+
+It reads its configuration from the service manager's environment, not from a login shell's rc file. It needs `TELEGRAM_APP_ID` and `TELEGRAM_APP_HASH` always, plus `TELEGRAM_SESSION_INSECURE=true` if (and only if) you logged in with `--insecure-storage` — the session backend must match on both sides, or the daemon looks for the session where it was never written.
+
+Getting those variables there is not a one-time step. `launchctl setenv` applies to the current login session only, so after a reboot the daemon comes up unconfigured, exits, and `keep_alive` restarts it in a loop. Make it persistent: a login-time LaunchAgent that runs `launchctl setenv`, or your own LaunchAgent with an `EnvironmentVariables` dict instead of `brew services`. On Linux the systemd user manager reads `~/.config/environment.d/*.conf` on every start.
 
 There is no Homebrew build for Windows: Homebrew has no native Windows support, and its casks are macOS-only. Windows users take the binary from the release archives below, or run the container under WSL.
 

@@ -218,7 +218,11 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 
 ## Release and distribution
 
-`release.yml` fires on a `v*` tag: it builds and signs the multi-arch container, creates the GitHub release with generated notes, and then a final job runs GoReleaser (`.goreleaser.yaml`) to attach the binary archives (darwin/linux/windows × amd64/arm64) and publish the Homebrew formula to `lexfrei/homebrew-tap`. GoReleaser uses `release.mode: append` because the release already exists by then.
+`release.yml` fires on a `v*` tag: it builds and signs the multi-arch container, creates the GitHub release with generated notes, and then a final job runs GoReleaser (`.goreleaser.yaml`) to upload the binary archives (darwin/linux/windows × amd64/arm64) and publish the Homebrew formula to `lexfrei/homebrew-tap`. `release.mode: keep-existing` — the mode governs the release NOTES, not the artifacts, and `append` would stack a second, GoReleaser-generated changelog under the handwritten one on every release.
+
+The two channels must inject the same version strings: the container passes `v{{version}}` and the full SHA (that is what `docker/metadata-action` emits), so GoReleaser's ldflags use `v{{.Version}}` and `{{.FullCommit}}` too. Otherwise one release introduces itself two different ways over the MCP handshake and in Telegram's device list.
+
+`pr.yml` runs `goreleaser release --snapshot --skip=publish` as a gate. Without it the release config is first executed on the tag, in the LAST job — after the container is pushed and the release is public — so a broken template would leave a published release with no binaries and no formula. `goreleaser check` cannot be the gate: it exits non-zero on the deliberate `brews` deprecation.
 
 The tap gets a FORMULA, not a cask, which is the deprecated path in GoReleaser (`goreleaser check` fails on it — the release command only warns). The reason is that both replacements cost something the daemon needs: casks are macOS-only, and they have no `brew services`. A formula gives Linux and `brew services start mcp-tg` (launchd on macOS, systemd on Linux), which is how the shared HTTP daemon is meant to run. Homebrew itself still supports formulae; only GoReleaser's generator is retiring them. Windows gets archives but no tap: Homebrew has no native Windows support at all.
 

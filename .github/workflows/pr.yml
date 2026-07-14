@@ -28,6 +28,34 @@ jobs:
         with:
           version: latest
 
+  goreleaser:
+    name: Release Config
+    runs-on: ubuntu-latest
+    # The release config is only executed on a v* tag, in the LAST job — after
+    # the container is pushed and the GitHub release is already public. A broken
+    # template or an unbuildable target would leave a published release with no
+    # binaries and no formula. A snapshot run exercises build -> archive ->
+    # formula without publishing anything, so it fails here instead.
+    #
+    # `goreleaser check` is NOT the gate: it exits non-zero on the deliberate
+    # `brews` deprecation (see CLAUDE.md).
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+        with:
+          version: "~> v2"
+          args: release --snapshot --clean --skip=publish
+        env:
+          HOMEBREW_TAP_GITHUB_TOKEN: unused-in-snapshot
+
   test:
     name: Test
     runs-on: ubuntu-latest

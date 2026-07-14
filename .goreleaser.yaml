@@ -16,15 +16,19 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.revision={{.ShortCommit}}
+      # Match what the container build injects (docker/metadata-action keeps
+      # the leading v, and passes the full SHA), so one release does not
+      # introduce itself two different ways over MCP and in Telegram's
+      # device list.
+      - -X main.version=v{{.Version}}
+      - -X main.revision={{.FullCommit}}
 
 archives:
   - formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
-    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
 # A formula rather than a cask: casks are macOS-only, and a formula also
 # gives `brew services`, which is how this server is meant to run — one
@@ -75,17 +79,10 @@ brews:
 checksum:
   name_template: "checksums.txt"
 
-changelog:
-  sort: asc
-  filters:
-    exclude:
-      - "^docs:"
-      - "^chore:"
-      - "^ci:"
-      - "^test:"
-      - "^style:"
-
 release:
-  # release.yml already creates the GitHub release with its own notes and the
-  # container digest summary; GoReleaser only attaches the binaries to it.
-  mode: append
+  # release.yml has already created the GitHub release, with its own notes and
+  # the container digest summary. keep-existing leaves those notes untouched —
+  # GoReleaser only uploads the archives. (mode governs the NOTES, not the
+  # artifacts: append would add a second, GoReleaser-generated changelog under
+  # the handwritten one on every release.)
+  mode: keep-existing

@@ -231,14 +231,14 @@ jobs:
             echo "## Container Image"
             echo ""
             echo '```bash'
-            echo "docker pull ${IMAGE}:${VERSION}"
+            echo "docker pull ${IMAGE}:${GITHUB_REF_NAME}"
             echo '```'
             echo ""
             echo "## Verify Signature"
             echo ""
             echo '```bash'
             echo "cosign verify \\"
-            echo "  ${IMAGE}:${VERSION} \\"
+            echo "  ${IMAGE}:${GITHUB_REF_NAME} \\"
             echo "  --certificate-identity-regexp=https://github.com/${{ github.repository }} \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
             echo '```'
@@ -254,8 +254,9 @@ jobs:
   binaries:
     name: Binaries and Homebrew
     runs-on: ubuntu-latest
-    # Runs after the GitHub release exists: GoReleaser appends the archives to
-    # it rather than creating its own (release.mode: append).
+    # Runs after the GitHub release exists: GoReleaser uploads the archives to
+    # it and leaves the notes create-release wrote alone (release.mode:
+    # keep-existing).
     needs: create-release
     steps:
       - name: Checkout

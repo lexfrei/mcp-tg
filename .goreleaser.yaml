@@ -55,6 +55,9 @@ brews:
       (etc/"mcp-tg").mkpath
       env_file = etc/"mcp-tg/mcp-tg.env"
       unless env_file.exist?
+        # Credentials, and the only file the docs tell people to edit. The
+        # session file is 0600 and the default backend is the OS keychain;
+        # this must not be the world-readable exception.
         env_file.write <<~CONF
           # Credentials from https://my.telegram.org/apps — required.
           TELEGRAM_APP_ID=
@@ -63,6 +66,7 @@ brews:
           # session backend must match on both sides.
           # TELEGRAM_SESSION_INSECURE=true
         CONF
+        chmod 0600, env_file
       end
 
       (libexec/"mcp-tg-daemon").write <<~SH
@@ -112,6 +116,10 @@ brews:
       The service sources that file on every start, so nothing depends on your
       login shell. If it crash-loops, the config is the first suspect: check
       `brew services list` and $(brew --prefix)/var/log/mcp-tg.log.
+
+      Homebrew keeps files under etc across upgrades AND uninstalls, so the
+      credentials outlive `brew uninstall mcp-tg` — delete the file yourself if
+      you mean to remove them.
 
 checksum:
   name_template: "checksums.txt"

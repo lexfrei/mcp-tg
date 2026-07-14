@@ -24,13 +24,22 @@ jobs:
       # pushed and the release is public. A missing secret would therefore be
       # discovered as a red run on top of a published release with no formula.
       # Fail before anything leaves the runner instead.
-      - name: Require the Homebrew tap token
+      - name: Require a working Homebrew tap token
         env:
-          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
         run: |
-          if [ -z "${TAP_TOKEN}" ]; then
-            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set — the Homebrew formula could not be published." >&2
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN is not set — the formula could not be published." >&2
             echo "Add a PAT with write access to lexfrei/homebrew-tap as a repository secret." >&2
+            exit 1
+          fi
+
+          # A non-empty secret is not the interesting case. A fine-grained PAT
+          # expires (366 days, tops), and an expired one is still non-empty:
+          # preflight would pass, the container and the release would go out,
+          # and only the tap push would fail — on top of a public release.
+          if ! gh api repos/lexfrei/homebrew-tap --jq '.permissions.push' | grep --quiet true; then
+            echo "::error::HOMEBREW_TAP_GITHUB_TOKEN cannot push to lexfrei/homebrew-tap (expired, revoked, or under-scoped)." >&2
             exit 1
           fi
 

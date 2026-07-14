@@ -1,0 +1,91 @@
+version: 2
+
+builds:
+  - main: ./cmd/mcp-tg
+    binary: mcp-tg
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.revision={{.ShortCommit}}
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+
+# A formula rather than a cask: casks are macOS-only, and a formula also
+# gives `brew services`, which is how this server is meant to run — one
+# shared HTTP daemon per machine. The section is deprecated in GoReleaser
+# in favour of homebrew_casks, which would cost both Linux and the
+# service block; Homebrew itself still supports formulae.
+brews:
+  - repository:
+      owner: lexfrei
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/lexfrei/mcp-tg"
+    description: "MCP server for the Telegram Client API (MTProto, user account)"
+    license: "BSD-3-Clause"
+    install: |
+      bin.install "mcp-tg"
+    service: |
+      run [opt_bin/"mcp-tg"]
+      keep_alive true
+      log_path var/"log/mcp-tg.log"
+      error_log_path var/"log/mcp-tg.log"
+      environment_variables MCP_HTTP_ONLY: "true", MCP_HTTP_HOST: "127.0.0.1", MCP_HTTP_PORT: "8787"
+    caveats: |
+      mcp-tg needs Telegram application credentials and a logged-in session
+      before it can serve anything. Both steps are one-time:
+
+        1. Get an app id and hash at https://my.telegram.org/apps, then export
+           TELEGRAM_APP_ID and TELEGRAM_APP_HASH (the public build ships none).
+
+        2. Log in interactively — the daemon cannot do this itself:
+
+             mcp-tg login
+
+           The session goes to the OS keychain. Pass --insecure-storage only if
+           the machine has no keychain (a container, or headless Linux without a
+           Secret Service).
+
+      Then run it as a shared daemon on 127.0.0.1:8787:
+
+        brew services start mcp-tg
+
+      The service reads TELEGRAM_APP_ID and TELEGRAM_APP_HASH from the
+      environment, so set them where the service manager can see them
+      (~/.zshrc is NOT enough for launchd — use `launchctl setenv`, or run the
+      binary directly from a shell instead of as a service).
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^chore:"
+      - "^ci:"
+      - "^test:"
+      - "^style:"
+
+release:
+  # release.yml already creates the GitHub release with its own notes and the
+  # container digest summary; GoReleaser only attaches the binaries to it.
+  mode: append

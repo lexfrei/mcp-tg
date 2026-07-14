@@ -216,6 +216,14 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 - **FLOOD_WAIT**: gotd/td middleware auto-retries up to 3 times with server-specified delay
 - **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
+## Release and distribution
+
+`release.yml` fires on a `v*` tag: it builds and signs the multi-arch container, creates the GitHub release with generated notes, and then a final job runs GoReleaser (`.goreleaser.yaml`) to attach the binary archives (darwin/linux/windows × amd64/arm64) and publish the Homebrew formula to `lexfrei/homebrew-tap`. GoReleaser uses `release.mode: append` because the release already exists by then.
+
+The tap gets a FORMULA, not a cask, which is the deprecated path in GoReleaser (`goreleaser check` fails on it — the release command only warns). The reason is that both replacements cost something the daemon needs: casks are macOS-only, and they have no `brew services`. A formula gives Linux and `brew services start mcp-tg` (launchd on macOS, systemd on Linux), which is how the shared HTTP daemon is meant to run. Homebrew itself still supports formulae; only GoReleaser's generator is retiring them. Windows gets archives but no tap: Homebrew has no native Windows support at all.
+
+`HOMEBREW_TAP_GITHUB_TOKEN` (a PAT with write access to the tap) must exist as a repository secret, or the release job fails at the publish step.
+
 ## Linter
 
 Strict config in `.golangci.yml`:

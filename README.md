@@ -425,7 +425,21 @@ claude mcp add mcp-tg -- docker run --rm -i \
 
 A container has no OS keychain, so the image defaults to the plaintext file backend and reads the session from the mounted volume — the one `mcp-tg login` wrote there (see [Logging in](#logging-in)).
 
+### Homebrew (macOS, Linux)
+
+```bash
+brew install lexfrei/tap/mcp-tg
+mcp-tg login                      # interactive, writes the session to the OS keychain
+brew services start mcp-tg        # shared HTTP daemon on 127.0.0.1:8787
+```
+
+The service runs the headless HTTP mode, so a single daemon serves every MCP client on the machine. It reads `TELEGRAM_APP_ID` and `TELEGRAM_APP_HASH` from the environment, which a login shell's rc file does NOT provide to launchd — export them via `launchctl setenv` (macOS) or the service manager's environment (Linux), or skip the service and run the binary from a shell.
+
+There is no Homebrew build for Windows: Homebrew has no native Windows support, and its casks are macOS-only. Windows users take the binary from the release archives below, or run the container under WSL.
+
 ### Direct binary
+
+Release archives carry `darwin`, `linux` and `windows` builds for `amd64` and `arm64`; grab one from the [releases page](https://github.com/lexfrei/mcp-tg/releases).
 
 ```bash
 export TELEGRAM_APP_ID=12345

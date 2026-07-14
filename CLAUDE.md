@@ -230,9 +230,9 @@ The tap gets a FORMULA, not a cask, which is the deprecated path in GoReleaser (
 
 `HOMEBREW_TAP_GITHUB_TOKEN` (a PAT with write access to the tap) must exist as a repository secret. A missing secret expands to an empty string, GoReleaser builds a GitHub client with an empty token, and the tap push fails. The snapshot gate cannot catch that — it never publishes — so a `preflight` job checks the secret before ANY job runs: the container push and the public release both happen after it, and a failure there would otherwise land on top of an already-published release.
 
-A pre-release tag (`v1.3.0-rc1`) must not move `latest` anywhere. Three places key off the semver hyphen and must agree: `prerelease:` in `create-release`, `prerelease: auto` in `.goreleaser.yaml`, and `enable=` on the `type=raw,value=latest` container tag in BOTH metadata steps.
+A pre-release tag (`v1.3.0-rc1`) must not move `latest` anywhere. FOUR places key off the semver hyphen and must agree: `prerelease:` in `create-release`, `prerelease: auto` in `.goreleaser.yaml`, `enable=` on the `type=raw,value=latest` container tag in BOTH metadata steps, and `skip_upload: auto` on `brews` — for Homebrew the formula in the tap IS `latest`, so an RC would otherwise land on every `brew upgrade`.
 
-The release archives are signed too (keyless cosign over the checksums file), because the container is signed and the notes teach `cosign verify` — a binary that hands out a full-access Telegram session should not be the unsigned half of the same release.
+The release archives are signed too (keyless cosign over the checksums file), because the container is signed and the notes teach `cosign verify` — a binary that hands out a full-access Telegram session should not be the unsigned half of the same release. The signature is a `.bundle`: cosign v3 IGNORES `--output-signature`/`--output-certificate` and still exits 0, so the pre-v3 flags would have shipped an unsigned release whose notes told people to verify files that were never written. The PR gate therefore asserts the bundle EXISTS rather than trusting cosign's exit code.
 
 ## Linter
 

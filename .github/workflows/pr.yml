@@ -69,6 +69,14 @@ jobs:
             release --snapshot --clean
             ${{ github.event.pull_request.head.repo.full_name == github.repository && ' ' || '--skip=sign' }}
 
+      - name: Verify the signature was actually produced
+        # cosign can exit 0 having written nothing (it did, with the pre-v3
+        # flags). Assert the artifact, not the exit code.
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          test -s dist/checksums.txt.bundle \
+            || { echo "::error::cosign produced no bundle — the release would ship unsigned"; exit 1; }
+
   test:
     name: Test
     runs-on: ubuntu-latest

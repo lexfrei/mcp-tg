@@ -449,7 +449,7 @@ There is no Homebrew build for Windows: Homebrew has no native Windows support, 
 
 ### Direct binary
 
-Release archives carry `darwin`, `linux` and `windows` builds for `amd64` and `arm64`; grab one from the [releases page](https://github.com/lexfrei/mcp-tg/releases). Each release also ships a `checksums.txt` signed with keyless cosign — the release notes carry the `cosign verify-blob` and checksum-verification commands. This binary holds a full-access Telegram session; verifying it is worth the two commands.
+Release archives carry `darwin`, `linux` and `windows` builds for `amd64` and `arm64`; grab one from the [releases page](https://github.com/lexfrei/mcp-tg/releases). Each release also ships a `checksums.txt` and a `checksums.txt.bundle` — a keyless cosign signature — and the release notes carry the `cosign verify-blob --bundle` and checksum-verification commands. This binary holds a full-access Telegram session; verifying it is worth the two commands.
 
 ```bash
 export TELEGRAM_APP_ID=12345

@@ -36,7 +36,8 @@ archives:
 # in favour of homebrew_casks, which would cost both Linux and the
 # service block; Homebrew itself still supports formulae.
 brews:
-  - repository:
+  - skip_upload: auto # a pre-release tag must not overwrite the formula: for Homebrew, the tap IS latest
+    repository:
       owner: lexfrei
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
@@ -120,11 +121,14 @@ checksum:
 # be the unsigned half of the same release.
 signs:
   - cmd: cosign
-    certificate: "${artifact}.pem"
+    # cosign v3 signs blobs into a single bundle (certificate + signature).
+    # The old --output-signature / --output-certificate flags are IGNORED there
+    # — cosign still exits 0, so the release would ship unsigned while the notes
+    # told people to verify a .sig and a .pem that never existed.
+    signature: "${artifact}.bundle"
     args:
       - sign-blob
-      - "--output-certificate=${certificate}"
-      - "--output-signature=${signature}"
+      - "--bundle=${signature}"
       - "${artifact}"
       - --yes
     artifacts: checksum

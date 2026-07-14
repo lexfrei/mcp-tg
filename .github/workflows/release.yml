@@ -204,7 +204,7 @@ jobs:
       - name: Generate release notes
         run: |
           CURRENT_TAG="${GITHUB_REF_NAME}"
-          PREV_TAG=$(git tag --sort=-v:refname | grep --invert-match "^${CURRENT_TAG}$" | head --lines=1)
+          PREV_TAG=$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || true)
 
           if [ -n "$PREV_TAG" ]; then
             COMMITS=$(git log "${PREV_TAG}..HEAD" --format="%s" --no-merges)
@@ -273,7 +273,7 @@ jobs:
             echo "  --certificate-identity-regexp='^https://github.com/${{ github.repository }}/\\.github/workflows/release\\.yml@refs/tags/v' \\"
             echo "  --certificate-oidc-issuer=https://token.actions.githubusercontent.com"
             echo ""
-            echo "sha256sum --check --ignore-missing checksums.txt"
+            echo "shasum --algorithm 256 --check --ignore-missing checksums.txt  # sha256sum on Linux"
             echo '```'
           } > release-notes.md
 

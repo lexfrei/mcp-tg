@@ -46,6 +46,32 @@ brews:
     license: "BSD-3-Clause"
     install: |
       bin.install "mcp-tg"
+
+      # brew services only passes the variables declared in `service` below,
+      # and the credentials cannot be baked into a public formula. Ship a
+      # config file under etc (Homebrew preserves it across upgrades) and a
+      # wrapper that sources it, so the daemon starts configured.
+      (etc/"mcp-tg").mkpath
+      env_file = etc/"mcp-tg/mcp-tg.env"
+      unless env_file.exist?
+        env_file.write <<~CONF
+          # Credentials from https://my.telegram.org/apps — required.
+          TELEGRAM_APP_ID=
+          TELEGRAM_APP_HASH=
+          # Uncomment ONLY if you logged in with --insecure-storage; the
+          # session backend must match on both sides.
+          # TELEGRAM_SESSION_INSECURE=true
+        CONF
+      end
+
+      (libexec/"mcp-tg-daemon").write <<~SH
+        #!/bin/bash
+        set -a
+        [ -f "#{etc}/mcp-tg/mcp-tg.env" ] && . "#{etc}/mcp-tg/mcp-tg.env"
+        set +a
+        exec "#{opt_bin}/mcp-tg" "$@"
+      SH
+      chmod 0755, libexec/"mcp-tg-daemon"
     test: |
       # The binary has no --version flag and every real command talks to
       # Telegram, so missing credentials is the only offline path. The vars
@@ -55,53 +81,36 @@ brews:
       assert_match "TELEGRAM_APP_ID is required",
         shell_output("TELEGRAM_APP_ID= TELEGRAM_APP_HASH= #{bin}/mcp-tg 2>&1", 1)
     service: |
-      run [opt_bin/"mcp-tg"]
+      run [opt_libexec/"mcp-tg-daemon"]
       keep_alive true
       log_path var/"log/mcp-tg.log"
       error_log_path var/"log/mcp-tg.log"
       environment_variables MCP_HTTP_ONLY: "true", MCP_HTTP_HOST: "127.0.0.1", MCP_HTTP_PORT: "8787"
     caveats: |
-      mcp-tg needs Telegram application credentials and a logged-in session
-      before it can serve anything. Both steps are one-time:
+      The public build ships no Telegram credentials, and the daemon cannot log
+      in by itself. Three steps, then it survives reboots on its own:
 
-        1. Get an app id and hash at https://my.telegram.org/apps, then export
-           TELEGRAM_APP_ID and TELEGRAM_APP_HASH (the public build ships none).
+        1. Put an app id and hash from https://my.telegram.org/apps into
 
-        2. Log in interactively — the daemon cannot do this itself:
+             #{etc}/mcp-tg/mcp-tg.env
 
+        2. Log in interactively (the same file feeds this shell):
+
+             set -a; . #{etc}/mcp-tg/mcp-tg.env; set +a
              mcp-tg login
 
-           The session goes to the OS keychain. Pass --insecure-storage only if
+           The session goes to the OS keychain. Use --insecure-storage only if
            the machine has no keychain (a container, or headless Linux without a
-           Secret Service).
+           Secret Service) — and then uncomment TELEGRAM_SESSION_INSECURE in the
+           same file, because the backend must match on both sides.
 
-      Then run it as a shared daemon on 127.0.0.1:8787:
+        3. Start the shared daemon on 127.0.0.1:8787:
 
-        brew services start mcp-tg
+             brew services start mcp-tg
 
-      The service reads its configuration from the service manager's
-      environment — a login shell's rc file is NOT part of it. It needs:
-
-        TELEGRAM_APP_ID, TELEGRAM_APP_HASH  — always
-        TELEGRAM_SESSION_INSECURE=true      — ONLY if you logged in with
-                                              --insecure-storage; the session
-                                              backend must match, or the daemon
-                                              cannot find the session it wrote
-
-      Miss any of them and the daemon exits at startup, and keep_alive restarts
-      it forever. Check `brew services list` and the log at
-      $(brew --prefix)/var/log/mcp-tg.log.
-
-      Getting them there is NOT one-time. On macOS `launchctl setenv` applies to
-      the current login session only, so the daemon comes up unconfigured after
-      the next reboot; on Linux, `systemctl --user import-environment` is the
-      same story. Make it persistent:
-
-        macOS  — put the exports in a login-time LaunchAgent that runs
-                 `launchctl setenv`, or skip `brew services` and write your own
-                 LaunchAgent with an EnvironmentVariables dict.
-        Linux  — `~/.config/environment.d/mcp-tg.conf` (systemd user manager
-                 reads it on every start).
+      The service sources that file on every start, so nothing depends on your
+      login shell. If it crash-loops, the config is the first suspect: check
+      `brew services list` and $(brew --prefix)/var/log/mcp-tg.log.
 
 checksum:
   name_template: "checksums.txt"

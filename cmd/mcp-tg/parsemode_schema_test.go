@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/middleware"
+	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -82,7 +83,10 @@ func callParseModeTool(t *testing.T, tool string, args map[string]any) *mcp.Call
 	authDone := make(chan struct{})
 	close(authDone)
 
-	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth())
+	server := newHeadlessServer(
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(),
+	)
 
 	ct, st := mcp.NewInMemoryTransports()
 

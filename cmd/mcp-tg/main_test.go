@@ -81,7 +81,10 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 	authDone := make(chan struct{})
 	close(authDone) // simulate completed auth so the guard lets calls through
 
-	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth())
+	server := newHeadlessServer(
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(),
+	)
 
 	for i := range 2 {
 		ct, st := mcp.NewInMemoryTransports()
@@ -127,7 +130,10 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 	health.Arm()
 	health.MarkRevoked("AUTH_KEY_UNREGISTERED")
 
-	server := buildServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, health, nil)
+	server := buildServer(
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		tgclient.NewSubscriptionBroker(), authDone, health, nil,
+	)
 
 	ct, st := mcp.NewInMemoryTransports()
 

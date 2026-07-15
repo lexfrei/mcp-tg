@@ -83,8 +83,11 @@ func run() error {
 	device := mcpDevice()
 
 	transcriptionBroker := tgclient.NewTranscriptionBroker()
+	subscriptionBroker := tgclient.NewSubscriptionBroker()
 	dispatcher := tg.NewUpdateDispatcher()
 	dispatcher.OnTranscribedAudio(transcriptionBroker.HandleUpdate)
+	dispatcher.OnNewMessage(subscriptionBroker.HandleNewMessage)
+	dispatcher.OnNewChannelMessage(subscriptionBroker.HandleNewChannelMessage)
 
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: storage,
@@ -104,21 +107,22 @@ func run() error {
 	setupSignalHandler(ctx, cancel)
 
 	return revokedExitError(tgClient.Run(ctx, func(ctx context.Context) error {
-		return startServer(ctx, cancel, tgClient, transcriptionBroker, cfg, health)
+		return startServer(ctx, cancel, tgClient, transcriptionBroker, subscriptionBroker, cfg, health)
 	}))
 }
 
 func startServer(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	transcriptionBroker *tgclient.TranscriptionBroker, cfg *config.Config, health *mcpmw.SessionHealth,
+	transcriptionBroker *tgclient.TranscriptionBroker, subscriptionBroker *tgclient.SubscriptionBroker,
+	cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
 	wrapper := tgclient.NewWrapperWithTranscriptionBroker(tgClient.API(), transcriptionBroker)
 
 	if cfg.HTTPOnly {
-		return startHeadless(ctx, tgClient, wrapper, cfg, health)
+		return startHeadless(ctx, tgClient, wrapper, subscriptionBroker, cfg, health)
 	}
 
-	return startStdio(ctx, cancel, tgClient, wrapper, cfg, health)
+	return startStdio(ctx, cancel, tgClient, wrapper, subscriptionBroker, cfg, health)
 }
 
 // startStdio runs the server with stdio as the primary transport (the default
@@ -127,12 +131,13 @@ func startServer(
 // complete an interactive login.
 func startStdio(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	wrapper tgclient.Client, cfg *config.Config, health *mcpmw.SessionHealth,
+	wrapper tgclient.Client, subscriptionBroker *tgclient.SubscriptionBroker,
+	cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
 	initDone := make(chan struct{})
 	authDone := make(chan struct{})
 
-	server := buildServer(wrapper, cfg.DownloadDir, authDone, health, func() { close(initDone) })
+	server := buildServer(wrapper, cfg.DownloadDir, subscriptionBroker, authDone, health, func() { close(initDone) })
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -169,10 +174,10 @@ func startStdio(
 // valid it fails fast via headlessLoginRequired, pointing at `mcp-tg login`.
 func startHeadless(
 	ctx context.Context, tgClient *telegram.Client, wrapper tgclient.Client,
-	cfg *config.Config, health *mcpmw.SessionHealth,
+	subscriptionBroker *tgclient.SubscriptionBroker, cfg *config.Config, health *mcpmw.SessionHealth,
 ) error {
 	authDone := make(chan struct{})
-	server := newHeadlessServer(wrapper, cfg.DownloadDir, authDone, health)
+	server := newHeadlessServer(wrapper, cfg.DownloadDir, subscriptionBroker, authDone, health)
 
 	authErr := authenticate(ctx, tgClient, cfg, nil)
 	if authErr != nil {
@@ -203,19 +208,20 @@ func startHeadless(
 // closes a shared channel would panic on the second client's initialize (close
 // of a closed channel). Wiring such a hook here trips the multi-client test.
 func newHeadlessServer(
-	client tgclient.Client, downloadDir string, authDone chan struct{}, health *mcpmw.SessionHealth,
+	client tgclient.Client, downloadDir string, broker *tgclient.SubscriptionBroker,
+	authDone chan struct{}, health *mcpmw.SessionHealth,
 ) *mcp.Server {
-	return buildServer(client, downloadDir, authDone, health, nil)
+	return buildServer(client, downloadDir, broker, authDone, health, nil)
 }
 
 // buildServer constructs the MCP server with all tools, resources, prompts, and
 // middleware. onInit, when non-nil, runs after a client completes the MCP
 // initialize handshake; pass nil when no single client owns the lifecycle.
 func buildServer(
-	client tgclient.Client, downloadDir string, authDone chan struct{},
-	health *mcpmw.SessionHealth, onInit func(),
+	client tgclient.Client, downloadDir string, broker *tgclient.SubscriptionBroker,
+	authDone chan struct{}, health *mcpmw.SessionHealth, onInit func(),
 ) *mcp.Server {
-	opts := newServerOptions(client)
+	opts := newServerOptions(client, broker)
 	if onInit != nil {
 		opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
 			onInit()
@@ -229,6 +235,10 @@ func buildServer(
 		},
 		opts,
 	)
+
+	// Wire the notifier now that the server exists: the update dispatcher was
+	// registered before Run, but ResourceUpdated needs the built server.
+	broker.SetNotifier(newResourceUpdater(server))
 
 	boolFields := tools.BoolFieldRegistry{}
 	registerTools(server, client, boolFields, downloadDir)
@@ -456,7 +466,7 @@ func shortRevision(revision string) string {
 	return revision
 }
 
-func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
+func newServerOptions(client tgclient.Client, broker *tgclient.SubscriptionBroker) *mcp.ServerOptions {
 	logger := newLogger()
 
 	return &mcp.ServerOptions{
@@ -471,9 +481,11 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 			"the formatting-entity count of the sent message (auto-detected links and hashtags excluded) — " +
 			"0 after a commonmark send whose text CONTAINED formatting means the markdown did not parse. " +
 			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
-		Logger:            logger,
-		KeepAlive:         keepAliveInterval,
-		CompletionHandler: completions.NewHandler(client),
+		Logger:             logger,
+		KeepAlive:          keepAliveInterval,
+		CompletionHandler:  completions.NewHandler(client),
+		SubscribeHandler:   newSubscribeHandler(client, broker),
+		UnsubscribeHandler: newUnsubscribeHandler(broker),
 		RootsListChangedHandler: func(_ context.Context, _ *mcp.RootsListChangedRequest) {
 			logger.Info("client roots list changed")
 		},

@@ -15,10 +15,10 @@ golangci-lint run
 ## Architecture
 
 ```text
-cmd/mcp-tg/main.go          Entry point: `login` subcommand dispatch, else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
+cmd/mcp-tg/main.go          Entry point: `--version`/`login` dispatch (via flags.go), else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
 cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes the session, keychain or file), credential-safe, no MCP surface
 cmd/mcp-tg/storage.go       Session backend factory: OS keychain (lexfrei/keychain) by default, plaintext file on --insecure-storage/TELEGRAM_SESSION_INSECURE
-cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
+cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td (WARN log per retry; surfaces as tools.ErrFloodWait after exhaustion)
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 internal/config/             Env var loading and validation
@@ -114,6 +114,14 @@ Secure by default: the session lives in the OS keychain via `github.com/lexfrei/
 - Headless (`startHeadless`, requires `MCP_HTTP_ONLY=true` + `MCP_HTTP_PORT`): HTTP is the only transport, no stdio peer. One process and one Telegram connection serve many clients — the shared-daemon mode. Auth cannot elicit (no client session to prompt), so it depends on a valid persisted session file or env-var credentials.
 
 Both paths build the server through `buildServer`. The headless path passes `onInit=nil` deliberately: the stdio path's `InitializedHandler` closes a shared channel, which would panic on the second HTTP client's `initialize` (close of a closed channel) since headless HTTP serves many clients.
+
+### Logging and log level
+
+`resolveLogLevel(os.Args, MCP_LOG_LEVEL)` (`flags.go`) picks the slog level once at startup: `--log-level` flag > `MCP_LOG_LEVEL` env > default `info`; an unknown name is `ErrInvalidLogLevel`, not a silent fallback. `newLogger(level)` builds ONE `*slog.Logger` that is threaded explicitly through `run → startServer → startStdio/startHeadless → buildServer → newServerOptions` (and `waitForTransports`/`runHTTPServer`). It is deliberately NOT a package global. The bug this replaced: `newServerOptions` called `newLogger()` a second time, so the request-logging middleware ignored the level and always logged at info — pinned now by `TestNewServerOptions_UsesThreadedLogger`.
+
+Level routing: FLOOD_WAIT retries → WARN (`flood_wait.go`), context cancellation during a FLOOD_WAIT backoff → WARN, HTTP transport shutdown failures → ERROR (`runHTTPServer`), tool-call and method failures → ERROR (`middleware.NewLogging`). The per-request success summary (`MCP request handled`) stays at INFO as an operational heartbeat; DEBUG is the verbose tier (the gotd zap connection/migration logger, `newGotdLogger`). So a default-`info` daemon already records FLOOD_WAIT and failures for a post-mortem without `--log-level debug`.
+
+`--version` (`versionRequested`/`runVersion` in `flags.go`) prints `mcp-tg <version> (<shortRev>)` to stdout and exits before any server or Telegram work; `logStartupVersion` emits the same build id as one INFO line at startup, so an `info`/`debug` daemon names the running binary in its log (at `warn`/`error` it is filtered like any INFO record — `--version` and `tg_server_version` are the level-independent build check).
 
 ### Forum topics
 
@@ -213,7 +221,7 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
-- **FLOOD_WAIT**: gotd/td middleware auto-retries up to 3 times with server-specified delay
+- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` auto-retries up to 3 times with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
 - **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
 ## Release and distribution

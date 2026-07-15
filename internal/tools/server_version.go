@@ -29,6 +29,20 @@ type ServerVersionResult struct {
 	Output    string `json:"output"`
 }
 
+// FormatVersionLine renders the one-line build identity `mcp-tg <version>
+// (<shortRev>)` shared by the tg_server_version tool's Output and the `mcp-tg
+// --version` CLI. Single-sourcing it here (cmd already imports tools) is what
+// keeps the two byte-identical — format and revision truncation cannot drift
+// between a CLI check and the running server.
+func FormatVersionLine(version, revision string) string {
+	shortRev := revision
+	if len(shortRev) > shortRevisionLen {
+		shortRev = shortRev[:shortRevisionLen]
+	}
+
+	return fmt.Sprintf("mcp-tg %s (%s)", version, shortRev)
+}
+
 // NewServerVersionHandler creates a handler that reports the build metadata
 // passed in — typically the package-level `version` and `revision` strings
 // injected via -ldflags from the Containerfile, plus runtime.Version().
@@ -43,16 +57,11 @@ func NewServerVersionHandler(
 		_ *mcp.CallToolRequest,
 		_ ServerVersionParams,
 	) (*mcp.CallToolResult, ServerVersionResult, error) {
-		shortRev := revision
-		if len(shortRev) > shortRevisionLen {
-			shortRev = shortRev[:shortRevisionLen]
-		}
-
 		return nil, ServerVersionResult{
 			Version:   version,
 			Revision:  revision,
 			GoVersion: goVersion,
-			Output:    fmt.Sprintf("mcp-tg %s (%s)", version, shortRev),
+			Output:    FormatVersionLine(version, revision),
 		}, nil
 	}
 }

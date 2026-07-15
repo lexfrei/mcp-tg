@@ -71,6 +71,51 @@ func TestLogStartupVersion_LogsBuildAtInfo(t *testing.T) {
 	}
 }
 
+func TestResolveLogLevel(t *testing.T) {
+	cases := []struct {
+		name    string
+		args    []string
+		env     string
+		want    slog.Level
+		wantErr bool
+	}{
+		{"default is info", []string{"mcp-tg"}, "", slog.LevelInfo, false},
+		{"flag space form", []string{"mcp-tg", "--log-level", "debug"}, "", slog.LevelDebug, false},
+		{"flag equals form", []string{"mcp-tg", "--log-level=warn"}, "", slog.LevelWarn, false},
+		{"flag error", []string{"mcp-tg", "--log-level", "error"}, "", slog.LevelError, false},
+		{"env used when no flag", []string{"mcp-tg"}, "warn", slog.LevelWarn, false},
+		{"flag overrides env", []string{"mcp-tg", "--log-level", "error"}, "debug", slog.LevelError, false},
+		{"case insensitive", []string{"mcp-tg", "--log-level", "DEBUG"}, "", slog.LevelDebug, false},
+		{"warning alias", []string{"mcp-tg", "--log-level", "warning"}, "", slog.LevelWarn, false},
+		{"unknown flag value", []string{"mcp-tg", "--log-level", "loud"}, "", slog.LevelInfo, true},
+		{"unknown env value", []string{"mcp-tg"}, "loud", slog.LevelInfo, true},
+		{"dangling flag at end", []string{"mcp-tg", "--log-level"}, "", slog.LevelInfo, true},
+		{"empty equals value", []string{"mcp-tg", "--log-level="}, "", slog.LevelInfo, true},
+		{"dangling flag ignores env", []string{"mcp-tg", "--log-level"}, "warn", slog.LevelInfo, true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveLogLevel(tc.args, tc.env)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("resolveLogLevel(%v, %q) = nil error, want ErrInvalidLogLevel", tc.args, tc.env)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("resolveLogLevel(%v, %q) unexpected error: %v", tc.args, tc.env, err)
+			}
+
+			if got != tc.want {
+				t.Errorf("resolveLogLevel(%v, %q) = %v, want %v", tc.args, tc.env, got, tc.want)
+			}
+		})
+	}
+}
+
 // versionHelperEnv gates the subprocess re-entry: when set the child runs
 // main() so the real --version dispatch path (os.Args scan → runVersion → exit
 // 0) is exercised end to end, not just the helper in isolation.

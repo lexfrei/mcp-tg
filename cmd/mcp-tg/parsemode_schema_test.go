@@ -82,7 +82,7 @@ func callParseModeTool(t *testing.T, tool string, args map[string]any) *mcp.Call
 	authDone := make(chan struct{})
 	close(authDone)
 
-	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth())
+	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth(), discardLogger())
 
 	ct, st := mcp.NewInMemoryTransports()
 

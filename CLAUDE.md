@@ -115,6 +115,14 @@ Secure by default: the session lives in the OS keychain via `github.com/lexfrei/
 
 Both paths build the server through `buildServer`. The headless path passes `onInit=nil` deliberately: the stdio path's `InitializedHandler` closes a shared channel, which would panic on the second HTTP client's `initialize` (close of a closed channel) since headless HTTP serves many clients.
 
+### Logging and log level
+
+`resolveLogLevel(os.Args, MCP_LOG_LEVEL)` (`flags.go`) picks the slog level once at startup: `--log-level` flag > `MCP_LOG_LEVEL` env > default `info`; an unknown name is `ErrInvalidLogLevel`, not a silent fallback. `newLogger(level)` builds ONE `*slog.Logger` that is threaded explicitly through `run → startServer → startStdio/startHeadless → buildServer → newServerOptions` (and `waitForTransports`/`runHTTPServer`). It is deliberately NOT a package global. The bug this replaced: `newServerOptions` called `newLogger()` a second time, so the request-logging middleware ignored the level and always logged at info — pinned now by `TestNewServerOptions_UsesThreadedLogger`.
+
+Level routing: FLOOD_WAIT retries → WARN (`flood_wait.go`), context cancellation during a FLOOD_WAIT backoff → WARN, HTTP transport shutdown failures → ERROR (`runHTTPServer`), tool-call and method failures → ERROR (`middleware.NewLogging`). The per-request success summary (`MCP request handled`) stays at INFO as an operational heartbeat; DEBUG is the verbose tier (the gotd zap connection/migration logger, `newGotdLogger`). So a default-`info` daemon already records FLOOD_WAIT and failures for a post-mortem without `--log-level debug`.
+
+`--version` (`versionRequested`/`runVersion` in `flags.go`) prints `mcp-tg <version> (<shortRev>)` to stdout and exits before any server or Telegram work; `logStartupVersion` emits the same build id as one INFO line at startup, so an `info`/`debug` daemon names the running binary in its log (at `warn`/`error` it is filtered like any INFO record — `--version` and `tg_server_version` are the level-independent build check).
+
 ### Forum topics
 
 Tools that send messages (`messages_send`, `messages_send_file`, `media_send_album`) accept `topicId` to target a specific forum topic. `messages_list` accepts `topicId` to filter messages by topic (uses `MessagesGetReplies` API instead of `MessagesGetHistory`). Message output includes `topicId` extracted from `MessageReplyHeader.ReplyToTopID`.

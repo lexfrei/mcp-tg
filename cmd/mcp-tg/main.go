@@ -46,6 +46,12 @@ var (
 )
 
 func main() {
+	if versionRequested(os.Args) {
+		runVersion()
+
+		return
+	}
+
 	if loginRequested(os.Args) {
 		if loginErr := runLogin(); loginErr != nil {
 			log.Printf("login error: %v", loginErr)
@@ -63,6 +69,14 @@ func main() {
 }
 
 func run() error {
+	level, levelErr := resolveLogLevel(os.Args, os.Getenv("MCP_LOG_LEVEL"))
+	if levelErr != nil {
+		return levelErr
+	}
+
+	logger := newLogger(level)
+	logStartupVersion(logger)
+
 	cfg, cfgErr := config.Load()
 	if cfgErr != nil {
 		return errors.Wrap(cfgErr, "invalid configuration")
@@ -72,7 +86,6 @@ func run() error {
 		return dirErr
 	}
 
-	logger := newLogger()
 	health := mcpmw.NewSessionHealth()
 
 	storage, storageErr := newSessionStorage(cfg, cfg.InsecureStorage)
@@ -83,16 +96,19 @@ func run() error {
 	device := mcpDevice()
 
 	transcriptionBroker := tgclient.NewTranscriptionBroker()
+	subscriptionBroker := tgclient.NewSubscriptionBroker()
 	dispatcher := tg.NewUpdateDispatcher()
 	dispatcher.OnTranscribedAudio(transcriptionBroker.HandleUpdate)
+	dispatcher.OnNewMessage(subscriptionBroker.HandleNewMessage)
+	dispatcher.OnNewChannelMessage(subscriptionBroker.HandleNewChannelMessage)
 
 	tgClient := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: storage,
-		Logger:         logzap.New(newGotdLogger()),
+		Logger:         logzap.New(newGotdLogger(level)),
 		Device:         device,
 		UpdateHandler:  dispatcher,
 		Middlewares: []telegram.Middleware{
-			newFloodWaitMiddleware(),
+			newFloodWaitMiddleware(logger),
 			newConnReinitMiddleware(cfg.AppID, &device),
 			newAuthRevokedMiddleware(health, logger),
 		},
@@ -104,21 +120,22 @@ func run() error {
 	setupSignalHandler(ctx, cancel)
 
 	return revokedExitError(tgClient.Run(ctx, func(ctx context.Context) error {
-		return startServer(ctx, cancel, tgClient, transcriptionBroker, cfg, health)
+		return startServer(ctx, cancel, tgClient, transcriptionBroker, subscriptionBroker, cfg, health, logger)
 	}))
 }
 
 func startServer(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	transcriptionBroker *tgclient.TranscriptionBroker, cfg *config.Config, health *mcpmw.SessionHealth,
+	transcriptionBroker *tgclient.TranscriptionBroker, subscriptionBroker *tgclient.SubscriptionBroker,
+	cfg *config.Config, health *mcpmw.SessionHealth, logger *slog.Logger,
 ) error {
 	wrapper := tgclient.NewWrapperWithTranscriptionBroker(tgClient.API(), transcriptionBroker)
 
 	if cfg.HTTPOnly {
-		return startHeadless(ctx, tgClient, wrapper, cfg, health)
+		return startHeadless(ctx, tgClient, wrapper, subscriptionBroker, cfg, health, logger)
 	}
 
-	return startStdio(ctx, cancel, tgClient, wrapper, cfg, health)
+	return startStdio(ctx, cancel, tgClient, wrapper, subscriptionBroker, cfg, health, logger)
 }
 
 // startStdio runs the server with stdio as the primary transport (the default
@@ -127,12 +144,15 @@ func startServer(
 // complete an interactive login.
 func startStdio(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
-	wrapper tgclient.Client, cfg *config.Config, health *mcpmw.SessionHealth,
+	wrapper tgclient.Client, subscriptionBroker *tgclient.SubscriptionBroker,
+	cfg *config.Config, health *mcpmw.SessionHealth, logger *slog.Logger,
 ) error {
 	initDone := make(chan struct{})
 	authDone := make(chan struct{})
 
-	server := buildServer(wrapper, cfg.DownloadDir, authDone, health, func() { close(initDone) })
+	server := buildServer(
+		wrapper, cfg.DownloadDir, subscriptionBroker, authDone, health, func() { close(initDone) }, logger,
+	)
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -156,7 +176,7 @@ func startStdio(
 	health.Arm()
 	close(authDone)
 
-	return waitForTransports(ctx, cancel, server, stdioSession, cfg)
+	return waitForTransports(ctx, cancel, server, stdioSession, cfg, logger)
 }
 
 // startHeadless runs the server with HTTP as the only transport and no stdio
@@ -169,10 +189,11 @@ func startStdio(
 // valid it fails fast via headlessLoginRequired, pointing at `mcp-tg login`.
 func startHeadless(
 	ctx context.Context, tgClient *telegram.Client, wrapper tgclient.Client,
-	cfg *config.Config, health *mcpmw.SessionHealth,
+	subscriptionBroker *tgclient.SubscriptionBroker, cfg *config.Config, health *mcpmw.SessionHealth,
+	logger *slog.Logger,
 ) error {
 	authDone := make(chan struct{})
-	server := newHeadlessServer(wrapper, cfg.DownloadDir, authDone, health)
+	server := newHeadlessServer(wrapper, cfg.DownloadDir, subscriptionBroker, authDone, health, logger)
 
 	authErr := authenticate(ctx, tgClient, cfg, nil)
 	if authErr != nil {
@@ -190,9 +211,9 @@ func startHeadless(
 	health.Arm()
 	close(authDone)
 
-	log.Printf("starting in HTTP-only headless mode (shared daemon)")
+	logger.Info("starting in HTTP-only headless mode (shared daemon)")
 
-	return runHTTPServer(ctx, server, cfg.HTTPAddr())
+	return runHTTPServer(ctx, server, cfg.HTTPAddr(), logger)
 }
 
 // newHeadlessServer builds the MCP server for headless HTTP-only mode. It is a
@@ -203,19 +224,20 @@ func startHeadless(
 // closes a shared channel would panic on the second client's initialize (close
 // of a closed channel). Wiring such a hook here trips the multi-client test.
 func newHeadlessServer(
-	client tgclient.Client, downloadDir string, authDone chan struct{}, health *mcpmw.SessionHealth,
+	client tgclient.Client, downloadDir string, broker *tgclient.SubscriptionBroker,
+	authDone chan struct{}, health *mcpmw.SessionHealth, logger *slog.Logger,
 ) *mcp.Server {
-	return buildServer(client, downloadDir, authDone, health, nil)
+	return buildServer(client, downloadDir, broker, authDone, health, nil, logger)
 }
 
 // buildServer constructs the MCP server with all tools, resources, prompts, and
 // middleware. onInit, when non-nil, runs after a client completes the MCP
 // initialize handshake; pass nil when no single client owns the lifecycle.
 func buildServer(
-	client tgclient.Client, downloadDir string, authDone chan struct{},
-	health *mcpmw.SessionHealth, onInit func(),
+	client tgclient.Client, downloadDir string, broker *tgclient.SubscriptionBroker,
+	authDone chan struct{}, health *mcpmw.SessionHealth, onInit func(), logger *slog.Logger,
 ) *mcp.Server {
-	opts := newServerOptions(client)
+	opts := newServerOptions(client, broker, logger)
 	if onInit != nil {
 		opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
 			onInit()
@@ -229,6 +251,10 @@ func buildServer(
 		},
 		opts,
 	)
+
+	// Wire the notifier now that the server exists: the update dispatcher was
+	// registered before Run, but ResourceUpdated needs the built server.
+	broker.SetNotifier(newResourceUpdater(server))
 
 	boolFields := tools.BoolFieldRegistry{}
 	registerTools(server, client, boolFields, downloadDir)
@@ -323,6 +349,7 @@ func waitForTransports(
 	server *mcp.Server,
 	stdioSession *mcp.ServerSession,
 	cfg *config.Config,
+	logger *slog.Logger,
 ) error {
 	group, groupCtx := errgroup.WithContext(ctx)
 	httpEnabled := cfg.HTTPEnabled()
@@ -342,7 +369,7 @@ func waitForTransports(
 
 	if httpEnabled {
 		group.Go(func() error {
-			return runHTTPServer(groupCtx, server, cfg.HTTPAddr())
+			return runHTTPServer(groupCtx, server, cfg.HTTPAddr(), logger)
 		})
 	}
 
@@ -392,12 +419,29 @@ func setupSignalHandler(ctx context.Context, cancel context.CancelFunc) {
 }
 
 // newLogger builds the structured logger used for MCP request logging and the
-// invoker middlewares. Text handler to stderr, which launchd routes into the
-// daemon log.
-func newLogger() *slog.Logger {
+// invoker middlewares, at the level resolved from --log-level / MCP_LOG_LEVEL.
+// Text handler to stderr, which launchd routes into the daemon log. One logger
+// is threaded through the whole server so the configured level applies
+// everywhere, rather than a second logger silently pinning info.
+func newLogger(level slog.Level) *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: level,
 	}))
+}
+
+// zapLevel maps a slog.Level onto the nearest zapcore.Level so the gotd zap
+// logger honours the same --log-level / MCP_LOG_LEVEL as the slog logger.
+func zapLevel(level slog.Level) zapcore.Level {
+	switch {
+	case level <= slog.LevelDebug:
+		return zapcore.DebugLevel
+	case level <= slog.LevelInfo:
+		return zapcore.InfoLevel
+	case level <= slog.LevelWarn:
+		return zapcore.WarnLevel
+	default:
+		return zapcore.ErrorLevel
+	}
 }
 
 // newGotdLogger builds the zap logger handed to gotd so MTProto connection,
@@ -409,10 +453,15 @@ func newLogger() *slog.Logger {
 // plain text alongside the slog output on the same stderr stream, rather than
 // JSON amid key=value. Falls back to a nop logger if zap construction fails,
 // never blocking startup.
-func newGotdLogger() *zap.Logger {
+//
+// It honours the same resolved level as the slog logger, so --log-level debug
+// turns on the full gotd connection trace and warn/error quiet gotd's info
+// chatter — otherwise the level would apply to the slog side only.
+func newGotdLogger(level slog.Level) *zap.Logger {
 	cfg := zap.NewProductionConfig()
 	cfg.Encoding = "console"
 	cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	cfg.Level = zap.NewAtomicLevelAt(zapLevel(level))
 
 	// This is a diagnostic logger whose whole point is to preserve the context of
 	// a connection/auth incident. Production sampling would thin out repeated
@@ -456,9 +505,9 @@ func shortRevision(revision string) string {
 	return revision
 }
 
-func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
-	logger := newLogger()
-
+func newServerOptions(
+	client tgclient.Client, broker *tgclient.SubscriptionBroker, logger *slog.Logger,
+) *mcp.ServerOptions {
 	return &mcp.ServerOptions{
 		Instructions: "MCP server for Telegram Client API (MTProto, user account, not bot). " +
 			"All tools accepting 'peer' support: @username, bare username, " +
@@ -471,9 +520,11 @@ func newServerOptions(client tgclient.Client) *mcp.ServerOptions {
 			"the formatting-entity count of the sent message (auto-detected links and hashtags excluded) — " +
 			"0 after a commonmark send whose text CONTAINED formatting means the markdown did not parse. " +
 			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
-		Logger:            logger,
-		KeepAlive:         keepAliveInterval,
-		CompletionHandler: completions.NewHandler(client),
+		Logger:             logger,
+		KeepAlive:          keepAliveInterval,
+		CompletionHandler:  completions.NewHandler(client),
+		SubscribeHandler:   newSubscribeHandler(client, broker),
+		UnsubscribeHandler: newUnsubscribeHandler(broker),
 		RootsListChangedHandler: func(_ context.Context, _ *mcp.RootsListChangedRequest) {
 			logger.Info("client roots list changed")
 		},
@@ -588,7 +639,7 @@ func newHTTPHandler(server *mcp.Server) http.Handler {
 	return http.NewCrossOriginProtection().Handler(handler)
 }
 
-func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
+func runHTTPServer(ctx context.Context, server *mcp.Server, addr string, logger *slog.Logger) error {
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           newHTTPHandler(server),
@@ -605,7 +656,7 @@ func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
 
 		shutdownErr := httpServer.Shutdown(shutdownCtx) //nolint:contextcheck // ctx is cancelled, need fresh context for graceful shutdown.
 		if shutdownErr != nil {
-			log.Printf("HTTP server shutdown error: %v", shutdownErr)
+			logger.Error("HTTP server shutdown failed", "error", shutdownErr)
 		}
 	}()
 
@@ -614,7 +665,7 @@ func runHTTPServer(ctx context.Context, server *mcp.Server, addr string) error {
 		return errors.Wrapf(listenErr, "HTTP port %s unavailable", addr)
 	}
 
-	log.Printf("HTTP server listening on %s", addr)
+	logger.Info("HTTP server listening", "addr", addr)
 
 	serveErr := httpServer.Serve(listener)
 	if errors.Is(serveErr, http.ErrServerClosed) {

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/middleware"
+	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -31,7 +32,10 @@ func listRegisteredTools(t *testing.T) []*mcp.Tool {
 	authDone := make(chan struct{})
 	close(authDone)
 
-	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth(), discardLogger())
+	server := newHeadlessServer(
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
+	)
 
 	ct, st := mcp.NewInMemoryTransports()
 

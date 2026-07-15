@@ -90,7 +90,10 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 	authDone := make(chan struct{})
 	close(authDone) // simulate completed auth so the guard lets calls through
 
-	server := newHeadlessServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, middleware.NewSessionHealth(), discardLogger())
+	server := newHeadlessServer(
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
+	)
 
 	for i := range 2 {
 		ct, st := mcp.NewInMemoryTransports()
@@ -136,7 +139,10 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 	health.Arm()
 	health.MarkRevoked("AUTH_KEY_UNREGISTERED")
 
-	server := buildServer(testutil.NoopClient{}, "/tmp/mcp-tg/downloads", authDone, health, nil, discardLogger())
+	server := buildServer(
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		tgclient.NewSubscriptionBroker(), authDone, health, nil, discardLogger(),
+	)
 
 	ct, st := mcp.NewInMemoryTransports()
 
@@ -332,7 +338,7 @@ func assertToolPresent(t *testing.T, res *mcp.ListToolsResult, name string) {
 func TestNewServerOptions_UsesThreadedLogger(t *testing.T) {
 	logger := discardLogger()
 
-	opts := newServerOptions(testutil.NoopClient{}, logger)
+	opts := newServerOptions(testutil.NoopClient{}, tgclient.NewSubscriptionBroker(), logger)
 
 	if opts.Logger != logger {
 		t.Error("newServerOptions must reuse the threaded logger, not build its own")

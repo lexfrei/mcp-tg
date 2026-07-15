@@ -15,6 +15,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Elicitation | Auth flow (phone, code, 2FA password) |
 | Progress | File uploads, media albums, message search |
 | Roots | File path validation for uploads/downloads |
+| Subscriptions | `resources/updated` on new messages in a subscribed chat |
 | Transports | stdio + HTTP/SSE |
 | KeepAlive | 30s ping interval |
 | Middleware | Auth guard, request logging, bool coercion |
@@ -285,6 +286,15 @@ A reactor is not always a user. When a chat's default identity is a channel (see
 - `tg://profile` — Authenticated user's profile (JSON)
 - `tg://chat/{peer}` — Chat/channel metadata (JSON, URI template)
 - `tg://chat/{peer}/messages` — Recent messages (text, URI template)
+
+### Subscriptions
+
+`tg://chat/{peer}/messages` is subscribable. After `resources/subscribe`, every new message in that chat pushes a `resources/updated` notification for the exact URI you subscribed with, so a client can re-read the resource instead of polling. Subscribe resolves the peer once; an unresolvable peer fails the subscribe. Only the `/messages` resource is watched — subscribing to the bare `tg://chat/{peer}` info resource is accepted but never pushes.
+
+Two known limitations:
+
+- A client that drops abnormally (a crash, or network loss past the keep-alive) without unsubscribing leaves a stale watch entry that only a daemon restart clears. Delivery stays correct — the SDK's own registry is authoritative, so nothing is sent to the dead session — but the stale entries accumulate with reconnect churn over the daemon's lifetime (not capped by the set of chats), and each orphaned chat then costs a lookup plus a zero-subscriber log line on every later message. The SDK exposes no session-closed hook to prune it.
+- The account's own outgoing messages (sent through this server) do not fire the notification: the self-send echo carries no peer. A message arriving from another device does fire it.
 
 ## Prompts
 

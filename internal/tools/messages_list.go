@@ -261,11 +261,17 @@ func fetchMessageTypeFilterPage(
 	offsetID int,
 	offsetDate int,
 ) (messageTypeFilterPage, error) {
-	// The outer loop drives its own pagination, so each RPC fetches a
-	// single server page; a larger Limit would double-page against
-	// GetHistory's internal pager. effectiveLimit stays the accumulation
-	// target the outer loop counts filtered matches against. The fromDate
-	// floor rides every page; offset_date only the first.
+	// Bound each call to one VISIBLE page (DefaultLimit=100), not
+	// effectiveLimit: the outer loop drives its own pagination and counts
+	// filtered matches against effectiveLimit, so a larger Limit here
+	// would page far beyond one outer step against GetHistory's internal
+	// pager. This is "one visible page per call", NOT literally one server
+	// page — GetHistory may itself issue several server RPCs to fill 100
+	// visible messages in a service-message-heavy chat (bounded by
+	// maxHistoryScan). Do NOT set SinglePage to make that literal: it would
+	// break the outer loop's hasMorePage(visible, 100) signal when service
+	// messages thin a page. The fromDate floor rides every page;
+	// offset_date only the first.
 	opts := telegram.HistoryOpts{
 		Limit:      telegram.DefaultLimit,
 		OffsetID:   offsetID,

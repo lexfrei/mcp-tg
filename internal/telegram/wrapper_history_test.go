@@ -204,7 +204,7 @@ func TestPageHistory_MinDateFloorStopsAndDropsOlder(t *testing.T) {
 		{ID: 6, Date: 400},
 	}
 
-	msgs, _, _, err := pageHistory(
+	msgs, _, hasMore, err := pageHistory(
 		context.Background(),
 		HistoryOpts{Limit: 100, MinDate: 1000},
 		fakeFetch([][]Message{page}, 5, &calls),
@@ -223,6 +223,11 @@ func TestPageHistory_MinDateFloorStopsAndDropsOlder(t *testing.T) {
 
 	if len(calls) != 1 {
 		t.Errorf("fetch calls = %d, want 1 (floor stops paging)", len(calls))
+	}
+
+	// A floor stop is terminal for the query's range — no more within it.
+	if hasMore {
+		t.Error("hasMore = true, want false (the MinDate floor ended the range)")
 	}
 }
 

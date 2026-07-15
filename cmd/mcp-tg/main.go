@@ -105,7 +105,7 @@ func run() error {
 		Device:         device,
 		UpdateHandler:  dispatcher,
 		Middlewares: []telegram.Middleware{
-			newFloodWaitMiddleware(),
+			newFloodWaitMiddleware(logger),
 			newConnReinitMiddleware(cfg.AppID, &device),
 			newAuthRevokedMiddleware(health, logger),
 		},

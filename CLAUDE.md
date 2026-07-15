@@ -18,7 +18,7 @@ golangci-lint run
 cmd/mcp-tg/main.go          Entry point: `--version`/`login` dispatch (via flags.go), else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
 cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes the session, keychain or file), credential-safe, no MCP surface
 cmd/mcp-tg/storage.go       Session backend factory: OS keychain (lexfrei/keychain) by default, plaintext file on --insecure-storage/TELEGRAM_SESSION_INSECURE
-cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
+cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td (WARN log per retry; surfaces as tools.ErrFloodWait after exhaustion)
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 internal/config/             Env var loading and validation
@@ -221,7 +221,7 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
-- **FLOOD_WAIT**: gotd/td middleware auto-retries up to 3 times with server-specified delay
+- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` auto-retries up to 3 times with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
 - **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
 ## Release and distribution

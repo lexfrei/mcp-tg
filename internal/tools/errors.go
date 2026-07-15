@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
@@ -13,6 +14,13 @@ var ErrValidation = errors.New("validation error")
 
 // ErrTelegram indicates a failure communicating with the Telegram API.
 var ErrTelegram = errors.New("telegram request error")
+
+// ErrFloodWait indicates Telegram rate-limited the request (FLOOD_WAIT) and the
+// auto-retry middleware exhausted its attempts without the call succeeding. The
+// wrapped message carries a readable "retry after Ns" so the caller can back off
+// and retry later — the server stays alive; this is a surfaced rate-limit, not a
+// crash.
+var ErrFloodWait = errors.New("flood wait")
 
 // ErrPeerRequired is returned when a peer parameter is missing.
 var ErrPeerRequired = errors.New("peer is required")
@@ -302,6 +310,14 @@ func explainMTProtoCode(raw string) string {
 func wrapTelegramError(err error) error {
 	if err == nil {
 		return nil
+	}
+
+	// FLOOD_WAIT reaches here only after the retry middleware gives up. Mark it
+	// with the ErrFloodWait sentinel and a readable "retry after Ns" so a caller
+	// can back off, instead of a raw code or literal JSON.
+	if wait, ok := tgerr.AsFloodWait(err); ok {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrapf supplies the readable retry hint.
+		return errors.Mark(errors.Wrapf(err, "flood wait: retry after %ds", int(wait.Seconds())), ErrFloodWait)
 	}
 
 	if explanation := explainMTProtoCode(err.Error()); explanation != "" {

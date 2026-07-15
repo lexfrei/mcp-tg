@@ -28,8 +28,8 @@ func (m *chatMessagesMock) ResolvePeer(_ context.Context, _ string) (telegram.In
 
 func (m *chatMessagesMock) GetHistory(
 	_ context.Context, _ telegram.InputPeer, _ telegram.HistoryOpts,
-) ([]telegram.Message, int, error) {
-	return m.messages, len(m.messages), nil
+) ([]telegram.Message, int, bool, error) {
+	return m.messages, len(m.messages), false, nil
 }
 
 // TestChatMessagesTemplateMIMETypeMatchesHandler pins the agreement

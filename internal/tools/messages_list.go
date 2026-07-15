@@ -46,9 +46,7 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 				telegramErr("failed to resolve peer", err)
 		}
 
-		limit := deref(params.Limit)
-
-		limitErr := validateLimit(limit)
+		limitErr := validateMessagesListLimit(deref(params.Limit))
 		if limitErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
 				validationErr(limitErr)
@@ -93,15 +91,16 @@ func fetchMessagePage(
 	topicID := deref(params.TopicID)
 
 	var (
-		msgs  []telegram.Message
-		total int
-		err   error
+		msgs    []telegram.Message
+		total   int
+		hasMore bool
+		err     error
 	)
 
 	if topicID > 0 {
-		msgs, total, err = client.GetTopicMessages(ctx, peer, topicID, opts)
+		msgs, total, hasMore, err = client.GetTopicMessages(ctx, peer, topicID, opts)
 	} else {
-		msgs, total, err = client.GetHistory(ctx, peer, opts)
+		msgs, total, hasMore, err = client.GetHistory(ctx, peer, opts)
 	}
 
 	if err != nil {
@@ -109,9 +108,12 @@ func fetchMessagePage(
 	}
 
 	return MessagesListResult{
-		Count:        len(msgs),
-		Total:        total,
-		HasMore:      hasMorePage(len(msgs), deref(params.Limit)),
+		Count: len(msgs),
+		Total: total,
+		// The wrapper's paginator reports this directly: it stays true
+		// when the scan cap stops the walk with the limit unfilled, which
+		// a len-vs-limit compare would misreport as "no more".
+		HasMore:      hasMore,
 		Participants: participantsFromMessages(msgs),
 		Messages:     messagesToItems(msgs),
 		Output:       formatMessages(msgs),
@@ -119,6 +121,25 @@ func fetchMessagePage(
 }
 
 const maxTypeFilterScan = 5000
+
+// maxMessagesListLimit caps how many messages a single tg_messages_list
+// call fetches. Requests above one server page are paged internally, so
+// the cap bounds the number of round-trips one call can trigger.
+const maxMessagesListLimit = 1000
+
+// validateMessagesListLimit rejects a negative limit and one above the
+// auto-pagination cap.
+func validateMessagesListLimit(limit int) error {
+	if limit < 0 {
+		return ErrNegativeLimit
+	}
+
+	if limit > maxMessagesListLimit {
+		return ErrLimitTooLarge
+	}
+
+	return nil
+}
 
 func fetchMessagesByType(
 	ctx context.Context, client telegram.Client,
@@ -128,7 +149,7 @@ func fetchMessagesByType(
 	state := newMessageTypeFilterState(deref(params.OffsetID))
 
 	for state.shouldFetch(effectiveLimit) {
-		page, err := fetchMessageTypeFilterPage(ctx, client, peer, params, state.offsetID, effectiveLimit)
+		page, err := fetchMessageTypeFilterPage(ctx, client, peer, params, state.offsetID)
 		if err != nil {
 			return MessagesListResult{}, nil, telegramErr("failed to get messages", err)
 		}
@@ -216,10 +237,13 @@ func fetchMessageTypeFilterPage(
 	peer telegram.InputPeer,
 	params *MessagesListParams,
 	offsetID int,
-	effectiveLimit int,
 ) (messageTypeFilterPage, error) {
+	// The outer loop drives its own pagination, so each RPC fetches a
+	// single server page; a larger Limit would double-page against
+	// GetHistory's internal pager. effectiveLimit stays the accumulation
+	// target the outer loop counts filtered matches against.
 	opts := telegram.HistoryOpts{
-		Limit:    effectiveLimit,
+		Limit:    telegram.DefaultLimit,
 		OffsetID: offsetID,
 	}
 
@@ -244,8 +268,11 @@ func getMessageHistoryPage(
 	ctx context.Context, client telegram.Client,
 	peer telegram.InputPeer, topicID int, opts telegram.HistoryOpts,
 ) ([]telegram.Message, int, error) {
+	// The type-filter path drives its own outer scan loop and derives
+	// hasMore from maxTypeFilterScan (applyScanLimit), so the wrapper's
+	// per-call hasMore is not used here.
 	if topicID > 0 {
-		msgs, total, err := client.GetTopicMessages(ctx, peer, topicID, opts)
+		msgs, total, _, err := client.GetTopicMessages(ctx, peer, topicID, opts)
 		if err != nil {
 			return nil, 0, errors.Wrap(err, "getting topic messages")
 		}
@@ -253,7 +280,7 @@ func getMessageHistoryPage(
 		return msgs, total, nil
 	}
 
-	msgs, total, err := client.GetHistory(ctx, peer, opts)
+	msgs, total, _, err := client.GetHistory(ctx, peer, opts)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "getting message history")
 	}

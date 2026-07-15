@@ -294,9 +294,29 @@ type Participant struct {
 }
 
 // HistoryOpts configures message history retrieval.
+//
+// Limit may exceed the 100-message server page size: GetHistory and
+// GetTopicMessages fetch it in chunks and merge the pages.
+//
+// OffsetDate, when non-zero, anchors the newest returned message at or
+// before that unix timestamp (Telegram's offset_date). It is applied to
+// the first page only; later pages advance by OffsetID.
+//
+// MinDate, when non-zero, is a client-side floor: paging stops once a
+// message older than it is reached, and older messages are dropped.
+// getHistory has no server-side min_date, so the floor is enforced here.
+//
+// SinglePage disables auto-pagination: exactly one server page is
+// fetched (still trimmed to Limit and the MinDate floor). A caller that
+// wants a bounded window anchored at OffsetID — e.g. the symmetric
+// context window around a message — sets this so the walk does not
+// extend past the window when service messages thin out a page.
 type HistoryOpts struct {
-	Limit    int
-	OffsetID int
+	Limit      int
+	OffsetID   int
+	OffsetDate int
+	MinDate    int
+	SinglePage bool
 }
 
 // SearchOpts configures message search.

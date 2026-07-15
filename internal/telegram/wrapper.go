@@ -230,49 +230,265 @@ func (w *Wrapper) GetPeerInfo(ctx context.Context, peer InputPeer) (*PeerInfo, e
 	}
 }
 
-// GetHistory retrieves message history from a chat.
-func (w *Wrapper) GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = defaultLimit
-	}
+// GetHistory retrieves message history from a chat. A Limit above the
+// 100-message server page size is fetched in chunks and merged. The bool
+// reports whether older messages remain beyond the returned batch.
+//
+//nolint:gocritic // unnamedResult: a named (msgs, total, hasMore, err) tuple adds no clarity.
+func (w *Wrapper) GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, bool, error) {
+	return pageHistory(ctx, opts, func(
+		ctx context.Context, offsetID, offsetDate, limit int,
+	) (historyPageData, error) {
+		result, err := w.api.MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{
+			Peer:       InputPeerToTG(peer),
+			Limit:      limit,
+			OffsetID:   offsetID,
+			OffsetDate: offsetDate,
+		})
 
-	result, err := w.api.MessagesGetHistory(ctx, &tg.MessagesGetHistoryRequest{
-		Peer:     InputPeerToTG(peer),
-		Limit:    limit,
-		OffsetID: opts.OffsetID,
+		return historyPageResult(result, err, peer, "getting history")
 	})
-	if err != nil {
-		return nil, 0, errors.Wrap(err, "getting history")
-	}
-
-	msgs, total := extractMessages(result, peer)
-
-	return msgs, total, nil
 }
 
-// GetTopicMessages retrieves messages from a specific forum topic.
+// GetTopicMessages retrieves messages from a specific forum topic. It
+// pages the same way GetHistory does; the bool reports whether older
+// messages remain beyond the returned batch.
+//
+//nolint:gocritic // unnamedResult: a named (msgs, total, hasMore, err) tuple adds no clarity.
 func (w *Wrapper) GetTopicMessages(
 	ctx context.Context, peer InputPeer, topicID int, opts HistoryOpts,
-) ([]Message, int, error) {
-	limit := opts.Limit
-	if limit <= 0 {
-		limit = defaultLimit
-	}
+) ([]Message, int, bool, error) {
+	return pageHistory(ctx, opts, func(
+		ctx context.Context, offsetID, offsetDate, limit int,
+	) (historyPageData, error) {
+		result, err := w.api.MessagesGetReplies(ctx, &tg.MessagesGetRepliesRequest{
+			Peer:       InputPeerToTG(peer),
+			MsgID:      topicID,
+			Limit:      limit,
+			OffsetID:   offsetID,
+			OffsetDate: offsetDate,
+		})
 
-	result, err := w.api.MessagesGetReplies(ctx, &tg.MessagesGetRepliesRequest{
-		Peer:     InputPeerToTG(peer),
-		MsgID:    topicID,
-		Limit:    limit,
-		OffsetID: opts.OffsetID,
+		return historyPageResult(result, err, peer, "getting topic messages")
 	})
+}
+
+// historyPageData is one fetched history page. Messages/Total come from
+// extractMessages (service messages already dropped); RawCount and
+// NextOffset are read from the raw reply so paging decisions are not
+// skewed by the dropped service messages — a full raw page whose visible
+// messages are all service entries must not read as "history ended".
+type historyPageData struct {
+	Messages   []Message
+	Total      int
+	RawCount   int
+	NextOffset int
+}
+
+// historyPageResult converts one raw history RPC reply into the shape
+// pageHistory consumes, wrapping a fetch error with what.
+func historyPageResult(
+	result tg.MessagesMessagesClass, err error, peer InputPeer, what string,
+) (historyPageData, error) {
 	if err != nil {
-		return nil, 0, errors.Wrap(err, "getting topic messages")
+		return historyPageData{}, errors.Wrap(err, what)
 	}
 
 	msgs, total := extractMessages(result, peer)
+	raw := rawHistoryMessages(result)
 
-	return msgs, total, nil
+	return historyPageData{
+		Messages:   msgs,
+		Total:      total,
+		RawCount:   len(raw),
+		NextOffset: minRawMessageID(raw),
+	}, nil
+}
+
+// maxHistoryPage is the largest number of messages Telegram returns from
+// one getHistory/getReplies call; larger requests page.
+const maxHistoryPage = DefaultLimit
+
+// maxPagedHistory bounds a single internally-paginated read regardless of
+// the requested Limit. It caps both the pre-allocation and the merged
+// result, so an uncapped caller (e.g. a large message-context radius)
+// cannot drive unbounded allocation. The tg_messages_list tool rejects a
+// larger limit outright; other callers are silently capped here.
+const maxPagedHistory = 1000
+
+// maxHistoryScan bounds the RAW messages a single paged read will scan.
+// merged grows only by VISIBLE messages, so a service-message-heavy
+// stretch of history would otherwise let the loop issue many full-page
+// fetches without merged ever reaching the limit. This caps the
+// round-trips independently of visible-message density, mirroring the
+// type-filter path's maxTypeFilterScan. It leaves generous headroom to
+// fill maxPagedHistory even in a mostly-service history.
+const maxHistoryScan = 5000
+
+// historyPageFunc fetches a single history page (at most maxHistoryPage
+// messages) starting at offsetID, optionally anchored at offsetDate.
+type historyPageFunc func(ctx context.Context, offsetID, offsetDate, limit int) (historyPageData, error)
+
+// pageHistory fetches up to opts.Limit messages by calling fetch in
+// chunks of at most maxHistoryPage, advancing the offset past the oldest
+// raw message of each page. OffsetDate anchors the first page only.
+// Paging stops at the limit, a page the server returned short (fewer raw
+// messages than requested), an exhausted cursor, the maxHistoryScan
+// raw-scan cap, a message older than opts.MinDate, or after the first
+// page when opts.SinglePage is set. The returned total is the server's
+// count from the first page. Short-page and empty checks use the RAW
+// page size, not the visible message count, so a page dominated by
+// service messages does not end the walk prematurely.
+//
+// The returned bool reports whether older messages remain beyond this
+// batch: the last fetched page was full and its cursor still live. It is
+// computed from the RAW page, so it stays true when the pager stops on
+// the scan cap with the limit unfilled — the visible count alone would
+// misreport that as "no more" and strand a caller that pages on it.
+//
+//nolint:gocritic // unnamedResult: a named (msgs, total, hasMore, err) tuple adds no clarity.
+func pageHistory(ctx context.Context, opts HistoryOpts, fetch historyPageFunc) ([]Message, int, bool, error) {
+	limit := pagedHistoryLimit(opts.Limit)
+	merged := make([]Message, 0, limit)
+	offsetID := opts.OffsetID
+	total := 0
+	scanned := 0
+	hasMore := false
+
+	for page := 0; len(merged) < limit; page++ {
+		offsetDate := 0
+		if page == 0 {
+			offsetDate = opts.OffsetDate
+		}
+
+		want := historyChunk(limit - len(merged))
+
+		data, err := fetch(ctx, offsetID, offsetDate, want)
+		if err != nil {
+			return nil, 0, false, err
+		}
+
+		if page == 0 {
+			total = data.Total
+		}
+
+		if data.RawCount == 0 {
+			hasMore = false
+
+			break
+		}
+
+		scanned += data.RawCount
+		floorHit := appendUntilFloor(&merged, data.Messages, opts.MinDate, limit)
+		offsetID = data.NextOffset
+		hasMore = historyMayHaveMore(floorHit, data.RawCount, want, offsetID)
+
+		if opts.SinglePage || historyPagingDone(floorHit, data.RawCount, want, offsetID, scanned) {
+			break
+		}
+	}
+
+	return merged, total, hasMore, nil
+}
+
+// historyMayHaveMore reports whether older messages remain after a page:
+// the server filled the request (full raw page), the cursor is still
+// live, and no MinDate floor ended the range. A short page, dead cursor,
+// or floor all mean the walk reached an end.
+func historyMayHaveMore(floorHit bool, rawCount, want, offsetID int) bool {
+	return !floorHit && rawCount >= want && offsetID != 0
+}
+
+// historyPagingDone reports whether the pager should stop after a page:
+// a MinDate floor was crossed, the server returned a short raw page (no
+// more history), the cursor is exhausted, or the raw-scan cap is hit.
+func historyPagingDone(floorHit bool, rawCount, want, offsetID, scanned int) bool {
+	return floorHit ||
+		rawCount < want ||
+		offsetID == 0 ||
+		scanned >= maxHistoryScan
+}
+
+// pagedHistoryLimit resolves the effective per-call limit: the server
+// default when unset, bounded by maxPagedHistory.
+func pagedHistoryLimit(limit int) int {
+	if limit <= 0 {
+		return defaultLimit
+	}
+
+	if limit > maxPagedHistory {
+		return maxPagedHistory
+	}
+
+	return limit
+}
+
+// historyChunk caps a remaining count to a single server page.
+func historyChunk(remaining int) int {
+	if remaining > maxHistoryPage {
+		return maxHistoryPage
+	}
+
+	return remaining
+}
+
+// appendUntilFloor appends page messages (newest-first) into *merged,
+// stopping at the first message older than minDate or once the limit is
+// reached. It returns true ONLY when the MinDate floor ended the walk —
+// NOT when the limit was reached. Conflating the two is a data-loss trap:
+// filling the limit is the strongest signal that older messages remain,
+// so reporting it as a stop would make hasMore falsely read "no more" on
+// a full page. The limit-reached stop is handled by pageHistory's loop
+// condition (`len(merged) < limit`) instead.
+func appendUntilFloor(merged *[]Message, page []Message, minDate, limit int) bool {
+	for i := range page {
+		if minDate > 0 && page[i].Date < minDate {
+			return true
+		}
+
+		if len(*merged) >= limit {
+			return false
+		}
+
+		*merged = append(*merged, page[i])
+	}
+
+	return false
+}
+
+// rawHistoryMessages returns the raw message slice from a history reply,
+// before service messages are dropped by conversion.
+func rawHistoryMessages(result tg.MessagesMessagesClass) []tg.MessageClass {
+	switch res := result.(type) {
+	case *tg.MessagesMessages:
+		return res.Messages
+	case *tg.MessagesMessagesSlice:
+		return res.Messages
+	case *tg.MessagesChannelMessages:
+		return res.Messages
+	default:
+		return nil
+	}
+}
+
+// minRawMessageID returns the smallest positive ID across raw messages,
+// service entries included, so the cursor advances past everything the
+// page carried. Zero means the page held no usable cursor.
+func minRawMessageID(raw []tg.MessageClass) int {
+	next := 0
+
+	for _, msg := range raw {
+		msgID := msg.GetID()
+		if msgID <= 0 {
+			continue
+		}
+
+		if next == 0 || msgID < next {
+			next = msgID
+		}
+	}
+
+	return next
 }
 
 // GetMessages retrieves specific messages by ID.

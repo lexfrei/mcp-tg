@@ -79,12 +79,18 @@ func fetchContext(
 		radius = defaultContextRadius
 	}
 
+	// SinglePage keeps this to one server call anchored at OffsetID: the
+	// context window is symmetric by construction, and auto-paginating to
+	// backfill service-message gaps would extend it only on the older
+	// side (OffsetID is fixed), breaking the "before and after" contract
+	// and turning a large radius into many round-trips.
 	opts := telegram.HistoryOpts{
-		Limit:    radius*2 + 1,
-		OffsetID: params.MessageID + radius,
+		Limit:      radius*2 + 1,
+		OffsetID:   params.MessageID + radius,
+		SinglePage: true,
 	}
 
-	msgs, _, err := client.GetHistory(ctx, peer, opts)
+	msgs, _, _, err := client.GetHistory(ctx, peer, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting history")
 	}

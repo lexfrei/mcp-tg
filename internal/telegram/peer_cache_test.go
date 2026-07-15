@@ -185,21 +185,49 @@ func TestPeerCacheNoCollision(t *testing.T) {
 	}
 }
 
-func TestPeerCacheEviction(t *testing.T) {
+func TestPeerCacheEviction_SurvivesOneRotation(t *testing.T) {
 	cache := NewPeerCache()
 
+	target := InputPeer{Type: PeerChannel, ID: 42, AccessHash: 999}
+	cache.Store(target)
+
+	// Flood past the limit to trigger exactly one rotation. The target,
+	// stored before the flood, is demoted to the fallback generation — not
+	// wiped — so it stays readable. This is what lets a dialog warm read
+	// back a channel it cached on an early page even if a later page
+	// overflowed the cache.
 	for idx := range maxCacheEntries + 1 {
 		cache.Store(InputPeer{
 			Type:       PeerUser,
-			ID:         int64(idx),
+			ID:         int64(1_000_000 + idx),
 			AccessHash: int64(idx + 1),
 		})
 	}
 
-	// Cache should have been cleared after exceeding limit,
-	// then the last entry re-inserted.
-	_, found := cache.Lookup(PeerUser, 0)
-	if found {
-		t.Error("expected first entry to be evicted")
+	got, found := cache.Lookup(PeerChannel, 42)
+	if !found || got.AccessHash != 999 {
+		t.Fatalf("target must survive one rotation: got %+v found=%v", got, found)
+	}
+}
+
+func TestPeerCacheEviction_DroppedAfterTwoRotations(t *testing.T) {
+	cache := NewPeerCache()
+
+	target := InputPeer{Type: PeerChannel, ID: 42, AccessHash: 999}
+	cache.Store(target)
+
+	// Two full generations of unique entries push the target's generation
+	// out of the fallback, proving the cache stays bounded rather than
+	// growing without limit.
+	for idx := range 2 * (maxCacheEntries + 1) {
+		cache.Store(InputPeer{
+			Type:       PeerUser,
+			ID:         int64(1_000_000 + idx),
+			AccessHash: int64(idx + 1),
+		})
+	}
+
+	if _, found := cache.Lookup(PeerChannel, 42); found {
+		t.Error("target should be dropped after two rotations (cache stays bounded)")
 	}
 }

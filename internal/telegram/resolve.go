@@ -24,6 +24,48 @@ const (
 // explainMTProtoCode in the tools layer.
 var ErrPeerNotFound = errors.New("peer not found")
 
+// ErrChannelNotCached is returned when a numeric channel ID resolves
+// without an access hash even after a full dialog warm.
+//
+// A channel is addressed by id + access hash; only the id is a stable
+// public number, the hash is handed out with the Channel object and
+// cannot be derived. A numeric ID the account has never opened resolves
+// with hash 0, which every channel request rejects as CHANNEL_INVALID —
+// naming neither the channel nor the remedy. Warming the peer cache from
+// the full dialog list (both the main list and the archive) is the only
+// client-side way to obtain the hash, so a miss after that means the
+// channel is not among the account's dialogs under this ID.
+var ErrChannelNotCached = errors.New(
+	"channel access hash is unknown, so a numeric ID cannot address it; " +
+		"open the channel once — tg_dialogs_list, tg_dialogs_search, or its @username — " +
+		"to cache the hash, then retry the same ID",
+)
+
+// ErrDialogScanLimit is returned when a numeric channel is not found and
+// the dialog warm hit its page cap (warmDialogsMaxPages * page limit per
+// folder) before exhausting the folder. The folder was NOT fully scanned,
+// so the channel's absence is unproven — unlike ErrChannelNotCached,
+// which is drawn only from a completed scan. Retrying re-hits the same
+// cap, so resolve the channel by @username or narrow with
+// tg_dialogs_search instead.
+var ErrDialogScanLimit = errors.New(
+	"dialog list is larger than the numeric-ID resolver scans; " +
+		"resolve this channel by @username or find it via tg_dialogs_search",
+)
+
+// ErrChannelWarmStale is returned for a numeric channel miss when the
+// dialog warm was skipped by its throttle: the cache reflects a scan up to
+// warmDialogsThrottle old, so the miss is not a FRESH negative — a channel
+// joined on another session since the last warm would resolve after a new
+// scan. Unlike ErrChannelNotCached (drawn from a scan that ran this call),
+// this is retryable; the resolver invalidates the throttle before
+// returning, so an immediate retry re-scans and yields a definitive
+// answer.
+var ErrChannelWarmStale = errors.New(
+	"channel not found in the recent dialog scan, which may be up to a minute stale; " +
+		"retry to force a fresh scan, or resolve by @username",
+)
+
 // Resolve resolves a string identifier to an InputPeer.
 // Accepts: numeric ID, @username, bare username, t.me/username URL.
 func Resolve(ctx context.Context, api *tg.Client, identifier string) (InputPeer, error) {

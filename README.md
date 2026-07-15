@@ -302,7 +302,7 @@ All tools accept `peer` as a string. Supported formats:
 - `https://t.me/+invite_hash` (invite links, if already joined)
 - Numeric ID (bot-API style: positive=user, negative=chat, `-100xxx`=channel)
 
-Peers resolved by username include a valid access hash. Numeric IDs use a cached access hash if available, otherwise AccessHash=0 (some API calls may fail — prefer `@username`).
+Peers resolved by username include a valid access hash. A numeric ID reuses a cached access hash when the peer has been seen before; on a cold miss the client warms its cache from the full dialog list — both the main list and the archive — so a numeric channel ID the account belongs to resolves even when the channel is far down the list or archived. A numeric channel that is still unresolved after that (its access hash was never observed) is rejected with a clear error pointing you to open it once via `tg_dialogs_list`, `tg_dialogs_search`, or `@username`, instead of an opaque `CHANNEL_INVALID`. Prefer `@username` when you have it.
 
 ## Configuration
 

@@ -86,7 +86,7 @@ func TestSubscription_EndToEnd(t *testing.T) {
 	broker := tgclient.NewSubscriptionBroker()
 	client := resolvingClient{peer: tgclient.InputPeer{Type: tgclient.PeerUser, ID: selfID}}
 
-	server := buildServer(client, "/tmp/mcp-tg/downloads", broker, authDone, health, nil)
+	server := buildServer(client, "/tmp/mcp-tg/downloads", broker, authDone, health, nil, discardLogger())
 
 	ct, st := mcp.NewInMemoryTransports()
 
@@ -165,7 +165,7 @@ func TestSubscription_UnsubscribeStopsUpdates(t *testing.T) {
 	broker := tgclient.NewSubscriptionBroker()
 	client := resolvingClient{peer: tgclient.InputPeer{Type: tgclient.PeerUser, ID: selfID}}
 
-	server := buildServer(client, "/tmp/mcp-tg/downloads", broker, authDone, health, nil)
+	server := buildServer(client, "/tmp/mcp-tg/downloads", broker, authDone, health, nil, discardLogger())
 
 	ct, st := mcp.NewInMemoryTransports()
 

@@ -15,10 +15,10 @@ golangci-lint run
 ## Architecture
 
 ```text
-cmd/mcp-tg/main.go          Entry point: `login` subcommand dispatch, else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
+cmd/mcp-tg/main.go          Entry point: `--version`/`login` dispatch (via flags.go), else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
 cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes the session, keychain or file), credential-safe, no MCP surface
 cmd/mcp-tg/storage.go       Session backend factory: OS keychain (lexfrei/keychain) by default, plaintext file on --insecure-storage/TELEGRAM_SESSION_INSECURE
-cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td
+cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td (WARN log per retry; surfaces as tools.ErrFloodWait after exhaustion)
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 cmd/mcp-tg/subscriptions.go resourceUpdater adapter + Subscribe/Unsubscribe handlers wiring the SubscriptionBroker to the MCP server
@@ -127,6 +127,14 @@ The peer match comes from `msg.AsNotEmpty().GetPeerID()` — `tg.MessageClass` h
 
 Known limitation (disconnect drift, cleared only by process restart): the SDK removes a disconnected session from its own subscription registry (`server.go` `disconnect`) but does NOT call `UnsubscribeHandler` (that fires only on the explicit `unsubscribe` RPC). The broker's session set is not pruned, so a dead session's entry lingers. Delivery stays correct — the SDK's registry is authoritative, a dead session receives nothing — but two costs accrue and neither is bounded by the set of distinct chats: the retained `(URI, session)` entries grow with cumulative abnormal-disconnect churn over the daemon's lifetime (each reconnect mints a new `*ServerSession`); and a lingering entry keeps `subscribers[uri]` non-empty, so that URI's `owner`/`peerURIs` are never cleaned and every later message in the chat costs a peer lookup plus one `subscriber_count=0` INFO line. No clean fix exists — `ServerOptions` has no session-closed callback, the headless path never holds the per-session handle, and a prune-on-zero-live-subscribers scheme would race `Watch` (which runs before the SDK registers the subscription). Accept and document; a restart clears it.
 
+### Logging and log level
+
+`resolveLogLevel(os.Args, MCP_LOG_LEVEL)` (`flags.go`) picks the slog level once at startup: `--log-level` flag > `MCP_LOG_LEVEL` env > default `info`; an unknown name is `ErrInvalidLogLevel`, not a silent fallback. `newLogger(level)` builds ONE `*slog.Logger` that is threaded explicitly through `run → startServer → startStdio/startHeadless → buildServer → newServerOptions` (and `waitForTransports`/`runHTTPServer`). It is deliberately NOT a package global. The bug this replaced: `newServerOptions` called `newLogger()` a second time, so the request-logging middleware ignored the level and always logged at info — pinned now by `TestNewServerOptions_UsesThreadedLogger`.
+
+Level routing: FLOOD_WAIT retries → WARN (`flood_wait.go`), context cancellation during a FLOOD_WAIT backoff → WARN, HTTP transport shutdown failures → ERROR (`runHTTPServer`), tool-call and method failures → ERROR (`middleware.NewLogging`). The per-request success summary (`MCP request handled`) stays at INFO as an operational heartbeat; DEBUG is the verbose tier (the gotd zap connection/migration logger, `newGotdLogger`). So a default-`info` daemon already records FLOOD_WAIT and failures for a post-mortem without `--log-level debug`.
+
+`--version` (`versionRequested`/`runVersion` in `flags.go`) prints `mcp-tg <version> (<shortRev>)` to stdout and exits before any server or Telegram work; `logStartupVersion` emits the same build id as one INFO line at startup, so an `info`/`debug` daemon names the running binary in its log (at `warn`/`error` it is filtered like any INFO record — `--version` and `tg_server_version` are the level-independent build check).
+
 ### Forum topics
 
 Tools that send messages (`messages_send`, `messages_send_file`, `media_send_album`) accept `topicId` to target a specific forum topic. `messages_list` accepts `topicId` to filter messages by topic (uses `MessagesGetReplies` API instead of `MessagesGetHistory`). Message output includes `topicId` extracted from `MessageReplyHeader.ReplyToTopID`.
@@ -225,7 +233,7 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
-- **FLOOD_WAIT**: gotd/td middleware auto-retries up to 3 times with server-specified delay
+- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` auto-retries up to 3 times with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
 - **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
 ## Release and distribution

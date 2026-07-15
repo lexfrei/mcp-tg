@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tgerr"
+	"go.uber.org/zap/zapcore"
+
 	"github.com/lexfrei/mcp-tg/internal/config"
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
@@ -18,6 +21,12 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
+
+// discardLogger is the logger tests pass where the server plumbing now requires
+// one but the test asserts nothing on the log output.
+func discardLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
 
 func TestRegisterTools(t *testing.T) {
 	server := mcp.NewServer(
@@ -83,7 +92,7 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 
 	server := newHeadlessServer(
 		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
-		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(),
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
 	)
 
 	for i := range 2 {
@@ -132,7 +141,7 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 
 	server := buildServer(
 		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
-		tgclient.NewSubscriptionBroker(), authDone, health, nil,
+		tgclient.NewSubscriptionBroker(), authDone, health, nil, discardLogger(),
 	)
 
 	ct, st := mcp.NewInMemoryTransports()
@@ -319,6 +328,70 @@ func assertToolPresent(t *testing.T, res *mcp.ListToolsResult, name string) {
 	}
 
 	t.Errorf("tool %q missing from headless server (got %d tools)", name, len(res.Tools))
+}
+
+// TestNewServerOptions_UsesThreadedLogger pins that the server options carry the
+// logger threaded in from run(), not a freshly built one. newServerOptions used
+// to call newLogger() a second time, so the request-logging middleware ignored
+// --log-level / MCP_LOG_LEVEL and always logged at info — this test fails if
+// that second logger ever comes back.
+func TestNewServerOptions_UsesThreadedLogger(t *testing.T) {
+	logger := discardLogger()
+
+	opts := newServerOptions(testutil.NoopClient{}, tgclient.NewSubscriptionBroker(), logger)
+
+	if opts.Logger != logger {
+		t.Error("newServerOptions must reuse the threaded logger, not build its own")
+	}
+}
+
+// TestNewLogger_HonoursLevel pins that newLogger actually applies the resolved
+// level: the returned logger reports info as disabled and warn as enabled at
+// warn level. Uses Enabled (not a write) since newLogger targets os.Stderr
+// directly — this exercises the helper itself, not a stand-in handler.
+func TestNewLogger_HonoursLevel(t *testing.T) {
+	ctx := context.Background()
+	logger := newLogger(slog.LevelWarn)
+
+	if logger.Enabled(ctx, slog.LevelInfo) {
+		t.Error("warn-level logger must report info as disabled")
+	}
+
+	if !logger.Enabled(ctx, slog.LevelWarn) {
+		t.Error("warn-level logger must report warn as enabled")
+	}
+}
+
+// TestNewGotdLogger_HonoursLevel pins that the resolved --log-level also gates
+// the gotd zap logger, not only the slog logger. The README promises `debug`
+// turns on the full gotd connection trace and `warn`/`error` quiet it; before
+// the level was threaded, newGotdLogger always ran at zap's default info.
+func TestNewGotdLogger_HonoursLevel(t *testing.T) {
+	if debug := newGotdLogger(slog.LevelDebug); !debug.Core().Enabled(zapcore.DebugLevel) {
+		t.Error("debug level must enable gotd debug logs")
+	}
+
+	if warn := newGotdLogger(slog.LevelWarn); warn.Core().Enabled(zapcore.InfoLevel) {
+		t.Error("warn level must suppress gotd info logs")
+	}
+}
+
+func TestZapLevel_MapsSlogLevels(t *testing.T) {
+	cases := []struct {
+		in   slog.Level
+		want zapcore.Level
+	}{
+		{slog.LevelDebug, zapcore.DebugLevel},
+		{slog.LevelInfo, zapcore.InfoLevel},
+		{slog.LevelWarn, zapcore.WarnLevel},
+		{slog.LevelError, zapcore.ErrorLevel},
+	}
+
+	for _, tc := range cases {
+		if got := zapLevel(tc.in); got != tc.want {
+			t.Errorf("zapLevel(%v) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
 }
 
 // TestNewHTTPHandler_RejectsCrossOriginPOST pins the cross-origin protection

@@ -329,6 +329,7 @@ Peers resolved by username include a valid access hash. Numeric IDs use a cached
 | `MCP_HTTP_PORT` | HTTP/SSE transport port | disabled | No |
 | `MCP_HTTP_HOST` | HTTP bind address | `127.0.0.1` | No |
 | `MCP_HTTP_ONLY` | Run as a headless HTTP-only daemon (no stdio transport) | `false` | No (requires `MCP_HTTP_PORT`) |
+| `MCP_LOG_LEVEL` | stderr log verbosity: `debug`, `info`, `warn`, `error` (the `--log-level` flag overrides it) | `info` | No |
 
 ## Authentication
 
@@ -478,6 +479,13 @@ docker run --rm -i \
   -v ~/.mcp-tg:/home/nobody/.mcp-tg \
   ghcr.io/lexfrei/mcp-tg:latest
 ```
+
+### Command-line flags
+
+- `--version` — print the build metadata (`mcp-tg <version> (<short-sha>)`) to stdout and exit, without starting the server or touching Telegram. Use it to confirm which build a binary is, independent of any running process. The same metadata is available at runtime through the `tg_server_version` tool.
+- `--log-level <level>` — set the stderr log verbosity to `debug`, `info` (default), `warn`, or `error`. Overrides `MCP_LOG_LEVEL`. FLOOD_WAIT retries log at `warn`, transport and tool-call failures at `error`, so a default `info` daemon already records the events that matter for a post-mortem; drop to `debug` for the full gotd connection and per-request trace. This governs the running server only — the `login` subcommand reads its credentials from the TTY and does not honour `--log-level`.
+
+The server also logs one INFO line at startup naming the build (`starting mcp-tg version=… revision=…`), so a daemon at the default `info` (or `debug`) records which binary is serving — handy when the on-disk file was rebuilt while an older process keeps running the previous code. At `warn`/`error` that INFO line is filtered like any other record; `--version` and the `tg_server_version` tool report the build at any log level.
 
 ## Requirements
 

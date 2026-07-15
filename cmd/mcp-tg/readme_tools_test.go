@@ -143,7 +143,7 @@ func TestReadmeFilterValues_MatchSearchFilters(t *testing.T) {
 // pagination while the tool already demanded the full compound cursor,
 // steering clients straight into ErrPartialCursor.
 func TestServerInstructions_MentionTheCompoundCursor(t *testing.T) {
-	opts := newServerOptions(testutil.NoopClient{}, telegram.NewSubscriptionBroker())
+	opts := newServerOptions(testutil.NoopClient{}, telegram.NewSubscriptionBroker(), discardLogger())
 
 	for _, field := range []string{"offsetRate", "nextRate", "nextOffsetId", "nextOffsetPeer"} {
 		if !strings.Contains(opts.Instructions, field) {
@@ -155,7 +155,7 @@ func TestServerInstructions_MentionTheCompoundCursor(t *testing.T) {
 // TestServerInstructions_MentionRequiredParseMode pins the parseMode
 // contract in the first documentation an MCP client reads.
 func TestServerInstructions_MentionRequiredParseMode(t *testing.T) {
-	opts := newServerOptions(testutil.NoopClient{}, telegram.NewSubscriptionBroker())
+	opts := newServerOptions(testutil.NoopClient{}, telegram.NewSubscriptionBroker(), discardLogger())
 
 	for _, needle := range []string{"parseMode", "entitiesParsed", "CONTAINED formatting"} {
 		if !strings.Contains(opts.Instructions, needle) {

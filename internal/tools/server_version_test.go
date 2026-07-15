@@ -86,6 +86,40 @@ func TestServerVersionHandler_ShortRevisionUnshortened(t *testing.T) {
 	}
 }
 
+// FormatVersionLine is the single source of the build-identity line for both
+// the tg_server_version tool and the `mcp-tg --version` CLI; pin its exact
+// format and revision truncation so neither caller can drift.
+func TestFormatVersionLine(t *testing.T) {
+	cases := []struct {
+		version, revision, want string
+	}{
+		{"1.2.3", "abc1234deadbeef", "mcp-tg 1.2.3 (abc1234d)"}, // long SHA truncated to 8
+		{"1.2.3", "abcdefgh", "mcp-tg 1.2.3 (abcdefgh)"},        // exactly 8, unchanged
+		{"1.2.3", "abc", "mcp-tg 1.2.3 (abc)"},                  // shorter than 8, unchanged
+		{"dev", "unknown", "mcp-tg dev (unknown)"},              // the default build strings
+	}
+
+	for _, tc := range cases {
+		if got := FormatVersionLine(tc.version, tc.revision); got != tc.want {
+			t.Errorf("FormatVersionLine(%q, %q) = %q, want %q", tc.version, tc.revision, got, tc.want)
+		}
+	}
+}
+
+// The handler's Output must be exactly what FormatVersionLine produces, so the
+// tool and the CLI can never disagree.
+func TestServerVersionHandler_OutputIsFormatVersionLine(t *testing.T) {
+	_, result, err := NewServerVersionHandler("1.2.3", "abc1234deadbeef", "go1.26.2")(
+		t.Context(), nil, ServerVersionParams{})
+	if err != nil {
+		t.Fatalf("handler returned error: %v", err)
+	}
+
+	if want := FormatVersionLine("1.2.3", "abc1234deadbeef"); result.Output != want {
+		t.Errorf("handler Output = %q, want FormatVersionLine %q", result.Output, want)
+	}
+}
+
 func TestServerVersionTool_Definition(t *testing.T) {
 	tool := ServerVersionTool()
 

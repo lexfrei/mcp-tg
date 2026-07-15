@@ -34,7 +34,7 @@ func listRegisteredTools(t *testing.T) []*mcp.Tool {
 
 	server := newHeadlessServer(
 		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
-		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(),
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
 	)
 
 	ct, st := mcp.NewInMemoryTransports()

@@ -17,6 +17,7 @@ type MessagesListParams struct {
 	FromDate       *int   `json:"fromDate,omitempty"       jsonschema:"Only messages at or after this unix timestamp; still capped at limit"`
 	ToDate         *int   `json:"toDate,omitempty"         jsonschema:"Start from the newest message at or before this unix timestamp"`
 	Type           string `json:"type,omitempty"           jsonschema:"Optional message type filter"`
+	Format         string `json:"format,omitempty"         jsonschema:"Output shape: full (default), json (messages only), text (output only)"`
 	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
@@ -26,8 +27,8 @@ type MessagesListResult struct {
 	Total        int               `json:"total"`
 	HasMore      bool              `json:"hasMore"`
 	Participants []ParticipantItem `json:"participants,omitempty"`
-	Messages     []MessageItem     `json:"messages"`
-	Output       string            `json:"output"`
+	Messages     []MessageItem     `json:"messages,omitempty"`
+	Output       string            `json:"output,omitempty"`
 }
 
 // NewMessagesListHandler creates a handler for the tg_messages_list tool.
@@ -70,9 +71,12 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 			return &mcp.CallToolResult{IsError: true}, MessagesListResult{}, err
 		}
 
-		if deref(params.ResolveReplies) {
+		if shouldResolveReplies(params.ResolveReplies, params.Format) {
 			resolveReplyParents(ctx, client, peer, result.Messages, msgs)
 		}
+
+		result.Messages = messagesForFormat(params.Format, result.Messages)
+		result.Output = outputForFormat(params.Format, result.Output)
 
 		return nil, result, nil
 	}
@@ -340,6 +344,7 @@ func MessagesListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_list",
 		Description: "List messages in a Telegram chat",
+		InputSchema: inputSchemaWithEnum[MessagesListParams]("format", formatEnum()),
 		Annotations: readOnlyAnnotations(),
 	}
 }

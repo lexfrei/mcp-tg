@@ -28,6 +28,7 @@ type MessagesSearchGlobalParams struct {
 	OffsetRate *int   `json:"offsetRate,omitempty" jsonschema:"Pagination cursor: nextRate from the previous page"`
 	OffsetID   *int   `json:"offsetId,omitempty"   jsonschema:"Pagination cursor: nextOffsetId from the previous page"`
 	OffsetPeer string `json:"offsetPeer,omitempty" jsonschema:"Pagination cursor: nextOffsetPeer from the previous page"`
+	Format     string `json:"format,omitempty"     jsonschema:"Output shape: full (default), json (messages only), text (output only)"`
 }
 
 // MessagesSearchGlobalResult is the output of tg_messages_search_global.
@@ -43,8 +44,8 @@ type MessagesSearchGlobalResult struct {
 	NextRate       int           `json:"nextRate,omitempty"`
 	NextOffsetID   int           `json:"nextOffsetId,omitempty"`
 	NextOffsetPeer string        `json:"nextOffsetPeer,omitempty"`
-	Messages       []MessageItem `json:"messages"`
-	Output         string        `json:"output"`
+	Messages       []MessageItem `json:"messages,omitempty"`
+	Output         string        `json:"output,omitempty"`
 }
 
 // NewMessagesSearchGlobalHandler creates a handler for tg_messages_search_global.
@@ -95,6 +96,9 @@ func NewMessagesSearchGlobalHandler(
 			result.NextOffsetID = last.ID
 			result.NextOffsetPeer = formatPeer(last.PeerID)
 		}
+
+		result.Messages = messagesForFormat(params.Format, result.Messages)
+		result.Output = outputForFormat(params.Format, result.Output)
 
 		return nil, result, nil
 	}
@@ -191,6 +195,7 @@ func MessagesSearchGlobalTool() *mcp.Tool {
 		Name: "tg_messages_search_global",
 		Description: "Search messages across all Telegram chats, optionally filtered by kind, " +
 			"date range, or dialog scope",
+		InputSchema: inputSchemaWithEnum[MessagesSearchGlobalParams]("format", formatEnum()),
 		Annotations: readOnlyAnnotations(),
 	}
 }

@@ -168,6 +168,10 @@ Username resolution for `messages_*` piggybacks on the `Users[]`/`Chats[]` array
 
 Each message in `output` is a block of `key: value` lines (`from:`, `forwarded from:`, `reply to:`, `quote:`, always-present `type:`) followed by the body under `text:`. Blocks are separated by a literal `---` line so a message body containing its own blank lines (Telegram bodies routinely have paragraph breaks) stays unambiguous. Long bodies are emitted verbatim — no truncation in the human-readable string. The single-line `[ID ↩parent] ts sender: text` form was removed; do NOT reintroduce it or grep for `↩`. Use `MessageItem.type` / `type:` for message kind; do NOT reintroduce `mediaType` / `media:`.
 
+### Output format param
+
+The five read tools (`messages_list`, `messages_get`, `messages_context`, `messages_search`, `messages_search_global`) take an optional `format` enum (`full`/`json`/`text`, default `full`) constrained on the wire via `inputSchemaWithEnum` (the `parseMode` precedent) — optional, so it is NOT in the schema `required` set; an omitted value is `full`. `messagesForFormat`/`outputForFormat` (`messages_format.go`) trim the result: `json` clears `Output`, `text` clears `Messages`, `full` keeps both. The two helpers are split (not one two-value function) because gocritic `unnamedResult` and `nonamedreturns` conflict on a multi-value return. Both result fields are now tagged `omitempty`, so a cleared field vanishes from the JSON — this is a deliberate shape change (documented in README "Message Output Format"): a full-mode result with zero messages now also omits `messages`. Handlers apply format LAST, after `resolveReplies`, so the enrichment still runs for `json`/`full`.
+
 ### Message entities (formatting on read)
 
 `MessageItem` carries an optional `entities` array with the message's formatting spans as read from MTProto `Message.Entities`. Each entry has `type` (Bot API naming: `bold`, `italic`, `code`, `pre`, `text_url`, `url`, `mention`, `hashtag`, etc.), `offset` and `length` in UTF-16 code units, plus optional `url`/`language`/`userId` for types that carry metadata. Plain messages omit the field entirely.

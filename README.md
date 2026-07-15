@@ -178,7 +178,9 @@ This applies uniformly across:
 
 Any consumer that parsed the previous formats must be updated.
 
-Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a literal `---` line so a message body containing its own blank lines stays unambiguous.
+Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`, `tg_messages_search_global`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a literal `---` line so a message body containing its own blank lines stays unambiguous.
+
+Those five tools also accept an optional `format` to trim the response: `full` (default) returns both shapes, `json` omits the `output` string, and `text` omits the `messages` array. The omitted field is dropped from the JSON entirely (both keys are now `omitempty`), so a consumer must tolerate either key being absent — `full` does not guarantee presence either, since a zero-result read omits the empty `messages` array as well. `tg_messages_search_global`'s `output` is only a `Found N of M` summary line, so its `text` shape carries just that summary; read the JSON `messages` for the per-message detail.
 
 ```text
 [<id>] <ISO-timestamp>

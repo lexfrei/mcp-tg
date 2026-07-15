@@ -12,8 +12,10 @@ import (
 type MessagesListParams struct {
 	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
 	TopicID        *int   `json:"topicId,omitempty"        jsonschema:"Forum topic ID to filter messages"`
-	Limit          *int   `json:"limit,omitempty"          jsonschema:"Max messages to return (default 100)"`
+	Limit          *int   `json:"limit,omitempty"          jsonschema:"Max messages; pages internally beyond 100, max 1000 (default 100)"`
 	OffsetID       *int   `json:"offsetId,omitempty"       jsonschema:"Message ID to start from"`
+	FromDate       *int   `json:"fromDate,omitempty"       jsonschema:"Only messages at or after this unix timestamp; still capped at limit"`
+	ToDate         *int   `json:"toDate,omitempty"         jsonschema:"Start from the newest message at or before this unix timestamp"`
 	Type           string `json:"type,omitempty"           jsonschema:"Optional message type filter"`
 	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
@@ -52,6 +54,12 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 				validationErr(limitErr)
 		}
 
+		dateErr := validateDateRange(deref(params.FromDate), deref(params.ToDate))
+		if dateErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
+				validationErr(dateErr)
+		}
+
 		if params.Type != "" && !telegram.IsMessageType(params.Type) {
 			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
 				validationErr(ErrUnknownMessageType)
@@ -79,8 +87,10 @@ func fetchMessages(
 	}
 
 	return fetchMessagePage(ctx, client, peer, params, telegram.HistoryOpts{
-		Limit:    deref(params.Limit),
-		OffsetID: deref(params.OffsetID),
+		Limit:      deref(params.Limit),
+		OffsetID:   deref(params.OffsetID),
+		OffsetDate: deref(params.ToDate),
+		MinDate:    deref(params.FromDate),
 	})
 }
 
@@ -149,7 +159,15 @@ func fetchMessagesByType(
 	state := newMessageTypeFilterState(deref(params.OffsetID))
 
 	for state.shouldFetch(effectiveLimit) {
-		page, err := fetchMessageTypeFilterPage(ctx, client, peer, params, state.offsetID)
+		// offset_date anchors the first page only; later pages advance
+		// by offset_id. The fromDate floor rides every page inside
+		// GetHistory, so it need not be threaded here.
+		offsetDate := 0
+		if state.scanned == 0 {
+			offsetDate = deref(params.ToDate)
+		}
+
+		page, err := fetchMessageTypeFilterPage(ctx, client, peer, params, state.offsetID, offsetDate)
 		if err != nil {
 			return MessagesListResult{}, nil, telegramErr("failed to get messages", err)
 		}
@@ -237,14 +255,18 @@ func fetchMessageTypeFilterPage(
 	peer telegram.InputPeer,
 	params *MessagesListParams,
 	offsetID int,
+	offsetDate int,
 ) (messageTypeFilterPage, error) {
 	// The outer loop drives its own pagination, so each RPC fetches a
 	// single server page; a larger Limit would double-page against
 	// GetHistory's internal pager. effectiveLimit stays the accumulation
-	// target the outer loop counts filtered matches against.
+	// target the outer loop counts filtered matches against. The fromDate
+	// floor rides every page; offset_date only the first.
 	opts := telegram.HistoryOpts{
-		Limit:    telegram.DefaultLimit,
-		OffsetID: offsetID,
+		Limit:      telegram.DefaultLimit,
+		OffsetID:   offsetID,
+		OffsetDate: offsetDate,
+		MinDate:    deref(params.FromDate),
 	}
 
 	msgs, total, err := getMessageHistoryPage(ctx, client, peer, deref(params.TopicID), opts)

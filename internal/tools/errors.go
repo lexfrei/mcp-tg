@@ -37,6 +37,11 @@ var ErrQueryRequired = errors.New("query is required")
 // ErrNegativeLimit is returned when a numeric limit parameter is negative.
 var ErrNegativeLimit = errors.New("numeric limits must not be negative")
 
+// ErrLimitTooLarge is returned when a tg_messages_list limit exceeds the
+// auto-pagination cap. messages_list fetches beyond one server page by
+// paging internally; the cap bounds the round-trips a single call makes.
+var ErrLimitTooLarge = errors.New("limit must not exceed 1000")
+
 // ErrTitleRequired is returned when a title parameter is missing.
 var ErrTitleRequired = errors.New("title is required")
 
@@ -161,13 +166,18 @@ var ErrUnknownMessageFilter = errors.New(
 	"unknown filter; allowed: " + strings.Join(telegram.SearchFilters(), ", "),
 )
 
-// ErrInvalidDateRange is returned when a minDate/maxDate window is
-// inverted.
-var ErrInvalidDateRange = errors.New("minDate must not exceed maxDate")
+// ErrInvalidDateRange is returned when a date window is inverted. The
+// message names both parameter spellings because validateDateRange is
+// shared by the search tools (minDate/maxDate) and messages_list
+// (fromDate/toDate) — a caller must not see a parameter it never used.
+var ErrInvalidDateRange = errors.New(
+	"the lower date bound (minDate/fromDate) must not exceed the upper bound (maxDate/toDate)",
+)
 
 // ErrNegativeDate is returned when a date bound is negative — unix
-// timestamps only, mirroring ErrNegativeLimit.
-var ErrNegativeDate = errors.New("minDate and maxDate must not be negative")
+// timestamps only, mirroring ErrNegativeLimit. Names both parameter
+// spellings for the same reason as ErrInvalidDateRange.
+var ErrNegativeDate = errors.New("date bounds (minDate/maxDate, fromDate/toDate) must not be negative")
 
 // ErrUnknownSearchScope is returned when a global search scope is not
 // one of the dialog kinds Telegram can restrict a search to.

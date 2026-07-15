@@ -113,6 +113,45 @@ func TestMessagesListHandler_ResolveReplies_FetchesMissingParent(t *testing.T) {
 	}
 }
 
+// In text format the structured messages are dropped, so the parent
+// enrichment they would carry is worthless — the extra GetMessages RPC
+// must be skipped even when resolveReplies is on.
+func TestMessagesListHandler_ResolveReplies_SkippedInTextFormat(t *testing.T) {
+	resolveOn := true
+	mock := &mockClient{
+		peer: telegram.InputPeer{Type: telegram.PeerChannel, ID: 1},
+		messages: []telegram.Message{
+			{ID: 26154, Text: testPunchline, ReplyTo: &telegram.ReplyToInfo{MessageID: 26150}},
+		},
+		parentMessages: []telegram.Message{
+			{ID: 26150, Text: testSetupFromEarly, FromName: testAliceName},
+		},
+		total: 1,
+	}
+	handler := NewMessagesListHandler(mock)
+
+	_, res, err := handler(context.Background(), nil, MessagesListParams{
+		Peer:           testChatPeer,
+		ResolveReplies: &resolveOn,
+		Format:         formatText,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.getMessagesCalls != 0 {
+		t.Errorf("GetMessages called %d times, want 0 (enrichment is wasted in text format)", mock.getMessagesCalls)
+	}
+
+	if res.Messages != nil {
+		t.Errorf("text format must drop the structured messages, got %+v", res.Messages)
+	}
+
+	if res.Output == "" {
+		t.Error("text format must keep the human-readable output")
+	}
+}
+
 func TestMessagesListHandler_ResolveReplies_ParentInBatchNoFetch(t *testing.T) {
 	resolveOn := true
 	mock := &mockClient{

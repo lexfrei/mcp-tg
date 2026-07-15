@@ -81,7 +81,7 @@ func replyHandler(client telegram.Client) mcp.PromptHandler {
 			return nil, errors.Wrap(err, "resolving peer")
 		}
 
-		msgs, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{
+		msgs, _, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{
 			Limit: defaultContextMessages,
 		})
 		if err != nil {
@@ -117,7 +117,7 @@ func summarizeHandler(client telegram.Client) mcp.PromptHandler {
 			return nil, errors.Wrap(err, "resolving peer")
 		}
 
-		msgs, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{Limit: 100})
+		msgs, _, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{Limit: 100})
 		if err != nil {
 			return nil, errors.Wrap(err, "getting messages")
 		}

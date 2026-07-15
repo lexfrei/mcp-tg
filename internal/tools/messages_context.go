@@ -16,6 +16,7 @@ type MessagesContextParams struct {
 	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID      int    `json:"messageId"                jsonschema:"Message ID to get context around"`
 	Radius         *int   `json:"radius,omitempty"         jsonschema:"Number of messages before and after (default 10)"`
+	Format         string `json:"format,omitempty"         jsonschema:"Output shape: full (default), json (messages only), text (output only)"`
 	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
@@ -23,8 +24,8 @@ type MessagesContextParams struct {
 type MessagesContextResult struct {
 	Count        int               `json:"count"`
 	Participants []ParticipantItem `json:"participants,omitempty"`
-	Messages     []MessageItem     `json:"messages"`
-	Output       string            `json:"output"`
+	Messages     []MessageItem     `json:"messages,omitempty"`
+	Output       string            `json:"output,omitempty"`
 }
 
 // NewMessagesContextHandler creates a handler for the tg_messages_context tool.
@@ -58,15 +59,15 @@ func NewMessagesContextHandler(client telegram.Client) mcp.ToolHandlerFor[Messag
 
 		items := messagesToItems(msgs)
 
-		if deref(params.ResolveReplies) {
+		if shouldResolveReplies(params.ResolveReplies, params.Format) {
 			resolveReplyParents(ctx, client, peer, items, msgs)
 		}
 
 		return nil, MessagesContextResult{
 			Count:        len(msgs),
 			Participants: participantsFromMessages(msgs),
-			Messages:     items,
-			Output:       formatContextMessages(msgs, params.MessageID),
+			Messages:     messagesForFormat(params.Format, items),
+			Output:       outputForFormat(params.Format, formatContextMessages(msgs, params.MessageID)),
 		}, nil
 	}
 }
@@ -79,12 +80,18 @@ func fetchContext(
 		radius = defaultContextRadius
 	}
 
+	// SinglePage keeps this to one server call anchored at OffsetID: the
+	// context window is symmetric by construction, and auto-paginating to
+	// backfill service-message gaps would extend it only on the older
+	// side (OffsetID is fixed), breaking the "before and after" contract
+	// and turning a large radius into many round-trips.
 	opts := telegram.HistoryOpts{
-		Limit:    radius*2 + 1,
-		OffsetID: params.MessageID + radius,
+		Limit:      radius*2 + 1,
+		OffsetID:   params.MessageID + radius,
+		SinglePage: true,
 	}
 
-	msgs, _, err := client.GetHistory(ctx, peer, opts)
+	msgs, _, _, err := client.GetHistory(ctx, peer, opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting history")
 	}
@@ -120,6 +127,7 @@ func MessagesContextTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_context",
 		Description: "Get messages around a specific message in a Telegram chat",
+		InputSchema: inputSchemaWithEnum[MessagesContextParams]("format", formatEnum()),
 		Annotations: readOnlyAnnotations(),
 	}
 }

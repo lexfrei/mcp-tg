@@ -20,14 +20,18 @@ func (NoopClient) GetMessages(_ context.Context, _ telegram.InputPeer, _ []int) 
 	return nil, nil
 }
 
-func (NoopClient) GetHistory(_ context.Context, _ telegram.InputPeer, _ telegram.HistoryOpts) ([]telegram.Message, int, error) {
-	return nil, 0, nil
+//nolint:gocritic // unnamedResult: a named (msgs, total, hasMore, err) tuple adds no clarity.
+func (NoopClient) GetHistory(
+	_ context.Context, _ telegram.InputPeer, _ telegram.HistoryOpts,
+) ([]telegram.Message, int, bool, error) {
+	return nil, 0, false, nil
 }
 
+//nolint:gocritic // unnamedResult: a named (msgs, total, hasMore, err) tuple adds no clarity.
 func (NoopClient) GetTopicMessages(
 	_ context.Context, _ telegram.InputPeer, _ int, _ telegram.HistoryOpts,
-) ([]telegram.Message, int, error) {
-	return nil, 0, nil
+) ([]telegram.Message, int, bool, error) {
+	return nil, 0, false, nil
 }
 
 func (NoopClient) SearchMessages(

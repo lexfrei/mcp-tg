@@ -1,11 +1,40 @@
 package tools
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
+
+// messages_context must fetch its window in a single server page: the
+// window is symmetric by construction (OffsetID = messageId + radius),
+// and letting the wrapper auto-paginate would extend it only on the
+// older side and turn a large radius into many round-trips. This pins
+// SinglePage so a refactor that drops it fails instead of silently
+// breaking the "before and after" contract.
+func TestMessagesContextHandler_UsesSinglePage(t *testing.T) {
+	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
+		messages: []telegram.Message{{ID: 5, Date: 1000, Text: "hi", Type: "text"}},
+	}
+
+	_, _, err := NewMessagesContextHandler(mock)(
+		context.Background(), nil, MessagesContextParams{Peer: "@x", MessageID: 5},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(mock.getHistoryOpts) == 0 {
+		t.Fatal("expected a GetHistory call")
+	}
+
+	if !mock.getHistoryOpts[0].SinglePage {
+		t.Error("messages_context must set SinglePage to keep the context window symmetric (one RPC)")
+	}
+}
 
 func TestFormatContextMessages_TargetMarkerOnEveryLine(t *testing.T) {
 	msgs := []telegram.Message{

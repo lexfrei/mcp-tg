@@ -30,8 +30,8 @@ type Client interface {
 //nolint:interfacebloat // covers all message-related Telegram RPCs as a cohesive group.
 type MessageClient interface {
 	GetMessages(ctx context.Context, peer InputPeer, ids []int) ([]Message, error)
-	GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, error)
-	GetTopicMessages(ctx context.Context, peer InputPeer, topicID int, opts HistoryOpts) ([]Message, int, error)
+	GetHistory(ctx context.Context, peer InputPeer, opts HistoryOpts) ([]Message, int, bool, error)
+	GetTopicMessages(ctx context.Context, peer InputPeer, topicID int, opts HistoryOpts) ([]Message, int, bool, error)
 	SearchMessages(ctx context.Context, peer InputPeer, query string, opts SearchOpts) ([]Message, int, error)
 	SearchGlobal(ctx context.Context, query string, opts *SearchGlobalOpts) (SearchGlobalPage, error)
 	GetScheduledMessages(ctx context.Context, peer InputPeer) ([]Message, error)

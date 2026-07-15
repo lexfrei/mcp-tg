@@ -1208,23 +1208,35 @@ func TestMessagesListHandler_WithTopicID(t *testing.T) {
 	}
 }
 
+// typeFilterPage builds a newest-first page of n messages numbered
+// downward from startID, all of the given type.
+func typeFilterPage(startID, n int, msgType string) []telegram.Message {
+	msgs := make([]telegram.Message, n)
+	for i := range n {
+		msgs[i] = telegram.Message{ID: startID - i, Date: 1000, Type: msgType}
+	}
+
+	return msgs
+}
+
 func TestMessagesListHandler_TypeFilterPaginatesUntilLimit(t *testing.T) {
 	limit := 2
+	// The first page is a full server page of non-matching messages, so
+	// the outer loop learns more history exists and pages on; the second
+	// page carries the matches. A short page means end-of-history now
+	// that each RPC is bounded to one server page.
 	mock := &mockClient{
 		getHistoryFn: func(_ telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error) {
 			switch opts.OffsetID {
 			case 0:
+				return typeFilterPage(1000, telegram.DefaultLimit, "photo"), 104, nil
+			case 901:
 				return []telegram.Message{
-					{ID: 100, Date: 1000, Text: "plain", Type: "text"},
-					{ID: 99, Date: 999, Text: "caption", Type: "photo"},
-				}, 4, nil
-			case 99:
-				return []telegram.Message{
-					{ID: 98, Date: 998, Type: "voice"},
-					{ID: 97, Date: 997, Type: "voice"},
-				}, 4, nil
+					{ID: 900, Date: 998, Type: "voice"},
+					{ID: 899, Date: 997, Type: "voice"},
+				}, 104, nil
 			default:
-				return nil, 4, nil
+				return nil, 104, nil
 			}
 		},
 	}
@@ -1253,8 +1265,8 @@ func TestMessagesListHandler_TypeFilterPaginatesUntilLimit(t *testing.T) {
 		t.Fatalf("GetHistory calls = %d, want 2", mock.getHistoryCalls)
 	}
 
-	if got := mock.getHistoryOpts[1].OffsetID; got != 99 {
-		t.Errorf("second page OffsetID = %d, want 99", got)
+	if got := mock.getHistoryOpts[1].OffsetID; got != 901 {
+		t.Errorf("second page OffsetID = %d, want 901", got)
 	}
 }
 

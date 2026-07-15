@@ -17,6 +17,7 @@ type mockClient struct {
 	resolvePeerFn  func(identifier string) (telegram.InputPeer, error)
 	message        *telegram.Message
 	total          int
+	historyHasMore bool
 	dialogs        []telegram.Dialog
 	user           *telegram.User
 	users          []telegram.User
@@ -133,25 +134,32 @@ func requestedMatchesParents(ids []int, parents []telegram.Message) bool {
 	return true
 }
 
-func (m *mockClient) GetHistory(_ context.Context, peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error) {
+// GetHistory returns m.historyHasMore as the pager's "more available"
+// signal so a test can drive tg_messages_list's HasMore field. getHistoryFn
+// keeps its 3-value shape — the bool rides alongside it.
+func (m *mockClient) GetHistory(
+	_ context.Context, peer telegram.InputPeer, opts telegram.HistoryOpts,
+) ([]telegram.Message, int, bool, error) {
 	m.lastPeer = peer
 	m.getHistoryCalls++
 	m.getHistoryOpts = append(m.getHistoryOpts, opts)
 
 	if m.getHistoryFn != nil {
-		return m.getHistoryFn(peer, opts)
+		msgs, total, err := m.getHistoryFn(peer, opts)
+
+		return msgs, total, m.historyHasMore, err
 	}
 
-	return m.messages, m.total, m.err
+	return m.messages, m.total, m.historyHasMore, m.err
 }
 
 func (m *mockClient) GetTopicMessages(
 	_ context.Context, peer telegram.InputPeer, topicID int, _ telegram.HistoryOpts,
-) ([]telegram.Message, int, error) {
+) ([]telegram.Message, int, bool, error) {
 	m.lastPeer = peer
 	m.lastTopicID = topicID
 
-	return m.messages, m.total, m.err
+	return m.messages, m.total, m.historyHasMore, m.err
 }
 
 func (m *mockClient) SearchMessages(

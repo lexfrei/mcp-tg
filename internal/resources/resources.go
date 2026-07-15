@@ -144,7 +144,7 @@ func chatMessagesHandler(client telegram.Client) mcp.ResourceHandler {
 			return nil, errors.Wrap(err, "resolving peer")
 		}
 
-		msgs, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{Limit: defaultMessageLimit})
+		msgs, _, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{Limit: defaultMessageLimit})
 		if err != nil {
 			return nil, errors.Wrap(err, "getting messages")
 		}

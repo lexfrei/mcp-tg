@@ -179,7 +179,9 @@ This applies uniformly across:
 
 Any consumer that parsed the previous formats must be updated.
 
-Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a literal `---` line so a message body containing its own blank lines stays unambiguous.
+Read tools (`tg_messages_list`, `tg_messages_get`, `tg_messages_context`, `tg_messages_search`, `tg_messages_search_global`) return both a JSON `messages` array and a human-readable `output` string. Each message in `output` is a multi-line block; blocks are separated by a literal `---` line so a message body containing its own blank lines stays unambiguous.
+
+Those five tools also accept an optional `format` to trim the response: `full` (default) returns both shapes, `json` omits the `output` string, and `text` omits the `messages` array. The omitted field is dropped from the JSON entirely (both keys are now `omitempty`), so a consumer must tolerate either key being absent — `full` does not guarantee presence either, since a zero-result read omits the empty `messages` array as well. `tg_messages_search_global`'s `output` is only a `Found N of M` summary line, so its `text` shape carries just that summary; read the JSON `messages` for the per-message detail.
 
 ```text
 [<id>] <ISO-timestamp>
@@ -224,6 +226,8 @@ Deep-links to the original message can be constructed from `forward.channelPost`
 Both search tools accept `minDate`/`maxDate` (unix timestamps) to bound the window, and both return `total` — the server's full match count across all pages. `tg_messages_search` additionally takes `topicId` (restrict to one forum topic) and `from` (restrict to one sender; same peer formats as `peer`).
 
 `tg_messages_search_global` additionally takes `scope` (`users`, `groups`, or `channels`) to restrict the search to one dialog kind, and paginates through a compound cursor: when the result carries the ready-made `nextRate`, `nextOffsetId` and `nextOffsetPeer` fields (`hasMore: true` — "probably more"; the terminal signal is an empty page) — copy them into `offsetRate`, `offsetId` and `offsetPeer` verbatim to fetch it; pass either the whole cursor or none of it (the first page). A final or empty page carries no cursor fields. The peers named in each result page are cached with their access hashes, so the returned `nextOffsetPeer` resolves even for channels the account has never opened. The cache is in-memory, so the cursor does not survive a server restart — a continuation whose peer can no longer be resolved is rejected with a clear error asking to re-run the first page.
+
+`tg_messages_list` reads history newest-first and auto-paginates: a `limit` above Telegram's 100-message page size is fetched in chunks and merged into one response, up to a cap of 1000 messages per call (a larger `limit` is rejected). `total` is the server's count from the first page; `hasMore: true` means older messages remain beyond this response (continue with `offsetId`). It stays true even when the merged batch is shorter than `limit` — a service-message-heavy chat can stop the internal scan before the limit fills while older messages still exist. It also accepts `fromDate`/`toDate` (unix timestamps): `toDate` starts the read from the newest message at or before that time (Telegram's `offset_date`), and `fromDate` is a client-side floor that stops paging once older messages are reached. A date-bounded read still returns at most `limit` messages — widen `limit` (up to 1000) to cover a larger window in one call.
 
 ## Parse Mode
 

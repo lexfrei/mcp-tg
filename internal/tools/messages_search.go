@@ -18,6 +18,7 @@ type MessagesSearchParams struct {
 	MaxDate        *int   `json:"maxDate,omitempty"        jsonschema:"Only messages sent before this unix timestamp"`
 	Limit          *int   `json:"limit,omitempty"          jsonschema:"Max results (default 100)"`
 	OffsetID       *int   `json:"offsetId,omitempty"       jsonschema:"Message ID to start search from (for pagination)"`
+	Format         string `json:"format,omitempty"         jsonschema:"Output shape: full (default), json (messages only), text (output only)"`
 	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
@@ -27,8 +28,8 @@ type MessagesSearchResult struct {
 	Total        int               `json:"total"`
 	HasMore      bool              `json:"hasMore"`
 	Participants []ParticipantItem `json:"participants,omitempty"`
-	Messages     []MessageItem     `json:"messages"`
-	Output       string            `json:"output"`
+	Messages     []MessageItem     `json:"messages,omitempty"`
+	Output       string            `json:"output,omitempty"`
 }
 
 // NewMessagesSearchHandler creates a handler for the tg_messages_search tool.
@@ -65,9 +66,12 @@ func NewMessagesSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 			return &mcp.CallToolResult{IsError: true}, MessagesSearchResult{}, err
 		}
 
-		if deref(params.ResolveReplies) {
+		if shouldResolveReplies(params.ResolveReplies, params.Format) {
 			resolveReplyParents(ctx, client, peer, result.Messages, msgs)
 		}
+
+		result.Messages = messagesForFormat(params.Format, result.Messages)
+		result.Output = outputForFormat(params.Format, result.Output)
 
 		return nil, result, nil
 	}
@@ -151,6 +155,7 @@ func MessagesSearchTool() *mcp.Tool {
 		Name: "tg_messages_search",
 		Description: "Search for messages in a Telegram chat, optionally scoped to a forum topic, " +
 			"a sender, a media kind, or a date range",
+		InputSchema: inputSchemaWithEnum[MessagesSearchParams]("format", formatEnum()),
 		Annotations: readOnlyAnnotations(),
 	}
 }

@@ -11,6 +11,7 @@ import (
 type MessagesGetParams struct {
 	Peer           string `json:"peer"                     jsonschema:"@username, t.me/ link, or numeric ID"`
 	IDs            []int  `json:"ids"                      jsonschema:"Message IDs to retrieve"`
+	Format         string `json:"format,omitempty"         jsonschema:"Output shape: full (default), json (messages only), text (output only)"`
 	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
 }
 
@@ -18,8 +19,8 @@ type MessagesGetParams struct {
 type MessagesGetResult struct {
 	Count        int               `json:"count"`
 	Participants []ParticipantItem `json:"participants,omitempty"`
-	Messages     []MessageItem     `json:"messages"`
-	Output       string            `json:"output"`
+	Messages     []MessageItem     `json:"messages,omitempty"`
+	Output       string            `json:"output,omitempty"`
 }
 
 // NewMessagesGetHandler creates a handler for the tg_messages_get tool.
@@ -59,11 +60,15 @@ func NewMessagesGetHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesGe
 
 		items := messagesToItems(msgs)
 
-		if deref(params.ResolveReplies) {
+		if shouldResolveReplies(params.ResolveReplies, params.Format) {
 			resolveReplyParents(ctx, client, peer, items, msgs)
 		}
 
-		return nil, buildMessagesGetResult(msgs, items), nil
+		result := buildMessagesGetResult(msgs, items)
+		result.Messages = messagesForFormat(params.Format, result.Messages)
+		result.Output = outputForFormat(params.Format, result.Output)
+
+		return nil, result, nil
 	}
 }
 
@@ -81,6 +86,7 @@ func MessagesGetTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_messages_get",
 		Description: "Get specific messages by their IDs from a Telegram chat",
+		InputSchema: inputSchemaWithEnum[MessagesGetParams]("format", formatEnum()),
 		Annotations: readOnlyAnnotations(),
 	}
 }

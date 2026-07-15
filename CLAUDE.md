@@ -15,7 +15,7 @@ golangci-lint run
 ## Architecture
 
 ```text
-cmd/mcp-tg/main.go          Entry point: `login` subcommand dispatch, else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
+cmd/mcp-tg/main.go          Entry point: `--version`/`login` dispatch (via flags.go), else telegram client → MCP server → transports; mcpDevice/headlessLoginRequired helpers
 cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes the session, keychain or file), credential-safe, no MCP surface
 cmd/mcp-tg/storage.go       Session backend factory: OS keychain (lexfrei/keychain) by default, plaintext file on --insecure-storage/TELEGRAM_SESSION_INSECURE
 cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td

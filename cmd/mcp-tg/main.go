@@ -46,6 +46,12 @@ var (
 )
 
 func main() {
+	if versionRequested(os.Args) {
+		runVersion()
+
+		return
+	}
+
 	if loginRequested(os.Args) {
 		if loginErr := runLogin(); loginErr != nil {
 			log.Printf("login error: %v", loginErr)
@@ -73,6 +79,8 @@ func run() error {
 	}
 
 	logger := newLogger()
+	logStartupVersion(logger)
+
 	health := mcpmw.NewSessionHealth()
 
 	storage, storageErr := newSessionStorage(cfg, cfg.InsecureStorage)

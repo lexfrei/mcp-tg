@@ -15,6 +15,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Elicitation | Auth flow (phone, code, 2FA password) |
 | Progress | File uploads, media albums, message search |
 | Roots | File path validation for uploads/downloads |
+| Subscriptions | `resources/updated` on new messages in a subscribed chat |
 | Transports | stdio + HTTP/SSE |
 | KeepAlive | 30s ping interval |
 | Middleware | Auth guard, request logging, bool coercion |
@@ -290,6 +291,15 @@ A reactor is not always a user. When a chat's default identity is a channel (see
 - `tg://chat/{peer}` — Chat/channel metadata (JSON, URI template)
 - `tg://chat/{peer}/messages` — Recent messages (text, URI template)
 
+### Subscriptions
+
+`tg://chat/{peer}/messages` is subscribable. After `resources/subscribe`, every new message in that chat pushes a `resources/updated` notification for the exact URI you subscribed with, so a client can re-read the resource instead of polling. Subscribe resolves the peer once; an unresolvable peer fails the subscribe. Only the `/messages` resource is watched — subscribing to the bare `tg://chat/{peer}` info resource is accepted but never pushes.
+
+Two known limitations:
+
+- A client that drops abnormally (a crash, or network loss past the keep-alive) without unsubscribing leaves a stale watch entry that only a daemon restart clears. Delivery stays correct — the SDK's own registry is authoritative, so nothing is sent to the dead session — but the stale entries accumulate with reconnect churn over the daemon's lifetime (not capped by the set of chats), and each orphaned chat then costs a lookup plus a zero-subscriber log line on every later message. The SDK exposes no session-closed hook to prune it.
+- The account's own outgoing messages (sent through this server) do not fire the notification: the self-send echo carries no peer. A message arriving from another device does fire it.
+
 ## Prompts
 
 - `reply_to_message` — Fetch context around a message for composing replies
@@ -306,7 +316,7 @@ All tools accept `peer` as a string. Supported formats:
 - `https://t.me/+invite_hash` (invite links, if already joined)
 - Numeric ID (bot-API style: positive=user, negative=chat, `-100xxx`=channel)
 
-Peers resolved by username include a valid access hash. Numeric IDs use a cached access hash if available, otherwise AccessHash=0 (some API calls may fail — prefer `@username`).
+Peers resolved by username include a valid access hash. A numeric ID reuses a cached access hash when the peer has been seen before; on a cold miss the client warms its cache from the full dialog list — both the main list and the archive — so a numeric channel ID the account belongs to resolves even when the channel is far down the list or archived. A numeric channel that is still unresolved after that (its access hash was never observed) is rejected with a clear error pointing you to open it once via `tg_dialogs_list`, `tg_dialogs_search`, or `@username`, instead of an opaque `CHANNEL_INVALID`. Prefer `@username` when you have it.
 
 ## Configuration
 
@@ -323,6 +333,7 @@ Peers resolved by username include a valid access hash. Numeric IDs use a cached
 | `MCP_HTTP_PORT` | HTTP/SSE transport port | disabled | No |
 | `MCP_HTTP_HOST` | HTTP bind address | `127.0.0.1` | No |
 | `MCP_HTTP_ONLY` | Run as a headless HTTP-only daemon (no stdio transport) | `false` | No (requires `MCP_HTTP_PORT`) |
+| `MCP_LOG_LEVEL` | stderr log verbosity: `debug`, `info`, `warn`, `error` (the `--log-level` flag overrides it) | `info` | No |
 
 ## Authentication
 
@@ -472,6 +483,13 @@ docker run --rm -i \
   -v ~/.mcp-tg:/home/nobody/.mcp-tg \
   ghcr.io/lexfrei/mcp-tg:latest
 ```
+
+### Command-line flags
+
+- `--version` — print the build metadata (`mcp-tg <version> (<short-sha>)`) to stdout and exit, without starting the server or touching Telegram. Use it to confirm which build a binary is, independent of any running process. The same metadata is available at runtime through the `tg_server_version` tool.
+- `--log-level <level>` — set the stderr log verbosity to `debug`, `info` (default), `warn`, or `error`. Overrides `MCP_LOG_LEVEL`. FLOOD_WAIT retries log at `warn`, transport and tool-call failures at `error`, so a default `info` daemon already records the events that matter for a post-mortem; drop to `debug` for the full gotd connection and per-request trace. This governs the running server only — the `login` subcommand reads its credentials from the TTY and does not honour `--log-level`.
+
+The server also logs one INFO line at startup naming the build (`starting mcp-tg version=… revision=…`), so a daemon at the default `info` (or `debug`) records which binary is serving — handy when the on-disk file was rebuilt while an older process keeps running the previous code. At `warn`/`error` that INFO line is filtered like any other record; `--version` and the `tg_server_version` tool report the build at any log level.
 
 ## Requirements
 

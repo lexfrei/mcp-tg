@@ -21,8 +21,15 @@ import (
 
 const (
 	warmDialogsPageLimit = 100
-	warmDialogsMaxPages  = 5
-	warmDialogsThrottle  = 60 * time.Second
+	// warmDialogsMaxPages bounds a single folder's warm so a pathological
+	// account cannot spin forever; a normal folder exhausts (the server
+	// returns a complete *tg.MessagesDialogs) long before this cap.
+	warmDialogsMaxPages = 50
+	warmDialogsThrottle = 60 * time.Second
+	// warmArchiveFolderID is the peer folder holding archived dialogs.
+	// messages.getDialogs returns one folder per call and omits archived
+	// chats when folder_id is unset, so the archive needs its own pass.
+	warmArchiveFolderID = 1
 )
 
 // cachedServerConfig holds the subset of help.getConfig fields we read.
@@ -42,6 +49,7 @@ type Wrapper struct {
 	stickers       *StickerCache
 	transcriptions *TranscriptionBroker
 	warmedAt       atomic.Int64
+	warmSF         singleflight.Group
 	cfg            atomic.Pointer[cachedServerConfig]
 	cfgSF          singleflight.Group
 }
@@ -150,10 +158,19 @@ func (w *Wrapper) ResolvePeer(
 		return peer, nil
 	}
 
-	w.warmDialogsCache(ctx)
+	ran, warmErr := w.warmDialogsCache(ctx)
 
 	if cached, hit := w.cache.Lookup(peer.Type, peer.ID); hit {
 		return cached, nil
+	}
+
+	// Only channels need a terminal access-hash verdict here — a channel
+	// with no hash is CHANNEL_INVALID for every request. Users and basic
+	// groups keep the hash-0 fallback (the tools layer labels those per
+	// parameter: from / offsetPeer), so a warm that failed or was skipped
+	// never denies them.
+	if peer.Type == PeerChannel {
+		return InputPeer{}, w.channelResolveError(peer.ID, ran, warmErr)
 	}
 
 	return peer, nil
@@ -2040,46 +2057,130 @@ func (w *Wrapper) serverConfig(ctx context.Context) (*cachedServerConfig, error)
 // warmDialogsCache paginates the full dialog list once per throttle window
 // to populate the peer cache with access hashes for all joined chats.
 // Called on cold cache miss for numeric peer IDs that require access_hash.
-// Best-effort: errors after the first page are silently ignored so that
-// partial warming still benefits subsequent lookups.
-func (w *Wrapper) warmDialogsCache(ctx context.Context) {
-	now := time.Now().UnixNano()
+// Peers cached by pages that did succeed still help subsequent lookups —
+// ResolvePeer consults the cache before treating a miss as terminal.
+//
+// Concurrency: a singleflight collapses racing callers onto ONE warm, so
+// a caller that arrives while a warm is in flight WAITS for it and then
+// observes the same populated cache — it cannot see a premature miss and
+// report a channel absent while the warm is still running. The completion
+// stamp is written only AFTER a warm succeeds (like serverConfig), so a
+// failed warm never latches the throttle and the next lookup retries.
+//
+// It reports whether a fresh scan happened this call (ran) — false ONLY
+// when the outer throttle skipped the warm; when a concurrent caller's
+// scan is shared through the singleflight, ran is still true because a
+// fresh scan did complete. The error is non-nil only when a warm RAN and
+// a folder was not scanned to exhaustion (page error or ErrDialogScanLimit).
+// ResolvePeer needs both: ran tells "fresh negative" from "throttled,
+// possibly stale", and err tells "could not look" from "looked and missed".
+func (w *Wrapper) warmDialogsCache(ctx context.Context) (bool, error) {
+	if w.warmThrottled() {
+		return false, nil
+	}
+
+	_, err, _ := w.warmSF.Do("dialogs", func() (any, error) {
+		// A warm that a racing caller just completed makes ours redundant.
+		if w.warmThrottled() {
+			return struct{}{}, nil
+		}
+
+		e := w.paginateWarmDialogs(ctx)
+		if e == nil {
+			w.warmedAt.Store(time.Now().UnixNano())
+		}
+
+		return struct{}{}, e
+	})
+	if err != nil {
+		return true, errors.Wrap(err, "warming dialog cache")
+	}
+
+	return true, nil
+}
+
+// warmThrottled reports whether a warm completed within the throttle
+// window. The stamp is set only on success, so a set-and-recent stamp
+// always follows a warm that finished.
+func (w *Wrapper) warmThrottled() bool {
 	prev := w.warmedAt.Load()
 
-	if prev != 0 && now-prev < int64(warmDialogsThrottle) {
-		return
+	return prev != 0 && time.Now().UnixNano()-prev < int64(warmDialogsThrottle)
+}
+
+// channelResolveError classifies a numeric-channel cache miss after a warm
+// attempt. Only a fresh scan that ran this call AND completed proves the
+// channel absent (ErrChannelNotCached, terminal). A warm that did not
+// complete is inconclusive (surface its error), and a warm skipped by the
+// throttle rests on a possibly-stale scan — invalidate the stamp so a
+// retry re-scans, and report the retryable ErrChannelWarmStale.
+func (w *Wrapper) channelResolveError(channelID int64, ran bool, warmErr error) error {
+	if warmErr != nil {
+		return errors.Wrap(warmErr, "resolving channel")
 	}
 
-	if !w.warmedAt.CompareAndSwap(prev, now) {
-		return
+	if !ran {
+		w.warmedAt.Store(0)
+
+		return errors.Wrapf(ErrChannelWarmStale, "channel %d", channelID)
 	}
 
-	err := w.paginateWarmDialogs(ctx)
-	if err != nil {
-		w.warmedAt.Store(prev)
-	}
+	return errors.Wrapf(ErrChannelNotCached, "channel %d", channelID)
 }
 
 func (w *Wrapper) paginateWarmDialogs(ctx context.Context) error {
+	// Scan the main list (folder 0, left implicit so the request stays
+	// byte-identical to a plain listing) AND the archive — always both,
+	// even if one fails. An archived channel lives only in folder 1, so a
+	// main-folder failure (a page error, or the scan cap on a huge list)
+	// must not skip the archive; the target may be cached there and
+	// ResolvePeer's cache check would then still succeed. A folder not
+	// scanned to exhaustion is remembered as an incomplete warm, so the
+	// caller leaves the throttle unlatched and ResolvePeer withholds the
+	// terminal "not cached" verdict — but only after every folder was
+	// given its chance to seed the cache.
+	var warmErr error
+
+	for _, folderID := range []int{0, warmArchiveFolderID} {
+		err := w.warmFolder(ctx, folderID)
+		if err != nil && warmErr == nil {
+			warmErr = err
+		}
+	}
+
+	return warmErr
+}
+
+// warmFolder paginates one peer folder into the cache. It succeeds (nil)
+// only when the folder is scanned to exhaustion — the server returns a
+// complete *tg.MessagesDialogs or a page yields no cursor. Every other
+// exit is an error, because the terminal "channel not cached" verdict may
+// only be drawn from a fully-scanned folder: a page fetch that fails, or
+// the safety bound reached with the folder still not exhausted
+// (ErrDialogScanLimit), both leave the channel's absence unproven. Peers
+// cached by earlier pages still help — ResolvePeer consults the cache
+// before treating a miss as terminal.
+func (w *Wrapper) warmFolder(ctx context.Context, folderID int) error {
 	var (
 		offsetDate int
 		offsetID   int
 		offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
 	)
 
-	for page := range warmDialogsMaxPages {
-		result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+	for range warmDialogsMaxPages {
+		req := &tg.MessagesGetDialogsRequest{
 			OffsetDate: offsetDate,
 			OffsetID:   offsetID,
 			OffsetPeer: offsetPeer,
 			Limit:      warmDialogsPageLimit,
-		})
-		if err != nil {
-			if page == 0 {
-				return errors.Wrap(err, "warming dialog cache")
-			}
+		}
+		if folderID != 0 {
+			req.SetFolderID(folderID)
+		}
 
-			return nil
+		result, err := w.api.MessagesGetDialogs(ctx, req)
+		if err != nil {
+			return errors.Wrap(err, "fetching dialog page")
 		}
 
 		w.cacheDialogPeers(extractDialogs(result))
@@ -2094,12 +2195,10 @@ func (w *Wrapper) paginateWarmDialogs(ctx context.Context) error {
 			return nil
 		}
 
-		offsetDate = next.date
-		offsetID = next.id
-		offsetPeer = next.peer
+		offsetDate, offsetID, offsetPeer = next.date, next.id, next.peer
 	}
 
-	return nil
+	return errors.Wrapf(ErrDialogScanLimit, "folder %d", folderID)
 }
 
 type dialogOffset struct {

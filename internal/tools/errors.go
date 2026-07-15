@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
@@ -13,6 +14,13 @@ var ErrValidation = errors.New("validation error")
 
 // ErrTelegram indicates a failure communicating with the Telegram API.
 var ErrTelegram = errors.New("telegram request error")
+
+// ErrFloodWait indicates Telegram rate-limited the request (FLOOD_WAIT) and the
+// auto-retry middleware exhausted its attempts without the call succeeding. The
+// wrapped message carries a readable "retry after Ns" so the caller can back off
+// and retry later — the server stays alive; this is a surfaced rate-limit, not a
+// crash.
+var ErrFloodWait = errors.New("flood wait")
 
 // ErrPeerRequired is returned when a peer parameter is missing.
 var ErrPeerRequired = errors.New("peer is required")
@@ -187,9 +195,11 @@ var ErrQueryOrFilterRequired = errors.New("query or filter is required")
 var ErrSearchCriteriaRequired = errors.New("query, filter or from is required")
 
 // ErrFromUnresolved is returned when the sender filter resolves without
-// an access hash — a numeric ID the client has never seen resolves with
-// hash 0 and a nil error, and sending it on would fail with a server
-// error naming neither the parameter nor the remedy.
+// an access hash — a numeric USER ID the client has never seen resolves
+// with hash 0 and a nil error, and sending it on would fail with a server
+// error naming neither the parameter nor the remedy. (A never-seen
+// numeric channel sender instead surfaces ErrChannelNotCached from
+// ResolvePeer's warm.)
 var ErrFromUnresolved = errors.New(
 	"from resolved without an access hash; pass @username, or look the peer up via tg_dialogs_list first",
 )
@@ -204,9 +214,11 @@ var ErrPartialCursor = errors.New(
 )
 
 // ErrOffsetPeerUnresolved is returned when the pagination cursor's peer
-// resolves without an access hash — typical after a restart cleared the
-// peer cache that the previous page had seeded. Sending it on would
-// fail with a server error naming neither the parameter nor the fix.
+// resolves without an access hash — a numeric USER cursor, typically
+// after a restart cleared the peer cache the previous page had seeded.
+// Sending it on would fail with a server error naming neither the
+// parameter nor the fix. (A numeric channel cursor instead surfaces
+// ErrChannelNotCached from ResolvePeer's warm.)
 var ErrOffsetPeerUnresolved = errors.New(
 	"offsetPeer resolved without an access hash; re-run the first page to seed the peer cache",
 )
@@ -312,6 +324,14 @@ func explainMTProtoCode(raw string) string {
 func wrapTelegramError(err error) error {
 	if err == nil {
 		return nil
+	}
+
+	// FLOOD_WAIT reaches here only after the retry middleware gives up. Mark it
+	// with the ErrFloodWait sentinel and a readable "retry after Ns" so a caller
+	// can back off, instead of a raw code or literal JSON.
+	if wait, ok := tgerr.AsFloodWait(err); ok {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrapf supplies the readable retry hint.
+		return errors.Mark(errors.Wrapf(err, "flood wait: retry after %ds", int(wait.Seconds())), ErrFloodWait)
 	}
 
 	if explanation := explainMTProtoCode(err.Error()); explanation != "" {

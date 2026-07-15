@@ -123,6 +123,29 @@ func TestExtractPeer_ChatMessages(t *testing.T) {
 	}
 }
 
+func TestChatMessagesPeer_RequiresMessagesSuffix(t *testing.T) {
+	// A chat-messages URI yields its peer.
+	if got := ChatMessagesPeer("tg://chat/" + testPeer + "/messages"); got != testPeer {
+		t.Errorf("ChatMessagesPeer(messages) = %q, want %q", got, testPeer)
+	}
+
+	// A bare chat-info URI (no /messages) must NOT match — the subscribe
+	// handler relies on this to ignore the info resource.
+	if got := ChatMessagesPeer("tg://chat/" + testPeer); got != "" {
+		t.Errorf("ChatMessagesPeer(chat info) = %q, want empty", got)
+	}
+
+	// Wrong scheme yields empty.
+	if got := ChatMessagesPeer("other://chat/" + testPeer + "/messages"); got != "" {
+		t.Errorf("ChatMessagesPeer(wrong scheme) = %q, want empty", got)
+	}
+
+	// Numeric peer round-trips verbatim (the live-smoke shape).
+	if got := ChatMessagesPeer("tg://chat/777000/messages"); got != "777000" {
+		t.Errorf("ChatMessagesPeer(numeric) = %q, want %q", got, "777000")
+	}
+}
+
 func TestExtractPeer_WrongScheme(t *testing.T) {
 	got := extractPeer("other://chat/someone")
 	if got != "" {

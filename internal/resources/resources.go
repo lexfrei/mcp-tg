@@ -172,3 +172,22 @@ func extractPeer(uri string) string {
 
 	return before
 }
+
+// ChatMessagesPeer extracts the peer identifier from a chat-messages resource
+// URI (tg://chat/<peer>/messages). Unlike extractPeer it REQUIRES the /messages
+// suffix, returning "" for a bare tg://chat/<peer> info URI or any non-chat URI.
+// The subscribe/unsubscribe handlers use this to watch only the messages
+// resource and ignore the chat-info resource, which has nothing to push.
+func ChatMessagesPeer(uri string) string {
+	after, found := strings.CutPrefix(uri, chatURIPrefix)
+	if !found {
+		return ""
+	}
+
+	peer, found := strings.CutSuffix(after, messagesSuffix)
+	if !found {
+		return ""
+	}
+
+	return peer
+}

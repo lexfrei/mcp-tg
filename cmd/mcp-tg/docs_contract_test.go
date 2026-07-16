@@ -568,8 +568,13 @@ func TestMarkdownlintPin_AllSitesAgree(t *testing.T) {
 	for _, site := range markdownlintPinSites {
 		body := readDocsPage(t, site)
 
-		if strings.Contains(body, "markdownlint-cli2 ") {
-			t.Errorf("%s runs markdownlint-cli2 without pinning a version", site)
+		// Only invocations, not prose about the tool: a comment reading
+		// "markdownlint-cli2 v0.23.0" is not an unpinned install.
+		for line := range strings.SplitSeq(body, "\n") {
+			invocation := strings.TrimSpace(line)
+			if !strings.HasPrefix(invocation, "#") && strings.Contains(invocation, "markdownlint-cli2 ") {
+				t.Errorf("%s runs markdownlint-cli2 without pinning a version: %q", site, invocation)
+			}
 		}
 
 		matches := markdownlintPin.FindAllStringSubmatch(body, -1)
@@ -893,7 +898,8 @@ func TestDocsTransport_NamesTheImplementedOne(t *testing.T) {
 	}
 
 	for _, page := range docsPages(t) {
-		if strings.Contains(readDocsPage(t, page), "SSE") {
+		// The word, not the substring: ADDRESSES is not a transport.
+		if regexp.MustCompile(`\bSSE\b`).MatchString(readDocsPage(t, page)) {
 			t.Errorf("%s advertises SSE, but the server builds a Streamable HTTP handler and "+
 				"never calls mcp.NewSSEHandler — they are different transports", page)
 		}

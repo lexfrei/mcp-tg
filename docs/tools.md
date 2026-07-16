@@ -1,6 +1,6 @@
 # Tool Reference
 
-Every tool that takes a `peer` accepts the identifier formats described in [Peers](peers.md). Tools that send or edit text require `parseMode` — see [Messages](messages.md).
+Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
 ## Tools (78)
 

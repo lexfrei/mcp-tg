@@ -2,7 +2,7 @@ package tools
 
 // Tests pinning the v0.11.0 audit findings on the tools layer. Each
 // TestAudit_* corresponds to one finding from the UX audit shipped in
-// v0.12.0. See https://mcp-tg.lexfrei.dev/messages/#markdown-known-limitations for the deliberately-deferred
+// v0.12.0. See https://mcp-tg.lexfrei.dev/guides/messages/#markdown-known-limitations for the deliberately-deferred
 // cases (none on the tools layer in this PR — all tools-layer findings are
 // fixed).
 

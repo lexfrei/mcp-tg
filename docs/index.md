@@ -6,9 +6,9 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 ## Start here
 
-- [Installation](installation.md) — Homebrew, container, or a release binary
-- [Authentication](authentication.md) — the `mcp-tg login` flow and where the session is stored
-- [Configuration](configuration.md) — environment variables and command-line flags
+- [Installation](getting-started/installation.md) — Homebrew, container, or a release binary
+- [Authentication](getting-started/authentication.md) — the `mcp-tg login` flow and where the session is stored
+- [Configuration](getting-started/configuration.md) — environment variables and command-line flags
 - [Tools](tools.md) — the full tool reference
 
 ## MCP Protocol Support
@@ -38,12 +38,12 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 ## Guides
 
-- [Messages](messages.md) — output format, `parseMode`, markdown limitations
-- [Peers](peers.md) — identifier shape and resolution
-- [Search](search.md) — server-side filters and cursor pagination
-- [Resources and prompts](resources.md) — including chat subscriptions
-- [Posting as a channel](send-as.md) — the `sendAs` identity
-- [Reactions](reactions.md) — standard and custom-emoji encoding
+- [Messages](guides/messages.md) — output format, `parseMode`, markdown limitations
+- [Peers](guides/peers.md) — identifier shape and resolution
+- [Search](guides/search.md) — server-side filters and cursor pagination
+- [Resources and prompts](guides/resources.md) — including chat subscriptions
+- [Posting as a channel](guides/send-as.md) — the `sendAs` identity
+- [Reactions](guides/reactions.md) — standard and custom-emoji encoding
 - [Building](building.md) — requirements, building from source, transport modes
 
 ## License

@@ -1,0 +1,19 @@
+# Documentation site dependencies. Pinned, like every action SHA in this
+# repository: MkDocs 2.0 removes the plugin system and the theming system with
+# no migration path, and markdownlint-style tools add rules in minor releases —
+# either would break a build that had not changed.
+#
+# Only what mkdocs.yml actually loads. There is no `mike` here: this site is not
+# versioned, and no `pillow`/`cairosvg` either — those are for Material's social
+# card generator, which needs the `social` plugin we do not enable (`extra.social`
+# is just the footer links, a different thing).
+
+# MkDocs core
+mkdocs==1.6.1
+
+# Material theme
+mkdocs-material==9.7.6
+
+# Plugins
+mkdocs-git-revision-date-localized-plugin==1.5.3
+mkdocs-minify-plugin==0.8.0

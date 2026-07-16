@@ -28,8 +28,8 @@ import (
 // itself.
 const (
 	docsToolsPage    = "../../docs/tools.md"
-	docsSearchPage   = "../../docs/search.md"
-	docsMessagesPage = "../../docs/messages.md"
+	docsSearchPage   = "../../docs/guides/search.md"
+	docsMessagesPage = "../../docs/guides/messages.md"
 	readmePage       = "../../README.md"
 	mkdocsConfig     = "../../mkdocs.yml"
 
@@ -404,7 +404,7 @@ func TestDocsGoVersion_MatchesGoMod(t *testing.T) {
 	}
 }
 
-var docsConfigPage = "../../docs/configuration.md"
+var docsConfigPage = "../../docs/getting-started/configuration.md"
 
 // TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault pins the one env var
 // whose default cannot be written as a literal path. The code builds it
@@ -435,41 +435,37 @@ func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
 	}
 }
 
-const prWorkflow = "../../.github/workflows/pr.yml"
+const (
+	docsValidateWorkflow = "../../.github/workflows/docs-validate.yaml"
+	docsDeployWorkflow   = "../../.github/workflows/docs.yaml"
+)
 
-// requiredPRJobs are the jobs master's branch protection requires. A
-// check that is not one of these does not block a merge, so a gate
-// placed outside them is advisory no matter what its comment claims.
-// Hand-maintained by necessity: a test cannot read the setting.
-var requiredPRJobs = []string{"test"}
+// requiredDocsSteps are the gates the documentation PR check must run.
+// Both see what no Go test can: the site build covers relative links and
+// anchors inside docs/ (TestDocsSiteURLs_ResolveToPages reads absolute URLs
+// only), and the Markdown lint covers what its config has always described.
+var requiredDocsSteps = []string{"mkdocs build --strict", "markdownlint-cli2-action"}
 
-// requiredPRSteps are the docs gates that must run inside one of those
-// jobs. Both check something no other test can see — the site build
-// covers relative links and anchors inside docs/, which
-// TestDocsSiteURLs_ResolveToPages cannot (it reads absolute URLs only);
-// the Markdown lint covers everything its config has always described
-// and nothing ever enforced.
-var requiredPRSteps = []string{"mkdocs build --strict", "markdownlint-cli2@"}
-
-// TestDocsGates_RunInARequiredJob pins each docs gate inside a job whose
-// check is required. The site build began as a standalone `docs` job,
-// which is not in master's required contexts (Lint, Test, Build (amd64),
-// Build (arm64)) and which nothing in the graph depends on — so a PR
-// breaking a relative link merged green, pages.yml then failed on
-// master, and the site quietly stopped updating with the last good build
-// still served.
+// TestDocsGates_RunOnPullRequests pins both gates into the documentation
+// validation workflow, and pins the paths that must trigger it: a filter
+// that misses a file the build reads means the gate does not run for the
+// change that breaks it.
 //
-// Every gate here needs the same pin, not just the first one: the lint
-// was added beside the build with the same comment claiming the same
-// protection, and could have been moved back out to an advisory job with
-// nothing going red.
-func TestDocsGates_RunInARequiredJob(t *testing.T) {
-	body := readDocsPage(t, prWorkflow)
+// Note the limit of what a file can pin: whether this check is REQUIRED to
+// merge is a branch-protection setting, not a file in the repository.
+func TestDocsGates_RunOnPullRequests(t *testing.T) {
+	body := readDocsPage(t, docsValidateWorkflow)
 
-	for _, step := range requiredPRSteps {
-		if !stepRunsInARequiredJob(t, body, step) {
-			t.Errorf("no required job in pr.yml runs %q (required jobs: %v) — "+
-				"a failure would not block a merge", step, requiredPRJobs)
+	for _, step := range requiredDocsSteps {
+		if !strings.Contains(body, step) {
+			t.Errorf("%s no longer runs %q — a broken docs build would reach master unseen",
+				docsValidateWorkflow, step)
+		}
+	}
+
+	for _, path := range []string{"docs/**", "mkdocs.yml", "requirements-docs.txt"} {
+		if !strings.Contains(body, path) {
+			t.Errorf("%s does not trigger on %q, so a change there skips the gate", docsValidateWorkflow, path)
 		}
 	}
 }
@@ -489,10 +485,10 @@ var mkdocsQuietFlag = regexp.MustCompile(`mkdocs build[^\n]*\s(--quiet|-q)\b`)
 // the noise somebody reaches for --quiet to silence — and the gate would
 // go on reporting success while checking nothing.
 //
-// TestDocsGates_RunInARequiredJob cannot see this: `mkdocs build --strict
+// TestDocsGates_RunOnPullRequests cannot see this: `mkdocs build --strict
 // --quiet` still contains the string it looks for.
 func TestMkdocsBuild_IsNotQuiet(t *testing.T) {
-	for _, workflow := range []string{prWorkflow, "../../.github/workflows/pages.yml"} {
+	for _, workflow := range []string{docsValidateWorkflow, docsDeployWorkflow} {
 		if match := mkdocsQuietFlag.FindString(readDocsPage(t, workflow)); match != "" {
 			t.Errorf("%s runs %q — --quiet suppresses the warnings --strict counts, "+
 				"so the build reports success while catching nothing", workflow, match)
@@ -500,167 +496,90 @@ func TestMkdocsBuild_IsNotQuiet(t *testing.T) {
 	}
 }
 
-// TestWorkflowJob_StopsAtTheNextJob pins the slicing that every gate
-// check rests on. With a narrower job-key class the `test` block ran on
-// into the following job, so a gate moved OUT of the required job was
-// still found inside it and TestDocsGates_RunInARequiredJob passed while
-// the gate no longer blocked anything — the exact regression it exists
-// to catch, defeated by its own helper.
-func TestWorkflowJob_StopsAtTheNextJob(t *testing.T) {
-	// Job keys GitHub allows and a lowercase-only class would miss.
-	for _, next := range []string{"docs_build", "Docs", "docs-build", "docs"} {
-		t.Run("stops before "+next, func(t *testing.T) {
-			workflow := "jobs:\n  test:\n    steps:\n      - run: go test ./...\n\n  " +
-				next + ":\n    steps:\n      - run: mkdocs build --strict\n"
+var actionUses = regexp.MustCompile(`(?m)^\s*uses:\s*([^\s@]+)@([^\s]+)(\s*#\s*(\S+))?`)
 
-			block := workflowJob(t, workflow, "test")
+// TestDocsWorkflows_PinActionsBySHA pins every action the docs workflows use
+// to a full commit SHA carrying a version comment, as the rest of this
+// repository does. These workflows publish the site and run on master with
+// `pages: write` and `id-token: write`, so a moving tag would let a retagged
+// action execute unreviewed code with those permissions.
+func TestDocsWorkflows_PinActionsBySHA(t *testing.T) {
+	sha := regexp.MustCompile(`^[0-9a-f]{40}$`)
+	checked := 0
 
-			if strings.Contains(block, "mkdocs build --strict") {
-				t.Errorf("workflowJob(test) swallowed the %q job's steps: %q", next, block)
+	for _, workflow := range []string{docsValidateWorkflow, docsDeployWorkflow} {
+		for _, use := range actionUses.FindAllStringSubmatch(readDocsPage(t, workflow), -1) {
+			checked++
+
+			action, ref, comment := use[1], use[2], use[4]
+
+			if !sha.MatchString(ref) {
+				t.Errorf("%s pins %s@%s, which is a moving ref — use a full commit SHA", workflow, action, ref)
 			}
 
-			if !strings.Contains(block, "go test ./...") {
-				t.Errorf("workflowJob(test) lost its own steps: %q", block)
+			if comment == "" {
+				t.Errorf("%s pins %s by SHA with no version comment — nobody can tell what it is", workflow, action)
 			}
-		})
-	}
-}
-
-func stepRunsInARequiredJob(t *testing.T, workflow, step string) bool {
-	t.Helper()
-
-	for _, job := range requiredPRJobs {
-		if strings.Contains(workflowJob(t, workflow, job), step) {
-			return true
 		}
 	}
 
-	return false
+	if checked == 0 {
+		t.Error("no actions found in the docs workflows — this test has stopped checking anything")
+	}
 }
 
-// workflowJobKey matches a job key at the workflow's job indent.
-// GitHub's grammar is [A-Za-z_][A-Za-z0-9_-]*, and the class must match
-// it: a narrower one fails to see the NEXT job's key, so the slice runs
-// past the end of the block and swallows that job's steps — which would
-// let a gate moved into a `docs_build:` job read as though it still ran
-// inside the required one. `pull_request:` in this very workflow shows
-// the underscore is not hypothetical.
-var workflowJobKey = regexp.MustCompile(`(?m)^  [A-Za-z_][A-Za-z0-9_-]*:$`)
+var (
+	mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
+	pipInstallDirect  = regexp.MustCompile(`pip install\s+(?:--upgrade\s+)?mkdocs`)
+)
 
-// workflowJob returns one job's block from a workflow, by slicing from
-// its two-space-indented key to the next one. Comment lines are dropped:
-// a step search over raw YAML would otherwise match a comment that
-// merely quotes the command, so deleting the step while leaving prose
-// about it would pass vacuously.
-func workflowJob(t *testing.T, workflow, job string) string {
-	t.Helper()
+const requirementsDocs = "../../requirements-docs.txt"
 
-	start := strings.Index(workflow, "\n  "+job+":\n")
-	if start < 0 {
-		t.Fatalf("pr.yml has no `%s` job", job)
+// The docs that tell a human how to build the site. They must defer to
+// requirements-docs.txt rather than restate a version: a second copy is a
+// second thing to bump, which is the drift this whole file exists to stop.
+var pipInstallSites = []string{"../../CLAUDE.md", readmePage}
+
+// TestMkdocsMaterialPin_LivesInRequirements pins the version to exactly one
+// place. MkDocs 2.0 removes the plugin system and the theming system with no
+// migration path, so an unpinned install breaks this site on release day —
+// and a version restated in a second file breaks it the day the two disagree,
+// which is worse, because the build stays green while a contributor renders a
+// different site than CI publishes.
+func TestMkdocsMaterialPin_LivesInRequirements(t *testing.T) {
+	requirements := readDocsPage(t, requirementsDocs)
+
+	pinned := mkdocsMaterialPin.FindStringSubmatch(requirements)
+	if pinned == nil {
+		t.Fatalf("%s does not pin mkdocs-material to an exact version", requirementsDocs)
 	}
 
-	rest := workflow[start+1:]
+	// Every dependency there, not just Material: an unpinned plugin drifts
+	// the same way.
+	for line := range strings.SplitSeq(requirements, "\n") {
+		dep := strings.TrimSpace(line)
+		if dep == "" || strings.HasPrefix(dep, "#") {
+			continue
+		}
 
-	if next := workflowJobKey.FindStringIndex(rest[1:]); next != nil {
-		rest = rest[:next[0]+1]
-	}
-
-	var steps []string
-
-	for line := range strings.SplitSeq(rest, "\n") {
-		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
-			steps = append(steps, line)
+		if !strings.Contains(dep, "==") {
+			t.Errorf("%s lists %q without an exact pin", requirementsDocs, dep)
 		}
 	}
 
-	return strings.Join(steps, "\n")
-}
-
-var markdownlintPin = regexp.MustCompile(`markdownlint-cli2@(\d+\.\d+\.\d+)`)
-
-// Every file that names a markdownlint-cli2 version. `npx markdownlint-cli2`
-// without one resolves to whatever is latest at run time, and markdownlint
-// adds rules in minor releases — so an unpinned invocation in a REQUIRED
-// job turns red on an unrelated PR the day a new rule ships.
-var markdownlintPinSites = []string{"../../.github/workflows/pr.yml", "../../CLAUDE.md"}
-
-// TestMarkdownlintPin_AllSitesAgree pins the linter version across the
-// workflow that gates on it and the doc that tells contributors how to
-// run it, so the two cannot be different engines.
-func TestMarkdownlintPin_AllSitesAgree(t *testing.T) {
-	sitesByVersion := make(map[string][]string, 1)
-
-	for _, site := range markdownlintPinSites {
+	for _, site := range pipInstallSites {
 		body := readDocsPage(t, site)
 
-		// Only invocations, not prose about the tool: a comment reading
-		// "markdownlint-cli2 v0.23.0" is not an unpinned install.
-		for line := range strings.SplitSeq(body, "\n") {
-			invocation := strings.TrimSpace(line)
-			if !strings.HasPrefix(invocation, "#") && strings.Contains(invocation, "markdownlint-cli2 ") {
-				t.Errorf("%s runs markdownlint-cli2 without pinning a version: %q", site, invocation)
-			}
+		if match := pipInstallDirect.FindString(body); match != "" {
+			t.Errorf("%s runs %q instead of `pip install --requirement %s` — "+
+				"a second copy of the version is a second thing to bump",
+				site, match, filepath.Base(requirementsDocs))
 		}
 
-		matches := markdownlintPin.FindAllStringSubmatch(body, -1)
-		if matches == nil {
-			t.Errorf("%s names no markdownlint-cli2 version", site)
-
-			continue
+		if restated := mkdocsMaterialPin.FindStringSubmatch(body); restated != nil && restated[1] != pinned[1] {
+			t.Errorf("%s names mkdocs-material %s, %s pins %s",
+				site, restated[1], requirementsDocs, pinned[1])
 		}
-
-		for _, match := range matches {
-			sitesByVersion[match[1]] = append(sitesByVersion[match[1]], site)
-		}
-	}
-
-	if len(sitesByVersion) > 1 {
-		t.Errorf("markdownlint-cli2 is pinned to %d different versions: %v", len(sitesByVersion), sitesByVersion)
-	}
-}
-
-var mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
-
-// Every file that tells someone — a runner or a contributor — which
-// mkdocs-material to install. They must agree: MkDocs 2.0 removes the
-// plugin and theming systems with no migration path, so an unpinned or
-// differently-pinned local install renders a different site than the one
-// CI publishes.
-var mkdocsPinSites = []string{
-	"../../.github/workflows/pages.yml",
-	"../../.github/workflows/pr.yml",
-	"../../CLAUDE.md",
-	readmePage,
-}
-
-// TestMkdocsMaterialPin_AllSitesAgree pins the version across all four
-// places that name it. The README told contributors to install it
-// unpinned while all three other sites pinned it — the exact drift the
-// pin exists to prevent, in a repository that pins every action SHA.
-func TestMkdocsMaterialPin_AllSitesAgree(t *testing.T) {
-	// Keyed by version so a disagreement names every site on each side,
-	// rather than comparing against a chosen file that may itself be the
-	// one that lost its pin.
-	sitesByVersion := make(map[string][]string, 1)
-
-	for _, site := range mkdocsPinSites {
-		// Every pin in the file, not just the first: a second, different
-		// pin further down is exactly the drift this guards.
-		matches := mkdocsMaterialPin.FindAllStringSubmatch(readDocsPage(t, site), -1)
-		if matches == nil {
-			t.Errorf("%s installs mkdocs-material without pinning a version", site)
-
-			continue
-		}
-
-		for _, match := range matches {
-			sitesByVersion[match[1]] = append(sitesByVersion[match[1]], site)
-		}
-	}
-
-	if len(sitesByVersion) > 1 {
-		t.Errorf("mkdocs-material is pinned to %d different versions: %v", len(sitesByVersion), sitesByVersion)
 	}
 }
 
@@ -758,37 +677,6 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 	return false
 }
 
-// A published docs link, with the optional heading anchor captured:
-// https://mcp-tg.lexfrei.dev/building/#transport-modes
-//
-// The page group takes `\w`, not a lowercase-only charset, for the same
-// reason the anchor group does: a link with a capital (/Installation/)
-// would otherwise match nothing and go unchecked, rather than failing
-// honestly against a page that does not exist.
-//
-// The page group spans nested segments, because docsPages walks docs/
-// recursively and a page at docs/guides/foo.md is a legal nav entry
-// serving /guides/foo/. Matching one segment would read that as the page
-// "guides" and fail a correct link against a docs/guides.md that never
-// existed — the two halves of this test must agree on what a page is.
-//
-// The trailing slash is OPTIONAL, and that matters: requiring it made a
-// slash-less link match nothing at all, so it was never checked. With
-// use_directory_urls a page is served as <page>/index.html, so
-// /ghost-page redirects to /ghost-page/ and 404s when the page does not
-// exist — a dead link that the scan silently skipped. The segment still
-// needs at least one character, so a bare domain link (the README's own
-// `[mcp-tg.lexfrei.dev](https://mcp-tg.lexfrei.dev)`) stays unmatched.
-//
-// The anchor charset must agree with slugifyHeading, and `\w` is what
-// does it. Anything narrower breaks in both directions: `_` is a legal
-// slug character (`tg_messages_list` anchors as itself), so a charset
-// without it truncates a correct link and reports a URL nobody wrote;
-// and an anchor starting outside the charset — `#Message-Output-Format`,
-// copied verbatim from a heading MkDocs slugs lowercase — makes the
-// optional group match EMPTY rather than fail, which skips the anchor
-// check entirely and passes a dead link. Capturing uppercase lets it
-// fail honestly instead.
 var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/((?:[\w-]+/)*[\w-]+)/?(?:#([\w-]+))?`)
 
 var (
@@ -893,7 +781,7 @@ func TestSlugifyHeading_MatchesMkdocs(t *testing.T) {
 // it as an anchor is a false PASS — a link to that non-existent anchor
 // would sail through and 404 on the site.
 func TestHeadingSlugs_IgnoreFencedComments(t *testing.T) {
-	slugs := headingSlugs(t, "../../docs/installation.md")
+	slugs := headingSlugs(t, "../../docs/getting-started/installation.md")
 
 	if slugs["the-same-file-feeds-this-shell-so-login-sees-the-credentials-too"] {
 		t.Error("headingSlugs treats a # comment inside a fenced block as a heading")
@@ -1018,15 +906,25 @@ func checkDocsSiteURLs(t *testing.T, path, body string) int {
 	for _, match := range docsSiteURL.FindAllStringSubmatch(body, -1) {
 		checked++
 
+		// use_directory_urls serves /a/b/ from either docs/a/b.md or
+		// docs/a/b/index.md — a section landing is the latter, so both
+		// spellings must be tried before calling a link dead.
 		page := "../../docs/" + match[1] + ".md"
+		index := "../../docs/" + match[1] + "/index.md"
 
 		// Membership in the real page set, NOT os.Stat: macOS is
 		// case-insensitive, so os.Stat("docs/Installation.md") happily
 		// resolves docs/installation.md and a link that 404s on the
 		// (case-sensitive) site passes on a maintainer's laptop while
 		// failing on Linux CI. Comparing names keeps both honest.
-		if !existingDocsPages(t)[page] {
-			t.Errorf("%s links to %s, but %s does not exist", path, match[0], page)
+		pages := existingDocsPages(t)
+
+		switch {
+		case pages[page]:
+		case pages[index]:
+			page = index
+		default:
+			t.Errorf("%s links to %s, but neither %s nor %s exists", path, match[0], page, index)
 
 			continue
 		}
@@ -1051,7 +949,7 @@ func TestCheckDocsSiteURLs_AcceptsAndRejects(t *testing.T) {
 	// this one included. A literal dead link here is indistinguishable
 	// from a real one, and would fail the very scan it is fixture for.
 	link := func(anchor string) string {
-		return docsSiteBase + "messages/" + "#" + anchor
+		return docsSiteBase + "guides/messages/" + "#" + anchor
 	}
 
 	// A real heading on that page. `_`-bearing slugs are legal, so a link
@@ -1083,7 +981,7 @@ func TestCheckDocsSiteURLs_AcceptsAndRejects(t *testing.T) {
 
 	// The same shape, alive, must still pass.
 	t.Run("slashless live page is accepted", func(t *testing.T) {
-		if got := countURLErrors(t, docsSiteBase+"messages"); got != 0 {
+		if got := countURLErrors(t, docsSiteBase+"guides/messages"); got != 0 {
 			t.Errorf("a correct slash-less link reported %d errors", got)
 		}
 	})
@@ -1223,7 +1121,7 @@ func TestDocsScopeValues_MatchTheCode(t *testing.T) {
 }
 
 var (
-	docsResourcesPage = "../../docs/resources.md"
+	docsResourcesPage = "../../docs/guides/resources.md"
 	docsBulletName    = regexp.MustCompile("(?m)^- `([^`]+)` —")
 	docsIndexPage     = "../../docs/index.md"
 	docsMiddlewareRow = regexp.MustCompile(`(?m)^\| Middleware \| ([^|]+?) \|`)

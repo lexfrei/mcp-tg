@@ -18,7 +18,7 @@ mcp-tg login                      # interactive, writes the session to the OS ke
 brew services start mcp-tg        # shared HTTP daemon on 127.0.0.1:8787
 ```
 
-The service runs the headless HTTP mode, so a single daemon serves every MCP client on the machine — point clients at it with `claude mcp add --transport http mcp-tg http://127.0.0.1:8787` (see [Transport modes](building.md#transport-modes)).
+The service runs the headless HTTP mode, so a single daemon serves every MCP client on the machine — point clients at it with `claude mcp add --transport http mcp-tg http://127.0.0.1:8787` (see [Transport modes](../building.md#transport-modes)).
 
 Do not reach for `sudo brew services start`: that installs a LaunchDaemon, which runs as root and reads the **System** keychain, while `mcp-tg login` wrote the session to your **login** keychain. The daemon would insist you log in, which you already did.
 
@@ -66,4 +66,4 @@ Or point every client at one already-running HTTP daemon instead of spawning a p
 claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 ```
 
-The trade-off between the two is described in [Transport modes](building.md#transport-modes).
+The trade-off between the two is described in [Transport modes](../building.md#transport-modes).

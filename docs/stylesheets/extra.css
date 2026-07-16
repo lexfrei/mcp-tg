@@ -1,0 +1,25 @@
+/* Telegram brand blue, applied in both schemes so the palette toggle keeps it. */
+:root {
+  --md-primary-fg-color: #2aabee;
+  --md-primary-fg-color--light: #5ec3f5;
+  --md-primary-fg-color--dark: #229ed9;
+  --md-accent-fg-color: #229ed9;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #229ed9;
+  --md-accent-fg-color: #5ec3f5;
+}
+
+/* The tool reference is one long list of `tg_*` names; keep them from wrapping
+   mid-identifier in the narrow content column. */
+.md-typeset code {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+/* Message-output examples are pre-formatted blocks whose alignment carries
+   meaning — let them scroll rather than reflow. */
+.md-typeset pre > code {
+  overflow-x: auto;
+}

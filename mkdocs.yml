@@ -1,50 +1,94 @@
-site_name: mcp-tg
-site_description: MCP server for Telegram Client API (MTProto) — 78 tools, 4 resources, 3 prompts.
-site_url: https://mcp-tg.lexfrei.dev/
-repo_url: https://github.com/lexfrei/mcp-tg
-repo_name: lexfrei/mcp-tg
-edit_uri: edit/master/docs/
-copyright: BSD 3-Clause License
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
 
+# Site metadata
+site_name: mcp-tg
+site_url: https://mcp-tg.lexfrei.dev
+site_author: Aleksei Sviridkin
+site_description: >-
+  MCP server for the Telegram Client API (MTProto).
+  78 tools, 4 resources and 3 prompts for managing a Telegram user account.
+
+# Repository
+repo_name: lexfrei/mcp-tg
+repo_url: https://github.com/lexfrei/mcp-tg
+edit_uri: edit/master/docs/
+
+# Copyright
+copyright: Copyright &copy; 2025-2026 Aleksei Sviridkin
+
+# Theme configuration
 theme:
   name: material
-  icon:
-    repo: fontawesome/brands/github
-  features:
-    - navigation.instant
-    - navigation.tracking
-    - navigation.top
-    - navigation.sections
-    - content.code.copy
-    - search.highlight
-    - search.suggest
+  language: en
+
+  # Color palette with auto/light/dark modes
   palette:
+    # Auto mode (follows system preference)
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: blue
+      accent: light blue
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
+    # Dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: blue
+      accent: light blue
       toggle:
         icon: material/brightness-4
-        name: Switch to light mode
+        name: Switch to auto mode
 
-# The docs-link contract test resolves /page/ and /page alike on the strength
-# of this being true (a page is served as <page>/index.html). It is the default,
-# but the tests depend on it, so it is stated rather than assumed.
-use_directory_urls: true
+  # Features
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tabs.link
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.progress
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
 
-# --strict only fails the build on warnings, and MkDocs reports a broken
-# anchor, an unrecognized link and a page missing from the nav at INFO —
-# so by default a link to a heading that no longer exists builds green.
-# The cross-page anchor links in docs/ are exactly what a docs split
-# breaks, so raise the three to warn and let --strict do what its comment
-# claims.
+  # Icons
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+    view: material/eye
+
+# Plugins
+plugins:
+  - search:
+      lang: en
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+      fallback_to_build_date: true
+  - minify:
+      minify_html: true
+
+# --strict only fails a build on WARNINGS, and MkDocs reports a dead anchor, an
+# unrecognized link and a page missing from the nav at INFO — only a broken link
+# to a PAGE warns by default. So --strict alone builds a docs split with a lost
+# cross-reference green, which is exactly the failure this site was split into.
+# Raise the three so the CI gate means what its comment claims. Verified on
+# 9.7.6: the anchor probe exits 0 without this block and 1 with it.
 validation:
   anchors: warn
   unrecognized_links: warn
@@ -52,29 +96,84 @@ validation:
     omitted_files: warn
     not_found: warn
 
-plugins:
-  - search
+# The docs-link contract test resolves /page/ and /page alike on the strength of
+# this being true (a page is served as <page>/index.html). It is the default, but
+# the tests depend on it, so it is stated rather than assumed.
+use_directory_urls: true
 
+# Markdown extensions
 markdown_extensions:
+  # Python Markdown
+  - abbr
   - admonition
   - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
   - tables
   - toc:
       permalink: true
-  - pymdownx.details
-  - pymdownx.superfences
+      toc_depth: 3
 
+  # PyMdown Extensions
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink:
+      repo_url_shorthand: true
+      user: lexfrei
+      repo: mcp-tg
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Extra configuration
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/lexfrei/mcp-tg
+      name: GitHub
+  generator: false
+
+# Extra CSS
+extra_css:
+  - stylesheets/extra.css
+
+# Navigation
 nav:
   - Home: index.md
-  - Installation: installation.md
-  - Configuration: configuration.md
-  - Authentication: authentication.md
+  - Getting Started:
+      - getting-started/index.md
+      - Installation: getting-started/installation.md
+      - Configuration: getting-started/configuration.md
+      - Authentication: getting-started/authentication.md
   - Tools: tools.md
   - Guides:
-      - Messages: messages.md
-      - Peers: peers.md
-      - Search: search.md
-      - Resources and Prompts: resources.md
-      - Posting as a channel: send-as.md
-      - Reactions: reactions.md
-  - Building and Transports: building.md
+      - guides/index.md
+      - Messages: guides/messages.md
+      - Peers: guides/peers.md
+      - Search: guides/search.md
+      - Resources and Prompts: guides/resources.md
+      - Posting as a channel: guides/send-as.md
+      - Reactions: guides/reactions.md
+  - Building: building.md

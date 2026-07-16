@@ -22,7 +22,7 @@ docker pull ghcr.io/lexfrei/mcp-tg:latest
 
 Binary: `darwin`, `linux` and `windows` archives for `amd64` and `arm64` are on the [releases page](https://github.com/lexfrei/mcp-tg/releases), each covered by a keyless cosign signature over `checksums.txt`.
 
-Details for every path: [Installation](https://mcp-tg.lexfrei.dev/installation/).
+Details for every path: [Installation](https://mcp-tg.lexfrei.dev/getting-started/installation/).
 
 ## Quickstart
 
@@ -47,21 +47,21 @@ Serving several MCP clients at once? Run one shared HTTP daemon instead of a pro
 Everything lives at **[mcp-tg.lexfrei.dev](https://mcp-tg.lexfrei.dev)**:
 
 - [Tools](https://mcp-tg.lexfrei.dev/tools/) — the full 78-tool reference
-- [Configuration](https://mcp-tg.lexfrei.dev/configuration/) — environment variables and flags
-- [Authentication](https://mcp-tg.lexfrei.dev/authentication/) — login, session storage, revoked-session recovery
-- [Messages](https://mcp-tg.lexfrei.dev/messages/) — output format, `parseMode`, markdown limitations
-- [Peers](https://mcp-tg.lexfrei.dev/peers/) — identifier format and resolution
-- [Search](https://mcp-tg.lexfrei.dev/search/) — server-side filters and pagination
-- [Resources and prompts](https://mcp-tg.lexfrei.dev/resources/) — including chat subscriptions
-- [Posting as a channel](https://mcp-tg.lexfrei.dev/send-as/) and [Reactions](https://mcp-tg.lexfrei.dev/reactions/)
+- [Configuration](https://mcp-tg.lexfrei.dev/getting-started/configuration/) — environment variables and flags
+- [Authentication](https://mcp-tg.lexfrei.dev/getting-started/authentication/) — login, session storage, revoked-session recovery
+- [Messages](https://mcp-tg.lexfrei.dev/guides/messages/) — output format, `parseMode`, markdown limitations
+- [Peers](https://mcp-tg.lexfrei.dev/guides/peers/) — identifier format and resolution
+- [Search](https://mcp-tg.lexfrei.dev/guides/search/) — server-side filters and pagination
+- [Resources and prompts](https://mcp-tg.lexfrei.dev/guides/resources/) — including chat subscriptions
+- [Posting as a channel](https://mcp-tg.lexfrei.dev/guides/send-as/) and [Reactions](https://mcp-tg.lexfrei.dev/guides/reactions/)
 - [Building](https://mcp-tg.lexfrei.dev/building/) — requirements, building from source, transport modes
 
 ## Contributing
 
-The site is built from `docs/` with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and deploys on every push to `master`. To preview locally:
+The site is built from `docs/` with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and deploys on every push to `master`. Dependencies are pinned in `requirements-docs.txt`. To preview locally:
 
 ```bash
-pip install mkdocs-material==9.7.6
+pip install --requirement requirements-docs.txt
 mkdocs serve
 ```
 

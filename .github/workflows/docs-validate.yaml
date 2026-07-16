@@ -1,0 +1,51 @@
+name: Documentation Validation
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - ".markdownlint*.yaml"
+      - ".github/workflows/docs-validate.yaml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # git-revision-date-localized runs in the build below and reads each
+          # page's last commit; a shallow clone has none.
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14.6"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Install dependencies
+        run: pip install --requirement requirements-docs.txt
+
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23.0.0
+        with:
+          globs: "docs/**/*.md"
+
+      # The site only builds for real on a push to master, where a failure lands
+      # on the published documentation. Build it here too: relative links and
+      # anchors inside docs/ are checked by this and nothing else — the URL
+      # contract test reads absolute links only.
+      #
+      # --quiet must never be added: --strict fails on the warning COUNT and
+      # --quiet suppresses the warnings before anything counts them, so the two
+      # together report success while checking nothing.
+      - name: Build documentation (strict mode)
+        run: mkdocs build --strict

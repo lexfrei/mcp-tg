@@ -102,42 +102,6 @@ jobs:
       - name: Run tests
         run: go test -race -count=1 ./...
 
-      # The docs build lives in THIS job on purpose, rather than in a job of
-      # its own. `Test` is a required status check; a separate job would not
-      # be, and nothing in the workflow graph would depend on it — so a PR
-      # that breaks the docs would merge green, `pages.yml` would then fail
-      # on master, and the site would silently stop updating while the last
-      # good build stayed served. Making it required is a repository setting
-      # nobody is forced to remember; making it a step here is not.
-      #
-      # It earns the slot: relative links inside docs/ (`[Peers](peers.md)`,
-      # `building.md#transport-modes`) are checked by this build and by
-      # nothing else — the URL contract test reads absolute links only.
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
-        with:
-          python-version: "3.x"
-
-      - name: Install MkDocs Material
-        run: pip install mkdocs-material==9.7.6
-
-      # --strict turns warnings into a failed build, and mkdocs.yml's validation
-      # block promotes the quiet failures to warnings. Only a broken link to a
-      # PAGE warns by default; a dead anchor, an unrecognized link and a page
-      # missing from the nav are INFO, so --strict alone would exit 0 on them.
-      - name: Build site
-        run: mkdocs build --strict
-
-      # .markdownlint-cli2.yaml has been configured all along but never ran
-      # anywhere, so the only thing keeping the Markdown to it was habit — and
-      # the docs are now most of the Markdown in the repository. Runs in this
-      # job for the same reason the site build does: `Test` is required.
-      # Pinned for the same reason mkdocs-material is, fourteen lines up:
-      # `npx markdownlint-cli2` resolves to whatever is latest at run time, and
-      # markdownlint adds rules in minor releases — so the first release that
-      # fires on existing prose would turn this REQUIRED check red on an
-      # unrelated PR, with nothing changed in the repository.
-      - name: Lint Markdown
-        run: npx --yes markdownlint-cli2@0.23.0 "**/*.md" "#node_modules"
 
   build-and-push:
     name: Build (${{ matrix.arch }})

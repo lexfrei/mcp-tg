@@ -26,7 +26,7 @@ package telegram
 // Three audit findings are deliberately NOT fixed in this PR. They are
 // captured below as commented-out test blocks describing the expected
 // post-fix behaviour. Uncomment and unblock when the matching limitation
-// is addressed. See https://mcp-tg.lexfrei.dev/messages/#markdown-known-limitations.
+// is addressed. See https://mcp-tg.lexfrei.dev/guides/messages/#markdown-known-limitations.
 
 import (
 	"strings"
@@ -273,7 +273,7 @@ func TestAudit_BackslashHardBreakStable(t *testing.T) {
 //
 // The blocks below describe the expected post-fix behaviour for each known
 // limitation. Uncomment and unblock when the corresponding limitation is
-// addressed. See https://mcp-tg.lexfrei.dev/messages/#markdown-known-limitations for the rationale.
+// addressed. See https://mcp-tg.lexfrei.dev/guides/messages/#markdown-known-limitations for the rationale.
 
 /*
 // CommonMark §5.1: nested blockquotes. Inner `>` should produce a nested

@@ -25,6 +25,7 @@ const (
 	docsSearchPage   = "../../docs/search.md"
 	docsMessagesPage = "../../docs/messages.md"
 	readmePage       = "../../README.md"
+	mkdocsConfig     = "../../mkdocs.yml"
 )
 
 var (
@@ -182,20 +183,26 @@ func TestDocsAnnotationTable_MatchesTheCensus(t *testing.T) {
 // the prose form ("78 tools", "the full 78-tool reference", "4
 // resources") and the protocol-table form ("| Resources | 4 (...)"),
 // which states the count without ever naming the noun beside it.
+//
+// prose marks the forms every census page is required to carry. The
+// table rows are not: only the protocol-support table on the index has
+// them, so demanding them everywhere would fail the README for a table
+// it was never meant to have.
 type censusClaim struct {
 	subject string
 	pattern *regexp.Regexp
 	want    int
+	prose   bool
 }
 
 func docsCensusClaims() []censusClaim {
 	return []censusClaim{
-		{"tools", regexp.MustCompile(`(\d+)[ -]tools?\b`), wantToolsTotal},
-		{"tools table row", regexp.MustCompile(`(?m)^\| Tools \| (\d+)`), wantToolsTotal},
-		{"resources", regexp.MustCompile(`(\d+) resources?\b`), wantResources},
-		{"resources table row", regexp.MustCompile(`(?m)^\| Resources \| (\d+)`), wantResources},
-		{"prompts", regexp.MustCompile(`(\d+) prompts?\b`), wantPrompts},
-		{"prompts table row", regexp.MustCompile(`(?m)^\| Prompts \| (\d+)`), wantPrompts},
+		{"tools", regexp.MustCompile(`(\d+)[ -]tools?\b`), wantToolsTotal, true},
+		{"tools table row", regexp.MustCompile(`(?m)^\| Tools \| (\d+)`), wantToolsTotal, false},
+		{"resources", regexp.MustCompile(`(\d+) resources?\b`), wantResources, true},
+		{"resources table row", regexp.MustCompile(`(?m)^\| Resources \| (\d+)`), wantResources, false},
+		{"prompts", regexp.MustCompile(`(\d+) prompts?\b`), wantPrompts, true},
+		{"prompts table row", regexp.MustCompile(`(?m)^\| Prompts \| (\d+)`), wantPrompts, false},
 	}
 }
 
@@ -233,14 +240,46 @@ func TestDocsCensusCounts_MatchTheServer(t *testing.T) {
 }
 
 // TestDocsCensusCounts_AreActuallyStated guards the test above from
-// passing vacuously: a page that drops the numbers entirely, or reworded
-// past the patterns, would otherwise match nothing and stay green.
+// passing vacuously: a page that drops a number entirely, or rewords it
+// past the pattern, would otherwise match nothing and stay green — the
+// exact failure mode the pin exists to prevent. Every prose claim is
+// checked, not just the tool total: rewording "4 resources" alone would
+// silently retire that count's pin on that page.
 func TestDocsCensusCounts_AreActuallyStated(t *testing.T) {
 	for _, page := range docsCensusPages {
 		body := readDocsPage(t, page)
 
-		if !docsCensusClaims()[0].pattern.MatchString(body) {
-			t.Errorf("%s no longer states the tool total — the first number a reader sees", page)
+		for _, claim := range docsCensusClaims() {
+			if !claim.prose {
+				continue
+			}
+
+			if !claim.pattern.MatchString(body) {
+				t.Errorf("%s no longer states its %s total, so nothing pins it there", page, claim.subject)
+			}
+		}
+	}
+}
+
+var mkdocsAnchorValidation = regexp.MustCompile(`(?m)^\s+anchors: warn$`)
+
+// TestMkdocsValidation_FailsOnDeadAnchors pins the validation block that
+// gives `mkdocs build --strict` its teeth. --strict fails the build on
+// warnings, but MkDocs reports a dead anchor, an unrecognized link and a
+// page missing from the nav at INFO by default — so without this block a
+// link to a renamed heading builds green and ships a 404. Verified
+// against mkdocs-material 9.7.6: the anchor probe exits 0 without it and
+// 1 with it.
+func TestMkdocsValidation_FailsOnDeadAnchors(t *testing.T) {
+	config := readDocsPage(t, mkdocsConfig)
+
+	if !mkdocsAnchorValidation.MatchString(config) {
+		t.Errorf("%s no longer sets validation.anchors: warn — --strict stops catching dead anchors", mkdocsConfig)
+	}
+
+	for _, needle := range []string{"unrecognized_links: warn", "omitted_files: warn", "not_found: warn"} {
+		if !strings.Contains(config, needle) {
+			t.Errorf("%s no longer sets validation %s", mkdocsConfig, needle)
 		}
 	}
 }
@@ -405,8 +444,23 @@ func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
 	checked := 0
 
 	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
+		if err != nil {
 			return err
+		}
+
+		// Skip dot-directories: .claude/worktrees holds whole checkouts of
+		// this repository on other branches, whose URLs are not this
+		// branch's problem and whose pages may not exist here.
+		if entry.IsDir() {
+			if strings.HasPrefix(entry.Name(), ".") && entry.Name() != "." && entry.Name() != ".." {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		if !strings.HasSuffix(path, ".go") {
+			return nil
 		}
 
 		body, err := os.ReadFile(path)

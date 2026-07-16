@@ -37,9 +37,10 @@ jobs:
       - name: Install MkDocs Material
         run: pip install mkdocs-material==9.7.6
 
-      # --strict fails the build on a broken internal link or an orphaned page,
-      # so a docs split that loses a cross-reference is caught here instead of
-      # shipping a 404 to the site.
+      # --strict turns warnings into a failed build; mkdocs.yml's validation
+      # block is what makes a broken link, a dead anchor or a page missing from
+      # the nav a warning in the first place. Both halves are needed: --strict
+      # alone reports all three at INFO and exits 0.
       - name: Build site
         run: mkdocs build --strict
 

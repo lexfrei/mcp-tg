@@ -34,6 +34,19 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+# --strict only fails the build on warnings, and MkDocs reports a broken
+# anchor, an unrecognized link and a page missing from the nav at INFO —
+# so by default a link to a heading that no longer exists builds green.
+# The cross-page anchor links in docs/ are exactly what a docs split
+# breaks, so raise the three to warn and let --strict do what its comment
+# claims.
+validation:
+  anchors: warn
+  unrecognized_links: warn
+  nav:
+    omitted_files: warn
+    not_found: warn
+
 plugins:
   - search
 

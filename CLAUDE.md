@@ -31,6 +31,7 @@ Documentation that makes a claim the code can contradict is pinned by `cmd/mcp-t
 - `README.md` — the major-version promise (`TestReadmeMajorVersion_MatchesTheModulePath`).
 - The mkdocs-material version must agree across `pages.yml`, `pr.yml`, `CLAUDE.md` and `README.md` (`TestMkdocsMaterialPin_AllSitesAgree`) — an unpinned local install renders a different site than CI publishes.
 - Every `https://mcp-tg.lexfrei.dev/<page>/` URL hardcoded in Go source must resolve to a file under `docs/` (`TestDocsSiteURLs_ResolveToPages`). The revoked-session error hands an operator such a URL as its only recovery instruction.
+- `mkdocs.yml`'s `validation:` block (`TestMkdocsValidation_FailsOnDeadAnchors`). `--strict` fails a build on warnings, but MkDocs reports a **dead anchor, an unrecognized link and a page missing from the nav at INFO** — so `--strict` alone exits 0 on all three, and only a broken page link fails. The block raises them to `warn`, which is what makes the CI gate mean what its comment says. Verified against 9.7.6: the anchor probe exits 0 without the block, 1 with it.
 
 A page that moves must take its pin with it: each test names the path it read, so a relocated page fails loudly rather than silently stopping to check anything.
 

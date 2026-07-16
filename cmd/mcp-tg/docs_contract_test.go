@@ -412,6 +412,55 @@ var (
 	docsEnvRow = regexp.MustCompile("(?m)^\\| `([A-Z][A-Z0-9_]*)` \\|")
 )
 
+var (
+	docsFloodAttempts = regexp.MustCompile(`up to (\d+) attempts in total`)
+	licenseYear       = regexp.MustCompile(`Copyright \(c\) (\d{4})`)
+	mkdocsCopyright   = regexp.MustCompile(`(?m)^copyright:.*?(\d{4}(?:-\d{4})?) `)
+)
+
+// TestDocsFloodRetries_MatchTheMiddleware pins the retry claim against the
+// constant that governs it. maxFloodRetries bounds ATTEMPTS, not retries — the
+// loop returns at attempt == maxFloodRetries-1 without sleeping — so "retry up
+// to 3 times" overstated it by one, and the middleware's own test asserting
+// maxFloodRetries-1 WARN lines is the proof. A number the code owns, published
+// and checked by nothing.
+func TestDocsFloodRetries_MatchTheMiddleware(t *testing.T) {
+	claim := docsFloodAttempts.FindStringSubmatch(readDocsPage(t, docsIndexPage))
+	if claim == nil {
+		t.Fatalf("%s no longer states the FLOOD_WAIT attempt count", docsIndexPage)
+	}
+
+	documented, err := strconv.Atoi(claim[1])
+	if err != nil {
+		t.Fatalf("%s: unparseable attempt count %q: %v", docsIndexPage, claim[0], err)
+	}
+
+	if documented != maxFloodRetries {
+		t.Errorf("%s claims %d FLOOD_WAIT attempts, the middleware makes %d",
+			docsIndexPage, documented, maxFloodRetries)
+	}
+}
+
+// TestMkdocsCopyright_MatchesTheLicense pins the footer every published page
+// carries against the licence it restates. It read 2025-2026 in a project whose
+// first commit is 2026 — a claim contradicted by a file two directories up.
+func TestMkdocsCopyright_MatchesTheLicense(t *testing.T) {
+	license := licenseYear.FindStringSubmatch(readDocsPage(t, "../../LICENSE"))
+	if license == nil {
+		t.Fatal("LICENSE carries no copyright year")
+	}
+
+	site := mkdocsCopyright.FindStringSubmatch(readDocsPage(t, mkdocsConfig))
+	if site == nil {
+		t.Fatalf("%s carries no copyright year", mkdocsConfig)
+	}
+
+	// A range is fine as long as it ends where the licence stands.
+	if !strings.HasSuffix(site[1], license[1]) {
+		t.Errorf("%s says %q, LICENSE says %s", mkdocsConfig, site[1], license[1])
+	}
+}
+
 // TestDocsEnvVars_MatchTheCode pins the environment table's completeness
 // against the code that reads the variables — in both directions, because
 // each direction fails differently: a new variable that never reaches the

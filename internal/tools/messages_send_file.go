@@ -14,7 +14,7 @@ type MessagesSendFileParams struct {
 	Path         string  `json:"path"                   jsonschema:"Local file path to send"`
 	Caption      *string `json:"caption,omitempty"      jsonschema:"Optional caption for the file"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
-	ParseMode    string  `json:"parseMode"              jsonschema:"Caption: 'plain' (no formatting) or 'commonmark' (subset, see docs)"`
+	ParseMode    string  `json:"parseMode"              jsonschema:"Caption: 'plain' (no formatting) or 'commonmark' (CommonMark subset)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp for scheduled delivery"`
 	SendAs       *string `json:"sendAs,omitempty"       jsonschema:"Post as this channel; see tg_chats_get_send_as. Omit for the chat default"`

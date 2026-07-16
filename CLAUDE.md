@@ -288,7 +288,7 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
-- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` auto-retries up to 3 times with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
+- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` makes at most `maxFloodRetries` attempts (3 — so two retries) with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
 - **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
 ## Release and distribution

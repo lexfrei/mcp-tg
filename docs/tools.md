@@ -69,8 +69,8 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_chats_set_description` — Set chat description
 - `tg_chats_get_admins` — List administrators (channels/supergroups)
 - `tg_chats_set_permissions` — Set default permissions
-- `tg_chats_get_send_as` — List the identities this account may post under in a chat
-- `tg_chats_set_send_as` — Set the identity this account posts under by default in a chat
+- `tg_chats_get_send_as` — List the identities this account may post under in a supergroup or channel
+- `tg_chats_set_send_as` — Set the identity this account posts under by default in a supergroup or channel
 
 ### Media & Files (4)
 

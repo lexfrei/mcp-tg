@@ -624,6 +624,14 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // A published docs link, with the optional heading anchor captured:
 // https://mcp-tg.lexfrei.dev/building/#transport-modes
 //
+// The trailing slash is OPTIONAL, and that matters: requiring it made a
+// slash-less link match nothing at all, so it was never checked. With
+// use_directory_urls a page is served as <page>/index.html, so
+// /ghost-page redirects to /ghost-page/ and 404s when the page does not
+// exist — a dead link that the scan silently skipped. The segment still
+// needs at least one character, so a bare domain link (the README's own
+// `[mcp-tg.lexfrei.dev](https://mcp-tg.lexfrei.dev)`) stays unmatched.
+//
 // The anchor charset must agree with slugifyHeading, and `\w` is what
 // does it. Anything narrower breaks in both directions: `_` is a legal
 // slug character (`tg_messages_list` anchors as itself), so a charset
@@ -633,7 +641,7 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // optional group match EMPTY rather than fail, which skips the anchor
 // check entirely and passes a dead link. Capturing uppercase lets it
 // fail honestly instead.
-var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9_-]+)/(?:#([\w-]+))?`)
+var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9_-]+)/?(?:#([\w-]+))?`)
 
 var (
 	docsHeading   = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
@@ -807,6 +815,22 @@ func TestCheckDocsSiteURLs_AcceptsAndRejects(t *testing.T) {
 			}
 		})
 	}
+
+	// No trailing slash. use_directory_urls serves a page as
+	// <page>/index.html, so this redirects to /no-such-page/ and 404s —
+	// it must be checked, not skipped for lacking the slash.
+	t.Run("slashless dead page is rejected", func(t *testing.T) {
+		if got := countURLErrors(t, docsSiteBase+"no-such-page"); got == 0 {
+			t.Error("a slash-less link to a missing page passed the check")
+		}
+	})
+
+	// The same shape, alive, must still pass.
+	t.Run("slashless live page is accepted", func(t *testing.T) {
+		if got := countURLErrors(t, docsSiteBase+"messages"); got != 0 {
+			t.Errorf("a correct slash-less link reported %d errors", got)
+		}
+	})
 }
 
 // countURLErrors reports whether checkDocsSiteURLs rejected one link: 1

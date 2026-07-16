@@ -436,34 +436,50 @@ const prWorkflow = "../../.github/workflows/pr.yml"
 // requiredPRJobs are the jobs master's branch protection requires. A
 // check that is not one of these does not block a merge, so a gate
 // placed outside them is advisory no matter what its comment claims.
+// Hand-maintained by necessity: a test cannot read the setting.
 var requiredPRJobs = []string{"test"}
 
-// TestDocsBuild_RunsInARequiredJob pins the docs build inside a job whose
-// check is required. It was a standalone `docs` job, which is not in
-// master's required contexts (Lint, Test, Build (amd64), Build (arm64))
-// and which nothing else in the graph depends on — so a PR breaking a
-// relative link merged green, pages.yml then failed on master, and the
-// site quietly stopped updating with the last good build still served.
+// requiredPRSteps are the docs gates that must run inside one of those
+// jobs. Both check something no other test can see — the site build
+// covers relative links and anchors inside docs/, which
+// TestDocsSiteURLs_ResolveToPages cannot (it reads absolute URLs only);
+// the Markdown lint covers everything its config has always described
+// and nothing ever enforced.
+var requiredPRSteps = []string{"mkdocs build --strict", "markdownlint-cli2@"}
+
+// TestDocsGates_RunInARequiredJob pins each docs gate inside a job whose
+// check is required. The site build began as a standalone `docs` job,
+// which is not in master's required contexts (Lint, Test, Build (amd64),
+// Build (arm64)) and which nothing in the graph depends on — so a PR
+// breaking a relative link merged green, pages.yml then failed on
+// master, and the site quietly stopped updating with the last good build
+// still served.
 //
-// Relative links inside docs/ are checked by this build and nothing else:
-// TestDocsSiteURLs_ResolveToPages reads absolute URLs only. That is why
-// the build has to block rather than inform.
-func TestDocsBuild_RunsInARequiredJob(t *testing.T) {
+// Every gate here needs the same pin, not just the first one: the lint
+// was added beside the build with the same comment claiming the same
+// protection, and could have been moved back out to an advisory job with
+// nothing going red.
+func TestDocsGates_RunInARequiredJob(t *testing.T) {
 	body := readDocsPage(t, prWorkflow)
 
-	if strings.Contains(body, "\n  docs:\n") {
-		t.Error("pr.yml builds the docs in a standalone `docs` job, which master does not require — " +
-			"a broken docs build would not block a merge")
+	for _, step := range requiredPRSteps {
+		if !stepRunsInARequiredJob(t, body, step) {
+			t.Errorf("no required job in pr.yml runs %q (required jobs: %v) — "+
+				"a failure would not block a merge", step, requiredPRJobs)
+		}
 	}
+}
+
+func stepRunsInARequiredJob(t *testing.T, workflow, step string) bool {
+	t.Helper()
 
 	for _, job := range requiredPRJobs {
-		jobBody := workflowJob(t, body, job)
-		if strings.Contains(jobBody, "mkdocs build --strict") {
-			return
+		if strings.Contains(workflowJob(t, workflow, job), step) {
+			return true
 		}
 	}
 
-	t.Errorf("no required job in pr.yml runs `mkdocs build --strict` (required: %v)", requiredPRJobs)
+	return false
 }
 
 // workflowJob returns one job's block from a workflow, by slicing from

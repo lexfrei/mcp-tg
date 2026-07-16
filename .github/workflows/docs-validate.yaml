@@ -10,6 +10,15 @@ name: Documentation Validation
 on:
   pull_request:
 
+# Same shape as ci.yml and pr.yml. It matters more here than there: with no
+# paths filter this runs on every push to every PR, so without it a quick
+# follow-up commit leaves a full Python + mkdocs run grinding on a SHA nobody
+# will merge. Safe for a required check — branch protection evaluates the head
+# SHA, and only superseded runs are cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 

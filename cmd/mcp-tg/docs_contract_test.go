@@ -910,57 +910,88 @@ func TestDocsWorkflows_PinActionsBySHA(t *testing.T) {
 	}
 }
 
-var (
-	mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
-	pipInstallDirect  = regexp.MustCompile(`(?m)^\s*pip install\s+(?:--upgrade\s+)?mkdocs`)
+const (
+	requirementsDocs   = "../../requirements-docs.txt"
+	requirementsSource = "../../requirements-docs.in"
 )
 
-const requirementsDocs = "../../requirements-docs.txt"
+var (
+	mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
 
-// The docs that tell a human how to build the site. They must defer to
-// requirements-docs.txt rather than restate a version: a second copy is a
-// second thing to bump, which is the drift this whole file exists to stop.
+	// A top-level requirement line in a pip-compile lock: the package, then its
+	// pin. Hash continuations are indented, so they never match.
+	lockRequirement  = regexp.MustCompile(`(?m)^([A-Za-z0-9][A-Za-z0-9._\[\]-]*)(==[^\s\\]+)?`)
+	pipInstallDirect = regexp.MustCompile(`(?m)^\s*pip install\s+(?:--upgrade\s+)?mkdocs`)
+)
+
+// The docs that tell a human how to build the site. They must defer to the
+// requirements file rather than restate a version: a second copy is a second
+// thing to bump, which is the drift this whole file exists to stop.
 var pipInstallSites = []string{"../../CLAUDE.md", readmePage}
 
-// TestMkdocsMaterialPin_LivesInRequirements pins the version to exactly one
-// place. MkDocs 2.0 removes the plugin system and the theming system with no
-// migration path, so an unpinned install breaks this site on release day —
-// and a version restated in a second file breaks it the day the two disagree,
-// which is worse, because the build stays green while a contributor renders a
-// different site than CI publishes.
-func TestMkdocsMaterialPin_LivesInRequirements(t *testing.T) {
-	requirements := readDocsPage(t, requirementsDocs)
+// TestDocsRequirements_AreFullyLocked pins the ENTIRE dependency tree, not just
+// the four packages mkdocs.yml names. Pinning only those left ~33 underneath
+// them floating, and one of them owns our output: python-markdown ships the toc
+// slugify that slugifyHeading mirrors, so a release changing it would move every
+// anchor on the published site while the Go test — which hardcodes the expected
+// slugs and never runs mkdocs — stayed green. The twelve absolute URLs in README
+// are checked by that test alone, so they would rot silently.
+//
+// Every requirement therefore carries an exact pin AND a hash, and the claim
+// "pinned, like every action SHA" becomes true rather than aspirational.
+func TestDocsRequirements_AreFullyLocked(t *testing.T) {
+	lock := readDocsPage(t, requirementsDocs)
 
-	pinned := mkdocsMaterialPin.FindStringSubmatch(requirements)
-	if pinned == nil {
-		t.Fatalf("%s does not pin mkdocs-material to an exact version", requirementsDocs)
-	}
+	pinned := 0
 
-	// Every dependency there, not just Material: an unpinned plugin drifts
-	// the same way.
-	for line := range strings.SplitSeq(requirements, "\n") {
-		dep := strings.TrimSpace(line)
-		if dep == "" || strings.HasPrefix(dep, "#") {
+	for _, line := range lockRequirement.FindAllStringSubmatch(lock, -1) {
+		if strings.HasPrefix(line[0], "#") {
 			continue
 		}
 
-		if !strings.Contains(dep, "==") {
-			t.Errorf("%s lists %q without an exact pin", requirementsDocs, dep)
+		if line[2] == "" {
+			t.Errorf("%s lists %q without an exact pin — the lock must pin everything it resolves",
+				requirementsDocs, line[1])
+
+			continue
 		}
+
+		pinned++
+	}
+
+	if pinned == 0 {
+		t.Fatalf("%s pins nothing — this test has stopped checking anything", requirementsDocs)
+	}
+
+	// Hashes are what make the pin a fact rather than a name: without them pip
+	// accepts whatever the index serves under that version.
+	if hashes := strings.Count(lock, "--hash=sha256:"); hashes < pinned {
+		t.Errorf("%s pins %d packages but carries %d hashes — regenerate with --generate-hashes",
+			requirementsDocs, pinned, hashes)
+	}
+
+	// The source the lock is compiled from must exist, or nobody can regenerate it.
+	source := readDocsPage(t, requirementsSource)
+
+	sourcePin := mkdocsMaterialPin.FindStringSubmatch(source)
+	lockPin := mkdocsMaterialPin.FindStringSubmatch(lock)
+
+	switch {
+	case sourcePin == nil:
+		t.Errorf("%s does not pin mkdocs-material", requirementsSource)
+	case lockPin == nil:
+		t.Errorf("%s does not pin mkdocs-material", requirementsDocs)
+	case sourcePin[1] != lockPin[1]:
+		t.Errorf("%s asks for mkdocs-material %s, the lock resolves %s — regenerate it",
+			requirementsSource, sourcePin[1], lockPin[1])
 	}
 
 	for _, site := range pipInstallSites {
 		body := readDocsPage(t, site)
 
 		if match := pipInstallDirect.FindString(body); match != "" {
-			t.Errorf("%s runs %q instead of `pip install --requirement %s` — "+
-				"a second copy of the version is a second thing to bump",
-				site, match, filepath.Base(requirementsDocs))
-		}
-
-		if restated := mkdocsMaterialPin.FindStringSubmatch(body); restated != nil && restated[1] != pinned[1] {
-			t.Errorf("%s names mkdocs-material %s, %s pins %s",
-				site, restated[1], requirementsDocs, pinned[1])
+			t.Errorf("%s runs %q instead of installing the locked requirements — "+
+				"a second copy of the version is a second thing to bump", site, match)
 		}
 	}
 }

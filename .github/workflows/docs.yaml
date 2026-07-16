@@ -8,6 +8,7 @@ on:
       - "docs/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
+      - "requirements-docs.in"
       - ".github/workflows/docs.yaml"
   workflow_dispatch:
 

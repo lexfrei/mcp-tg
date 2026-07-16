@@ -175,6 +175,47 @@ func TestDocsAnnotationTable_MatchesTheCensus(t *testing.T) {
 	}
 }
 
+// A tool total stated as "78 tools" or "the full 78-tool reference". The
+// tool page's own "## Tools (N)" heading is pinned by
+// TestDocsToolList_MatchesRegisteredTools; this catches the totals the
+// two landing surfaces restate.
+var docsToolCountClaim = regexp.MustCompile(`(\d+)[ -]tools?\b`)
+
+// The pages that advertise the tool total rather than documenting a
+// subset of it. Only these two are scanned: a guide is free to write
+// "the 6 tools that take sendAs", which is a different number by design,
+// and prose like that on a landing page is what this test wants to catch
+// anyway.
+var docsToolCountPages = []string{readmePage, "../../docs/index.md"}
+
+// TestDocsToolCount_MatchesTheCensus pins the tool total everywhere the
+// landing pages restate it. The heading on the tool page is pinned
+// against the server, but the split left the same number in four more
+// places — a README blurb, its docs link, the index blurb and the
+// protocol table — none of which any test read. Adding a tool would have
+// left them all quietly wrong.
+func TestDocsToolCount_MatchesTheCensus(t *testing.T) {
+	for _, page := range docsToolCountPages {
+		body := readDocsPage(t, page)
+
+		claims := docsToolCountClaim.FindAllStringSubmatch(body, -1)
+		if len(claims) == 0 {
+			t.Errorf("%s no longer states the tool total — it is the first number a reader sees", page)
+		}
+
+		for _, claim := range claims {
+			claimed, err := strconv.Atoi(claim[1])
+			if err != nil {
+				t.Fatalf("%s: unparseable tool count %q: %v", page, claim[0], err)
+			}
+
+			if claimed != wantToolsTotal {
+				t.Errorf("%s claims %q, the census says %d tools", page, claim[0], wantToolsTotal)
+			}
+		}
+	}
+}
+
 var docsFilterValues = regexp.MustCompile(`Values: ([^.]+)\.`)
 
 // TestDocsFilterValues_MatchSearchFilters pins the documented filter

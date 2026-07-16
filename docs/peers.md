@@ -14,7 +14,7 @@ This applies uniformly across:
 - `tg_messages_*` — sender, forwarded-from origin, cross-chat reply target, participants
 - `tg_dialogs_*` — dialog title + username
 - `tg_users_*`, `tg_contacts_*` — user display name + @handle
-- `tg_groups_info` / `tg_groups_list` / `tg_groups_members_list` / `tg_chats_admins` — group/channel titles, member display names
+- `tg_groups_info` / `tg_groups_list` / `tg_groups_members_list` / `tg_chats_get_admins` — group/channel titles, member display names
 - `tg_messages_get_reactions` — reactor display name + @handle
 - `tg://chat/{peer}/messages` resource — same multi-line block format as `tg_messages_*`
 

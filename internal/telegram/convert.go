@@ -246,7 +246,11 @@ const (
 	MessageTypeUnsupported = "unsupported"
 )
 
-func messageTypes() []string {
+// MessageTypes returns every value the type field can carry, in the
+// order the docs list them. Exported for the same reason SearchFilters
+// is: it is the single source of truth the published type list is pinned
+// against.
+func MessageTypes() []string {
 	return []string{
 		MessageTypeText,
 		MessageTypePhoto,
@@ -271,7 +275,7 @@ func messageTypes() []string {
 // IsMessageType reports whether messageType is one of the public type
 // labels emitted by MessageType.
 func IsMessageType(messageType string) bool {
-	return slices.Contains(messageTypes(), messageType)
+	return slices.Contains(MessageTypes(), messageType)
 }
 
 // MessageType returns a stable, machine-readable type label for a

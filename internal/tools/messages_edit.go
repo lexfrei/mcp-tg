@@ -13,7 +13,7 @@ type MessagesEditParams struct {
 	Peer      string `json:"peer"      jsonschema:"@username, t.me/ link, or numeric ID"`
 	MessageID int    `json:"messageId" jsonschema:"ID of the message to edit"`
 	Text      string `json:"text"      jsonschema:"New message text"`
-	ParseMode string `json:"parseMode" jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset, see README)"`
+	ParseMode string `json:"parseMode" jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset)"`
 
 	// AllowRawMarkdown skips the plain-mode markdown lint.
 	AllowRawMarkdown *bool `json:"allowRawMarkdown,omitempty" jsonschema:"Send markdown-looking characters literally in plain mode"`

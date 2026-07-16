@@ -1,0 +1,25 @@
+# What mkdocs.yml loads, and why. This is the SOURCE; requirements-docs.txt is
+# the compiled lock that CI installs — edit here, then regenerate:
+#
+#   pip-compile --generate-hashes --output-file=requirements-docs.txt requirements-docs.in
+#
+# The lock exists because pinning only these four would leave the ~33 packages
+# underneath them floating, and one of those owns our output: python-markdown
+# ships the toc slugify that slugifyHeading mirrors, so a release changing it
+# would move every anchor on the site while the Go test, which hardcodes the
+# expected slugs, stayed green — and the twelve absolute URLs in README are
+# checked by that test alone.
+#
+# There is no `mike` here: this site is not versioned. No `pillow`/`cairosvg`
+# either — those serve Material's social-card generator, which needs the
+# `social` plugin we do not enable (`extra.social` is only the footer links).
+
+# MkDocs core
+mkdocs==1.6.1
+
+# Material theme
+mkdocs-material==9.7.6
+
+# Plugins
+mkdocs-git-revision-date-localized-plugin==1.5.3
+mkdocs-minify-plugin==0.8.0

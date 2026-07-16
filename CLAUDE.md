@@ -12,6 +12,43 @@ go test -race ./...
 golangci-lint run
 ```
 
+## Documentation
+
+User-facing documentation lives in `docs/`, is built with MkDocs Material (`mkdocs.yml`) from the fully locked dependencies in `requirements-docs.txt` (compiled from `requirements-docs.in`), and follows the same shape as this owner's other docs sites: sections with their own `index.md` (`navigation.indexes`), a stylesheet, and a `docs.yaml` / `docs-validate.yaml` pair. `.github/workflows/docs.yaml` publishes to <https://mcp-tg.lexfrei.dev> on every push to master; `.github/workflows/docs-validate.yaml` runs `markdownlint-cli2` and the same `mkdocs build --strict` on every PR (`TestDocsGates_RunOnPullRequests`). README.md is a landing page only — install, quickstart, links — and anything longer belongs on a docs page.
+
+**That PR check must be in `master`'s required status checks.** Today they are `Lint`, `Test`, `Build (amd64)` and `Build (arm64)`; nothing in the workflow graph depends on `Validate Documentation`, so until it is added, a PR that breaks the site merges green, `docs.yaml` fails on master, and the site quietly stops updating with the last good build still served. Relative links and anchors inside `docs/` (`[Peers](peers.md)`, `../building.md#transport-modes`) are checked by that build and by nothing else — `TestDocsSiteURLs_ResolveToPages` reads absolute URLs only. This is why `docs-validate.yaml` carries **no `paths:` filter**, unlike the reference it is modelled on: GitHub leaves a skipped workflow's check `Pending` forever and blocks a merge on a required check that never reports, so a filtered workflow can never be required at all.
+
+This site is **not versioned**: no `mike`, so no `/latest/` prefix, no per-version tree, and no `404.html` redirect (Material's themed 404 serves from the site root — and `mkdocs build` overwrites `docs/404.html` with it anyway, so a hand-written one could not ship). `deploy-pages` waits on GitHub's own Pages deployment and fails if it stalls, so the reference's verify-poll job would only re-check what the action already guarantees.
+
+The custom domain lives in the repository's **Pages settings** (`build_type: workflow`, `cname`, `Enforce HTTPS`) — the one piece of site configuration outside version control. `docs/CNAME` ships too, for parity with the house pattern and so the domain is recorded in git if the publishing source ever moves back to a branch, but it is **not what makes the domain work**: GitHub ignores it entirely for a site published from a custom Actions workflow ("no `CNAME` file is created, and any existing `CNAME` file is ignored and is not required"). Do not reach for that file when the domain misbehaves; reach for the settings.
+
+```bash
+pip install --requirement requirements-docs.txt   # pinned; MkDocs 2.0 drops the plugin system with no migration path
+mkdocs serve
+npx --yes markdownlint-cli2@0.22.1 "**/*.md" "#node_modules"   # the version the action bundles — see below
+```
+
+The linter version is **not** the action's tag: `markdownlint-cli2-action@v23.2.0` bundles `markdownlint-cli2` 0.22.1, and the mapping is arbitrary (v22 → 0.20.0, v23.0.0 → 0.22.0, v24.0.0 → 0.23.0). Read it from the action's `package.json` at the pinned SHA, never infer it — markdownlint adds rules in minor releases, so a local run one version off disagrees with CI in either direction. The lint covers the whole repository, and `.markdownlint-cli2.yaml`'s `ignores` are what scope it: other branches' worktrees under `.claude/`, and GitHub templates, which are forms that open with the section a contributor fills in, so MD041 does not apply to them.
+
+Documentation that makes a claim the code can contradict is pinned by `cmd/mcp-tg/docs_contract_test.go` — numbers, value lists, identifiers and links alike. Every such claim is checked against the server or the source that owns it, never against another page:
+
+- `docs/tools.md` — the `## Tools (N)` heading and the `` - `tg_xxx` `` bullets are parsed and compared against the registered server (`TestDocsToolList_MatchesRegisteredTools`); each `### Name (N)` subtotal must equal its own bullet count and they must sum to the total (`TestDocsToolSubsections_MatchTheirBullets`); the annotation table is compared against the census constants (`TestDocsAnnotationTable_MatchesTheCensus`). Keep all three shapes exactly when editing.
+- `README.md`, `docs/index.md`, `mkdocs.yml` — every restatement of the tool / resource / prompt totals, in prose (`78 tools`, `78-tool`, `4 resources`) and in the protocol-table rows (`TestDocsCensusCounts_MatchTheServer`, with `TestDocsCensusCounts_AreActuallyStated` guarding against a page that drops the numbers and passes vacuously). `mkdocs.yml`'s `site_description` counts: Material renders it into the `<meta name="description">` of every page.
+- Every tool named anywhere in `docs/**` or README prose, not just in the tool list (`TestDocsToolMentions_NameRealTools`). A family glob (`tg_messages_*`) passes on a prefix match. The bullets were pinned and prose was not, which is how `tg_chats_admins` — a tool that never existed — lived in the peer section.
+- Every action the docs workflows use is pinned to a full commit SHA with a version comment (`TestDocsWorkflows_PinActionsBySHA`); they run on master with `pages: write` and `id-token: write`, so a moving tag would execute unreviewed code with those permissions.
+- `docs/guides/search.md` — the `Values: ...` list against `telegram.SearchFilters` (`TestDocsFilterValues_MatchSearchFilters`) and the `scope` values against `telegram.IsSearchScope` (`TestDocsScopeValues_MatchTheCode`).
+- `docs/guides/messages.md` — the `Values are ...` list of `type` labels against `telegram.MessageTypes` (`TestDocsTypeValues_MatchMessageTypes`). `MessageTypes` is exported for exactly this, like `SearchFilters`.
+- `docs/guides/resources.md` — the resource URIs and prompt names against a live session (`TestDocsResourcesAndPrompts_NameTheRegisteredOnes`). The counts alone cannot catch a rename.
+- `docs/getting-started/configuration.md` — the environment table's completeness against the code that reads the variables, both ways (`TestDocsEnvVars_MatchTheCode`): an undocumented variable is undiscoverable, and a documented one nothing reads sends somebody to configure a no-op. Also `TELEGRAM_DOWNLOAD_DIR` must not claim an absolute default (`TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault`): the code derives it from `os.TempDir()`, which returns `$TMPDIR` whenever it is set — on every Unix, not just macOS — and `/tmp` otherwise. Neither half is safe to state flatly: macOS sets it, a plain container and Linux CI runners do not.
+- `docs/guides/messages.md` — the parse-mode contract: both enum values, `allowRawMarkdown`, `entitiesParsed`, the autolink example, the migration note, and the absence of the retired `markdown` alias (`TestDocsParseMode_MatchesTheContract`).
+- `docs/building.md` — the minimum Go version against go.mod's `go` directive, which is a hard minimum since Go 1.21, not a hint (`TestDocsGoVersion_MatchesGoMod`).
+- Any major-version promise, on any page (`TestDocsMajorVersion_MatchesTheModulePath`): a `vN>=2` tag needs a matching `/vN` suffix in go.mod. Reads every page, since the rationale lives in `docs/guides/messages.md` now, not the README.
+- The docs dependency tree is fully locked — every package pinned AND hashed, not just the four `mkdocs.yml` names (`TestDocsRequirements_AreFullyLocked`). Pinning only those left ~33 transitive packages floating, and python-markdown is one: it ships the toc slugify `slugifyHeading` mirrors, so a release changing it would move every anchor on the site while the Go test, which hardcodes the slugs and never runs mkdocs, stayed green. `requirements-docs.in` is the source; regenerate with `pip-compile --generate-hashes --output-file=requirements-docs.txt requirements-docs.in`. A version restated in CLAUDE.md or README is a second thing to bump, so the test rejects a direct `pip install mkdocs...` in either.
+- Every `https://mcp-tg.lexfrei.dev/<page>/#anchor` URL in Go source **and** in Markdown mkdocs does not build (the README) must resolve to a page and a heading (`TestDocsSiteURLs_ResolveToPages`). The revoked-session error hands an operator such a URL as its only recovery instruction, and the README carries twelve that mkdocs' own link validation never sees. Prefer linking with an anchor: it makes a heading rename red. The slug rules are `slugifyHeading`, pinned against real MkDocs output by `TestSlugifyHeading_MatchesMkdocs` — note `_` survives (`tg_messages_list` anchors as itself), and `#` inside a fenced block is not a heading.
+- `mkdocs.yml`'s `validation:` block (`TestMkdocsValidation_FailsOnDeadAnchors`). `--strict` fails a build on warnings, but MkDocs reports a **dead anchor, an unrecognized link and a page missing from the nav at INFO** — so `--strict` alone exits 0 on all three, and only a broken page link fails. The block raises them to `warn`, which is what makes the CI gate mean what its comment says. Verified against 9.7.6: the anchor probe exits 0 without the block, 1 with it.
+
+A page that moves must take its pin with it: each test names the path it read, so a relocated page fails loudly rather than silently stopping to check anything.
+
 ## Architecture
 
 ```text
@@ -76,7 +113,7 @@ internal/testutil/           NoopClient for registration tests
 - `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
-The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release.
+The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release. `TestDocsAnnotationTable_MatchesTheCensus` then pins the published table in `docs/tools.md` against those same constants, so the site cannot drift from the server either.
 
 ### Peer resolution
 
@@ -166,7 +203,7 @@ Global search pagination is a compound cursor (`offsetRate` + `offsetId` + `offs
 Reading tools (`messages_list`, `messages_context`, `messages_get`, `messages_search`, `messages_search_global`) expose reply-header fields on each `MessageItem`:
 
 - Structured `replyTo` object (`messageId`, `topId`, `quoteText`, `fromPeerId`, plus advisory `fromName`/`fromUsername` for cross-chat replies) when the message replies to another. Omitted otherwise.
-- Text `output` emits a `reply to: <parentId>` line (or `reply to: <parentId> in <peer-ref>` for cross-chat replies, followed by a `quote: «...»` line if `quoteText` is present). This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N of M message(s)`, M being the server's total) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies. See README's "Message Output Format" for the full block layout.
+- Text `output` emits a `reply to: <parentId>` line (or `reply to: <parentId> in <peer-ref>` for cross-chat replies, followed by a `quote: «...»` line if `quoteText` is present). This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N of M message(s)`, M being the server's total) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies. See `docs/guides/messages.md` ("Message Output Format") for the full block layout.
 
 The first four tools also accept an optional `resolveReplies` parameter (default `false`). When `true`, parent messages that aren't in the returned batch are fetched in a single batched `GetMessages` call and attached as `replyToMessage: { fromName, fromUsername, text }` (text truncated to 200 runes). Cross-chat replies (`replyTo.fromPeerId` points elsewhere) are skipped since we lack the foreign peer's access hash. `messages_search_global` does not offer `resolveReplies` for the same reason — its results span arbitrary peers, a batched lookup is not feasible.
 
@@ -192,7 +229,7 @@ Each message in `output` is a block of `key: value` lines (`from:`, `forwarded f
 
 ### Output format param
 
-The five read tools (`messages_list`, `messages_get`, `messages_context`, `messages_search`, `messages_search_global`) take an optional `format` enum (`full`/`json`/`text`, default `full`) constrained on the wire via `inputSchemaWithEnum` (the `parseMode` precedent) — optional, so it is NOT in the schema `required` set; an omitted value is `full`. `messagesForFormat`/`outputForFormat` (`messages_format.go`) trim the result: `json` clears `Output`, `text` clears `Messages`, `full` keeps both. The two helpers are split (not one two-value function) because gocritic `unnamedResult` and `nonamedreturns` conflict on a multi-value return. Both result fields are now tagged `omitempty`, so a cleared field vanishes from the JSON — this is a deliberate shape change (documented in README "Message Output Format"): a full-mode result with zero messages now also omits `messages`. Handlers apply format LAST, after `resolveReplies`, so the enrichment still runs for `json`/`full`.
+The five read tools (`messages_list`, `messages_get`, `messages_context`, `messages_search`, `messages_search_global`) take an optional `format` enum (`full`/`json`/`text`, default `full`) constrained on the wire via `inputSchemaWithEnum` (the `parseMode` precedent) — optional, so it is NOT in the schema `required` set; an omitted value is `full`. `messagesForFormat`/`outputForFormat` (`messages_format.go`) trim the result: `json` clears `Output`, `text` clears `Messages`, `full` keeps both. The two helpers are split (not one two-value function) because gocritic `unnamedResult` and `nonamedreturns` conflict on a multi-value return. Both result fields are now tagged `omitempty`, so a cleared field vanishes from the JSON — this is a deliberate shape change (documented in `docs/guides/messages.md`, "Message Output Format"): a full-mode result with zero messages now also omits `messages`. Handlers apply format LAST, after `resolveReplies`, so the enrichment still runs for `json`/`full`.
 
 ### Message entities (formatting on read)
 
@@ -220,7 +257,7 @@ On the SINGLE-message paths (`SendMessage`, `EditMessage`, `SendFile`) an echo t
 
 `SendAlbum` is deliberately NOT repaired: there is no single ID to attach a repaired count to, and the album's anomaly already surfaces as `count: 0` ("Sent album with 0 file(s)"), which is visibly wrong rather than quietly plausible — pinned by `TestMediaSendAlbumHandler_UnreadableEchoReportsNothing`. The single-message repair has its own oddity for symmetry's sake — `entitiesParsed: N` beside `messageId: 0` — which is equally loud: a follow-up edit on id 0 fails outright rather than silently editing the wrong message.
 
-Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
+Known CommonMark gaps documented in `docs/guides/messages.md` ("Markdown — Known Limitations"): nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 
 ### Send-as identity (posting as a channel)
 
@@ -251,7 +288,7 @@ Also verified: a channel that is the chat default reacts as itself, and `message
 ### Telegram protocol details
 
 - **RandomID**: All send operations (message, file, album, forward, sticker) generate crypto-random IDs for deduplication
-- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` auto-retries up to 3 times with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
+- **FLOOD_WAIT**: `newFloodWaitMiddleware(logger)` makes at most `maxFloodRetries` attempts (3 — so two retries) with the server-specified delay, logging each retry at WARN with `retryAfter` (and a WARN if the context is cancelled mid-backoff). A FLOOD_WAIT that survives all retries reaches the tools layer, where `wrapTelegramError` marks it `ErrFloodWait` with a readable "retry after Ns" (not a raw code, not JSON) — the server stays up, so the caller can back off and retry
 - **Peer cache**: Access hashes from username resolution, dialog listing, and `channels.getSendAs` are cached in memory
 
 ## Release and distribution
@@ -293,3 +330,6 @@ Strict config in `.golangci.yml`:
 - `github.com/lexfrei/keychain` — cgo-free OS secret store (macOS Keychain / Linux Secret Service / Windows Credential Manager) for the default session backend; pulls `purego` + `godbus/dbus` indirectly
 - `golang.org/x/sync` — errgroup for concurrent transports
 - `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`
+- `golang.org/x/text` — NFKD fold in `slugifyHeading` (`docs_contract_test.go`), so the docs-link pin slugs headings exactly as python-markdown does. Test-only, but a direct dependency
+- `gopkg.in/yaml.v3` — parses the docs workflows in `docs_contract_test.go`. Test-only, and load-bearing: the gate once shipped structurally invalid because a text-level check could not tell a mapping from a list
+- `go.uber.org/zap` + `github.com/gotd/log/logzap` — the zap logger gotd wants for its connection/migration trace, bridged to the DEBUG tier

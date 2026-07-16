@@ -1,0 +1,67 @@
+name: Documentation Validation
+
+# No paths filter, deliberately — the one place the house pattern is not copied.
+# GitHub leaves a workflow skipped by a paths filter in a Pending check, and a
+# merge blocked on a required check that never reports is blocked forever, so a
+# filtered workflow can never be a required check at all. This build is the only
+# thing that sees a relative link or an anchor inside docs/ (the URL contract
+# test reads absolute links only), so it has to be able to block. Always run it;
+# the cost is well under a minute on a Go-only PR.
+on:
+  pull_request:
+
+# Same shape as ci.yml and pr.yml. It matters more here than there: with no
+# paths filter this runs on every push to every PR, so without it a quick
+# follow-up commit leaves a full Python + mkdocs run grinding on a SHA nobody
+# will merge. Safe for a required check — branch protection evaluates the head
+# SHA, and only superseded runs are cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # git-revision-date-localized runs in the build below and reads each
+          # page's last commit; a shallow clone has none.
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.14.6"
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Install dependencies
+        run: pip install --requirement requirements-docs.txt
+
+      # The version comment is the action's TAG, not the linter it bundles: this
+      # tag ships markdownlint-cli2 0.22.1, and the mapping is arbitrary
+      # (v22 -> 0.20.0, v23.0.0 -> 0.22.0, v24.0.0 -> 0.23.0). Read it out of the
+      # action's package.json at this SHA before telling anyone to match it.
+      - name: Run markdownlint
+        uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23.2.0
+        with:
+          # The whole repository, not just docs/: README.md and CLAUDE.md are
+          # Markdown too, and .markdownlint-cli2.yaml's ignores are what scope
+          # it — a docs-only glob would leave those ignores unreachable.
+          globs: "**/*.md"
+
+      # The site only builds for real on a push to master, where a failure lands
+      # on the published documentation. Build it here too: relative links and
+      # anchors inside docs/ are checked by this and nothing else.
+      #
+      # --quiet must never be added: --strict fails on the warning COUNT and
+      # --quiet suppresses the warnings before anything counts them, so the two
+      # together report success while checking nothing.
+      - name: Build documentation (strict mode)
+        run: mkdocs build --strict

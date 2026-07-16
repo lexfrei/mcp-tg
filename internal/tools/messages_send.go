@@ -14,7 +14,7 @@ type MessagesSendParams struct {
 	Text         string  `json:"text"                   jsonschema:"Message text to send"`
 	TopicID      *int    `json:"topicId,omitempty"      jsonschema:"Forum topic ID to send into"`
 	ReplyTo      *int    `json:"replyTo,omitempty"      jsonschema:"Message ID to reply to"`
-	ParseMode    string  `json:"parseMode"              jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset, see README)"`
+	ParseMode    string  `json:"parseMode"              jsonschema:"'plain' (no formatting) or 'commonmark' (CommonMark subset)"`
 	Silent       *bool   `json:"silent,omitempty"       jsonschema:"Send without notification sound"`
 	NoWebpage    *bool   `json:"noWebpage,omitempty"    jsonschema:"Disable link preview generation"`
 	ScheduleDate *int    `json:"scheduleDate,omitempty" jsonschema:"Unix timestamp to schedule message for later delivery"`

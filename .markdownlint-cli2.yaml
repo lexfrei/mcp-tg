@@ -1,17 +1,20 @@
 # markdownlint-cli2 configuration
 
-# GitHub templates are forms, not documents: they open with the first section
-# a contributor fills in, so MD041 (first line must be a top-level heading)
-# does not apply. Adding an H1 purely to satisfy it would render as a stray
-# title inside every new pull request.
 ignores:
   # Other branches' checkouts: .claude/worktrees holds whole copies of this
   # repository, whose Markdown is not this branch's to lint. The docs-link
   # test skips it for the same reason.
   - ".claude/**"
+
+  # GitHub templates are forms, not documents: they open with the first
+  # section a contributor fills in, so MD041 (first line must be a top-level
+  # heading) does not apply. Adding an H1 purely to satisfy it would render
+  # as a stray title inside every new pull request.
   - ".github/pull_request_template.md"
   - ".github/PULL_REQUEST_TEMPLATE/**"
   - ".github/ISSUE_TEMPLATE/**"
+
+  # Build output and vendored packages.
   - "site/**"
   - "node_modules/**"
 

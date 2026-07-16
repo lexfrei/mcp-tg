@@ -474,6 +474,32 @@ func TestDocsGates_RunInARequiredJob(t *testing.T) {
 	}
 }
 
+// TestWorkflowJob_StopsAtTheNextJob pins the slicing that every gate
+// check rests on. With a narrower job-key class the `test` block ran on
+// into the following job, so a gate moved OUT of the required job was
+// still found inside it and TestDocsGates_RunInARequiredJob passed while
+// the gate no longer blocked anything — the exact regression it exists
+// to catch, defeated by its own helper.
+func TestWorkflowJob_StopsAtTheNextJob(t *testing.T) {
+	// Job keys GitHub allows and a lowercase-only class would miss.
+	for _, next := range []string{"docs_build", "Docs", "docs-build", "docs"} {
+		t.Run("stops before "+next, func(t *testing.T) {
+			workflow := "jobs:\n  test:\n    steps:\n      - run: go test ./...\n\n  " +
+				next + ":\n    steps:\n      - run: mkdocs build --strict\n"
+
+			block := workflowJob(t, workflow, "test")
+
+			if strings.Contains(block, "mkdocs build --strict") {
+				t.Errorf("workflowJob(test) swallowed the %q job's steps: %q", next, block)
+			}
+
+			if !strings.Contains(block, "go test ./...") {
+				t.Errorf("workflowJob(test) lost its own steps: %q", block)
+			}
+		})
+	}
+}
+
 func stepRunsInARequiredJob(t *testing.T, workflow, step string) bool {
 	t.Helper()
 
@@ -485,6 +511,15 @@ func stepRunsInARequiredJob(t *testing.T, workflow, step string) bool {
 
 	return false
 }
+
+// workflowJobKey matches a job key at the workflow's job indent.
+// GitHub's grammar is [A-Za-z_][A-Za-z0-9_-]*, and the class must match
+// it: a narrower one fails to see the NEXT job's key, so the slice runs
+// past the end of the block and swallows that job's steps — which would
+// let a gate moved into a `docs_build:` job read as though it still ran
+// inside the required one. `pull_request:` in this very workflow shows
+// the underscore is not hypothetical.
+var workflowJobKey = regexp.MustCompile(`(?m)^  [A-Za-z_][A-Za-z0-9_-]*:$`)
 
 // workflowJob returns one job's block from a workflow, by slicing from
 // its two-space-indented key to the next one. Comment lines are dropped:
@@ -501,7 +536,7 @@ func workflowJob(t *testing.T, workflow, job string) string {
 
 	rest := workflow[start+1:]
 
-	if next := regexp.MustCompile(`(?m)^  [a-z][a-z0-9-]*:$`).FindStringIndex(rest[1:]); next != nil {
+	if next := workflowJobKey.FindStringIndex(rest[1:]); next != nil {
 		rest = rest[:next[0]+1]
 	}
 

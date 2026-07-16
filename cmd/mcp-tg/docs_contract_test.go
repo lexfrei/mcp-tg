@@ -409,9 +409,14 @@ func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
 		t.Fatalf("%s no longer documents TELEGRAM_DOWNLOAD_DIR", docsConfigPage)
 	}
 
-	if strings.Contains(row, "`/tmp/mcp-tg/downloads`") {
-		t.Errorf("%s states an absolute default for TELEGRAM_DOWNLOAD_DIR; "+
-			"the code uses os.TempDir(), which is $TMPDIR on macOS, not /tmp", docsConfigPage)
+	// Any absolute path, not just the literal that was wrong: /var/tmp/...
+	// would be equally unsupportable, and banning one spelling pins the
+	// typo rather than the claim.
+	for _, value := range regexp.MustCompile("`([^`]+)`").FindAllStringSubmatch(row, -1) {
+		if strings.HasPrefix(value[1], "/") && strings.Contains(value[1], "mcp-tg") {
+			t.Errorf("%s states the absolute default %s for TELEGRAM_DOWNLOAD_DIR; the code uses "+
+				"os.TempDir(), which is $TMPDIR on macOS, not /tmp", docsConfigPage, value[0])
+		}
 	}
 }
 

@@ -410,9 +410,13 @@ var docsConfigPage = "../../docs/configuration.md"
 // whose default cannot be written as a literal path. The code builds it
 // from os.TempDir(), which returns $TMPDIR whenever it is set — on EVERY
 // Unix, not just macOS — and falls back to /tmp only when it is not.
-// macOS launchd always sets it, and so do containers, CI runners and
-// systemd PrivateTmp units; Windows has neither path. The page claimed
-// /tmp/mcp-tg/downloads flatly, which is wrong wherever TMPDIR is set.
+// macOS launchd sets it; a plain container does not (this project's own
+// image is FROM scratch with two ENVs, neither of them TMPDIR), and
+// neither do Linux CI runners. Windows has neither path. The page
+// claimed /tmp/mcp-tg/downloads flatly, which is wrong wherever TMPDIR
+// is set — but note this test pins the SHAPE of the claim, not its
+// truth: it rejects an absolute path and cannot tell whether the prose
+// replacing it is true of the world. That part is on the reader.
 func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
 	row := regexp.MustCompile(`(?m)^\|\s*` + "`TELEGRAM_DOWNLOAD_DIR`" + `\s*\|.*$`).
 		FindString(readDocsPage(t, docsConfigPage))
@@ -1239,22 +1243,30 @@ func TestDocsParseMode_MatchesTheContract(t *testing.T) {
 	}
 }
 
-// TestReadmeMajorVersion_MatchesTheModulePath pins the promise the README
-// makes about versioning against what the module can actually carry: a
+// TestDocsMajorVersion_MatchesTheModulePath pins any promise the docs
+// make about versioning against what the module can actually carry: a
 // vN>=2 tag requires a matching /vN suffix in go.mod, or `go install
 // ...@vN` fails while `@latest` silently keeps resolving to v1.
-func TestReadmeMajorVersion_MatchesTheModulePath(t *testing.T) {
+//
+// It reads every published page, not just the README. The versioning
+// rationale it guards moved to docs/messages.md with the parse-mode
+// break, so a README-only check now watches a page that makes no such
+// claim — and a future v2.0.0 promise would be written where the
+// versioning discussion actually lives, out of its sight. Pin the claim
+// where it lives, which is this branch's whole thesis.
+func TestDocsMajorVersion_MatchesTheModulePath(t *testing.T) {
 	gomod, err := os.ReadFile("../../go.mod")
 	if err != nil {
 		t.Fatalf("read go.mod: %v", err)
 	}
 
-	readme := readDocsPage(t, readmePage)
-
 	hasSuffix := regexp.MustCompile(`(?m)^module .+/v[2-9]\d*$`).Match(gomod)
-	promisesMajor := regexp.MustCompile(`v[2-9]\d*\.0\.0`).MatchString(readme)
+	promise := regexp.MustCompile(`v[2-9]\d*\.0\.0`)
 
-	if promisesMajor && !hasSuffix {
-		t.Error("README promises a major version the module path cannot carry — add the /vN suffix to go.mod or drop the promise")
+	for _, page := range docsPages(t) {
+		if promise.MatchString(readDocsPage(t, page)) && !hasSuffix {
+			t.Errorf("%s promises a major version the module path cannot carry — "+
+				"add the /vN suffix to go.mod or drop the promise", page)
+		}
 	}
 }

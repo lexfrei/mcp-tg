@@ -11,11 +11,13 @@
 | `TELEGRAM_SESSION_FILE` | Session location: keychain account key by default, file path with insecure storage | `~/.mcp-tg/session.json` | No |
 | `TELEGRAM_SESSION_INSECURE` | Store the session in a plaintext file instead of the OS keychain | `false` | No |
 | `TELEGRAM_AUTH_CODE` | One-time auth code | — | No (prompted via elicitation) |
-| `TELEGRAM_DOWNLOAD_DIR` | Media download directory | `mcp-tg/downloads` under the OS temp dir: `$TMPDIR` when set (macOS always sets it; so do containers and CI runners), else `/tmp` on Unix | No |
+| `TELEGRAM_DOWNLOAD_DIR` | Media download directory | `mcp-tg/downloads` under the OS temp dir (see below) | No |
 | `MCP_HTTP_PORT` | HTTP/SSE transport port | disabled | No |
 | `MCP_HTTP_HOST` | HTTP bind address | `127.0.0.1` | No |
 | `MCP_HTTP_ONLY` | Run as a headless HTTP-only daemon (no stdio transport) | `false` | No (requires `MCP_HTTP_PORT`) |
 | `MCP_LOG_LEVEL` | stderr log verbosity: `debug`, `info`, `warn`, `error` (the `--log-level` flag overrides it) | `info` | No |
+
+The download directory's default has no single spelling: the code derives it from Go's `os.TempDir()`, which returns `$TMPDIR` when that is set and falls back to `/tmp` on Unix otherwise. macOS sets `$TMPDIR` for every login session, so the default there lands under `/var/folders/...`; a plain container and Linux CI runners do not set it, so the container image resolves the default to `/tmp/mcp-tg/downloads`. Set `TELEGRAM_DOWNLOAD_DIR` explicitly if you need to know where files land without checking the environment first.
 
 ## Command-line flags
 

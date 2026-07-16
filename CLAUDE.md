@@ -320,3 +320,4 @@ Strict config in `.golangci.yml`:
 - `github.com/lexfrei/keychain` — cgo-free OS secret store (macOS Keychain / Linux Secret Service / Windows Credential Manager) for the default session backend; pulls `purego` + `godbus/dbus` indirectly
 - `golang.org/x/sync` — errgroup for concurrent transports
 - `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`
+- `golang.org/x/text` — NFKD fold in `slugifyHeading` (`docs_contract_test.go`), so the docs-link pin slugs headings exactly as python-markdown does. Test-only, but a direct dependency

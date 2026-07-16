@@ -5,7 +5,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -971,24 +973,77 @@ var (
 	docsMiddlewareRow = regexp.MustCompile(`(?m)^\| Middleware \| ([^|]+?) \|`)
 )
 
-// TestDocsMiddlewareRow_CountsTheInstalledOnes pins the protocol table's
-// middleware row against what receivingMiddlewares installs. The row
-// listed three while the server installs four: it predates the session
-// guard, and the numbers around it in that table are pinned while its
-// contents were read by nothing.
-func TestDocsMiddlewareRow_CountsTheInstalledOnes(t *testing.T) {
+// The prose label the protocol table uses for each middleware, keyed by
+// the constructor that installs it.
+var middlewareLabels = map[string]string{
+	"NewAuthGuard":    "auth guard",
+	"NewSessionGuard": "session guard",
+	"NewLogging":      "request logging",
+	"NewBoolCoercer":  "bool coercion",
+}
+
+// installedMiddlewareNames recovers the constructor name behind each
+// installed middleware. Go names a closure after the function that
+// returned it, so `NewSessionGuard`'s middleware reports
+// "...receivingMiddlewares.NewSessionGuard.func4" — which is what makes
+// the identities checkable rather than only the count.
+func installedMiddlewareNames(t *testing.T) []string {
+	t.Helper()
+
 	installed := receivingMiddlewares(
 		discardLogger(), tools.BoolFieldRegistry{}, make(chan struct{}), middleware.NewSessionHealth(),
 	)
 
+	names := make([]string, 0, len(installed))
+
+	for _, mw := range installed {
+		full := runtime.FuncForPC(reflect.ValueOf(mw).Pointer()).Name()
+
+		match := regexp.MustCompile(`\.(New[A-Za-z]+)\.func\d+$`).FindStringSubmatch(full)
+		if match == nil {
+			t.Fatalf("cannot recover a constructor name from %q", full)
+		}
+
+		names = append(names, match[1])
+	}
+
+	return names
+}
+
+// TestDocsMiddlewareRow_NamesTheInstalledOnes pins the protocol table's
+// middleware row against what receivingMiddlewares installs — by name,
+// not merely by count. The row listed three while the server installs
+// four: it predates the session guard, and nothing read it even though
+// the numbers beside it in that table are pinned.
+//
+// Counting alone would still miss a rename, which is the same hole the
+// resource and prompt check closes one test over.
+func TestDocsMiddlewareRow_NamesTheInstalledOnes(t *testing.T) {
 	row := docsMiddlewareRow.FindStringSubmatch(readDocsPage(t, docsIndexPage))
 	if row == nil {
 		t.Fatalf("%s no longer carries a Middleware row", docsIndexPage)
 	}
 
-	if documented := strings.Split(row[1], ","); len(documented) != len(installed) {
+	documented := strings.ToLower(row[1])
+	installed := installedMiddlewareNames(t)
+
+	for _, name := range installed {
+		label, known := middlewareLabels[name]
+		if !known {
+			t.Errorf("the server installs %s, which the docs have no label for — "+
+				"add one here and to the %s Middleware row", name, docsIndexPage)
+
+			continue
+		}
+
+		if !strings.Contains(documented, label) {
+			t.Errorf("%s does not list %q, installed by %s", docsIndexPage, label, name)
+		}
+	}
+
+	if listed := strings.Split(row[1], ","); len(listed) != len(installed) {
 		t.Errorf("%s lists %d middlewares (%q), the server installs %d",
-			docsIndexPage, len(documented), row[1], len(installed))
+			docsIndexPage, len(listed), row[1], len(installed))
 	}
 }
 

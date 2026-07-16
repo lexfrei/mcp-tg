@@ -10,10 +10,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// The tool census documented in README.md and CLAUDE.md. Nothing else
-// checks these numbers, so they drifted once already: the annotation
-// counts were off by one for a whole release, and the next edit inherited
-// the error instead of catching it.
+// The tool census documented in docs/tools.md (the published tool
+// reference) and CLAUDE.md. These numbers drifted once already: the
+// annotation counts were off by one for a whole release, and the next
+// edit inherited the error instead of catching it.
+//
+// Two tests hang off these constants. This file pins them against the
+// registered server; TestDocsAnnotationTable_MatchesTheCensus
+// (docs_contract_test.go) pins docs/tools.md against them in turn, so the
+// published page cannot drift from the server either.
 //
 // When a tool is added, update these numbers AND the two documents.
 const (

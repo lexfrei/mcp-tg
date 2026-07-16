@@ -13,22 +13,46 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 )
 
-var (
-	readmeToolBullet = regexp.MustCompile("^- `(tg_[a-z0-9_]+)`")
-	readmeToolsTitle = regexp.MustCompile(`^## Tools \((\d+)\)`)
+// The documentation site is built from docs/ and published to
+// mcp-tg.lexfrei.dev. The pages below make claims the code can contradict,
+// so each one is pinned here. README.md keeps only the claims it makes
+// itself.
+const (
+	docsToolsPage    = "../../docs/tools.md"
+	docsSearchPage   = "../../docs/search.md"
+	docsMessagesPage = "../../docs/messages.md"
+	readmePage       = "../../README.md"
 )
 
-// readmeToolSection parses README's "## Tools" section and returns the
-// count claimed in the heading plus every tool name documented as a
-// bullet. Bullets outside the section (e.g. the peer-identifier notes)
-// must not count — that is exactly how the documented numbers drifted
-// by five without anyone noticing.
-func readmeToolSection(t *testing.T) (int, []string) {
+var (
+	docsToolBullet = regexp.MustCompile("^- `(tg_[a-z0-9_]+)`")
+	docsToolsTitle = regexp.MustCompile(`^## Tools \((\d+)\)`)
+)
+
+// readDocsPage reads a documentation page, failing the test with the path
+// so a moved page names itself instead of surfacing as a bare ENOENT.
+func readDocsPage(t *testing.T, path string) string {
 	t.Helper()
 
-	file, err := os.Open("../../README.md")
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("open README: %v", err)
+		t.Fatalf("read %s: %v", path, err)
+	}
+
+	return string(raw)
+}
+
+// docsToolSection parses the tool page's "## Tools" section and returns the
+// count claimed in the heading plus every tool name documented as a
+// bullet. Bullets outside the section (e.g. the annotation table notes)
+// must not count — that is exactly how the documented numbers drifted
+// by five without anyone noticing.
+func docsToolSection(t *testing.T) (int, []string) {
+	t.Helper()
+
+	file, err := os.Open(docsToolsPage)
+	if err != nil {
+		t.Fatalf("open %s: %v", docsToolsPage, err)
 	}
 	defer file.Close()
 
@@ -43,7 +67,7 @@ func readmeToolSection(t *testing.T) (int, []string) {
 		line := scanner.Text()
 
 		if strings.HasPrefix(line, "## ") {
-			match := readmeToolsTitle.FindStringSubmatch(line)
+			match := docsToolsTitle.FindStringSubmatch(line)
 			inTools = match != nil
 
 			if match != nil {
@@ -57,23 +81,23 @@ func readmeToolSection(t *testing.T) (int, []string) {
 			continue
 		}
 
-		if match := readmeToolBullet.FindStringSubmatch(line); match != nil {
+		if match := docsToolBullet.FindStringSubmatch(line); match != nil {
 			names = append(names, match[1])
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		t.Fatalf("scan README: %v", err)
+		t.Fatalf("scan %s: %v", docsToolsPage, err)
 	}
 
 	return claimed, names
 }
 
-// TestReadmeToolList_MatchesRegisteredTools pins the README tool list
+// TestDocsToolList_MatchesRegisteredTools pins the documented tool list
 // against the registered server: every registered tool must be
 // documented, no documented tool may be stale, and the heading count
 // must match reality.
-func TestReadmeToolList_MatchesRegisteredTools(t *testing.T) {
+func TestDocsToolList_MatchesRegisteredTools(t *testing.T) {
 	registered := listRegisteredTools(t)
 
 	registeredNames := make(map[string]bool, len(registered))
@@ -81,46 +105,87 @@ func TestReadmeToolList_MatchesRegisteredTools(t *testing.T) {
 		registeredNames[tool.Name] = true
 	}
 
-	claimed, documented := readmeToolSection(t)
+	claimed, documented := docsToolSection(t)
 
 	if claimed != len(registered) {
-		t.Errorf("README heading claims %d tools, server registers %d", claimed, len(registered))
+		t.Errorf("%s heading claims %d tools, server registers %d", docsToolsPage, claimed, len(registered))
 	}
 
 	documentedNames := make(map[string]bool, len(documented))
 	for _, name := range documented {
 		if documentedNames[name] {
-			t.Errorf("README documents %s twice", name)
+			t.Errorf("%s documents %s twice", docsToolsPage, name)
 		}
 
 		documentedNames[name] = true
 
 		if !registeredNames[name] {
-			t.Errorf("README documents %s, but no such tool is registered", name)
+			t.Errorf("%s documents %s, but no such tool is registered", docsToolsPage, name)
 		}
 	}
 
 	for name := range registeredNames {
 		if !documentedNames[name] {
-			t.Errorf("registered tool %s is missing from the README tool list", name)
+			t.Errorf("registered tool %s is missing from the %s tool list", name, docsToolsPage)
 		}
 	}
 }
 
-var readmeFilterValues = regexp.MustCompile(`Values: ([^.]+)\.`)
+var docsAnnotationRow = regexp.MustCompile(`(?m)^\| (read-only|idempotent|write|destructive) \| (\d+) \|`)
 
-// TestReadmeFilterValues_MatchSearchFilters pins the documented filter
-// value list against telegram.SearchFilters, the single source of
-// truth — the same drift-by-hand failure mode as the tool census.
-func TestReadmeFilterValues_MatchSearchFilters(t *testing.T) {
-	raw, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README: %v", err)
+// TestDocsAnnotationTable_MatchesTheCensus pins the per-bucket counts the
+// tool page publishes against the census constants, which
+// TestToolCensus_MatchesTheDocumentedCounts in turn pins against the
+// registered server. Without this hop the page is free to drift: the
+// heading count is checked above, but the four bucket numbers were not
+// checked anywhere, which is how they sat one short for a whole release
+// while they lived in prose.
+func TestDocsAnnotationTable_MatchesTheCensus(t *testing.T) {
+	body := readDocsPage(t, docsToolsPage)
+
+	want := map[string]int{
+		"read-only":   wantReadOnlyTools,
+		"idempotent":  wantIdempotentTools,
+		"write":       wantWriteTools,
+		"destructive": wantDestructiveTools,
 	}
 
-	match := readmeFilterValues.FindStringSubmatch(string(raw))
+	documented := make(map[string]int, len(want))
+
+	for _, row := range docsAnnotationRow.FindAllStringSubmatch(body, -1) {
+		count, err := strconv.Atoi(row[2])
+		if err != nil {
+			t.Fatalf("%s annotation row %q carries no count: %v", docsToolsPage, row[1], err)
+		}
+
+		documented[row[1]] = count
+	}
+
+	for bucket, count := range want {
+		got, ok := documented[bucket]
+		if !ok {
+			t.Errorf("%s no longer documents the %s bucket count", docsToolsPage, bucket)
+
+			continue
+		}
+
+		if got != count {
+			t.Errorf("%s claims %d %s tools, the census says %d", docsToolsPage, got, bucket, count)
+		}
+	}
+}
+
+var docsFilterValues = regexp.MustCompile(`Values: ([^.]+)\.`)
+
+// TestDocsFilterValues_MatchSearchFilters pins the documented filter
+// value list against telegram.SearchFilters, the single source of
+// truth — the same drift-by-hand failure mode as the tool census.
+func TestDocsFilterValues_MatchSearchFilters(t *testing.T) {
+	body := readDocsPage(t, docsSearchPage)
+
+	match := docsFilterValues.FindStringSubmatch(body)
 	if match == nil {
-		t.Fatal("README no longer contains a 'Values: ...' filter list")
+		t.Fatalf("%s no longer contains a 'Values: ...' filter list", docsSearchPage)
 	}
 
 	documented := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(match[1], -1)
@@ -133,7 +198,7 @@ func TestReadmeFilterValues_MatchSearchFilters(t *testing.T) {
 	slices.Sort(names)
 
 	if want := telegram.SearchFilters(); !slices.Equal(names, want) {
-		t.Errorf("README documents filter values %v, code accepts %v", names, want)
+		t.Errorf("%s documents filter values %v, code accepts %v", docsSearchPage, names, want)
 	}
 }
 
@@ -164,36 +229,31 @@ func TestServerInstructions_MentionRequiredParseMode(t *testing.T) {
 	}
 }
 
-// TestReadmeParseMode_MatchesTheContract pins the README section to the
+// TestDocsParseMode_MatchesTheContract pins the message page to the
 // shipped contract: both enum values named, the retired alias absent.
-func TestReadmeParseMode_MatchesTheContract(t *testing.T) {
-	raw, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README: %v", err)
-	}
-
-	body := string(raw)
+func TestDocsParseMode_MatchesTheContract(t *testing.T) {
+	body := readDocsPage(t, docsMessagesPage)
 
 	for _, needle := range []string{"'plain'", "'commonmark'", "allowRawMarkdown", "entitiesParsed", "<https://autolink>"} {
 		if !strings.Contains(body, needle) {
-			t.Errorf("README no longer mentions %s", needle)
+			t.Errorf("%s no longer mentions %s", docsMessagesPage, needle)
 		}
 	}
 
 	if strings.Contains(body, "legacy alias for") {
-		t.Error("README still documents the retired 'markdown' alias as usable")
+		t.Errorf("%s still documents the retired 'markdown' alias as usable", docsMessagesPage)
 	}
 
 	if !strings.Contains(body, "**Breaking change") {
-		t.Error("README no longer carries the parse-mode migration note")
+		t.Errorf("%s no longer carries the parse-mode migration note", docsMessagesPage)
 	}
 
 	// The word-opening rule applies to doubled markers and links only —
-	// backticks, fences and autolink brackets trigger anywhere. A README
+	// backticks, fences and autolink brackets trigger anywhere. A page
 	// that claims otherwise sends people to debug a lint that is working
 	// as designed.
 	if !strings.Contains(body, "trigger wherever they appear") {
-		t.Error("README no longer scopes the lint's word-opening rule correctly")
+		t.Errorf("%s no longer scopes the lint's word-opening rule correctly", docsMessagesPage)
 	}
 }
 
@@ -207,13 +267,10 @@ func TestReadmeMajorVersion_MatchesTheModulePath(t *testing.T) {
 		t.Fatalf("read go.mod: %v", err)
 	}
 
-	readme, err := os.ReadFile("../../README.md")
-	if err != nil {
-		t.Fatalf("read README: %v", err)
-	}
+	readme := readDocsPage(t, readmePage)
 
 	hasSuffix := regexp.MustCompile(`(?m)^module .+/v[2-9]\d*$`).Match(gomod)
-	promisesMajor := regexp.MustCompile(`v[2-9]\d*\.0\.0`).Match(readme)
+	promisesMajor := regexp.MustCompile(`v[2-9]\d*\.0\.0`).MatchString(readme)
 
 	if promisesMajor && !hasSuffix {
 		t.Error("README promises a major version the module path cannot carry — add the /vN suffix to go.mod or drop the promise")

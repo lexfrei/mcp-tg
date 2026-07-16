@@ -44,3 +44,9 @@ TODO.md
 # Telegram session files
 session.json
 *.session
+
+# Claude Code local state — machine-specific, never shared. The scheduled-tasks
+# lock carries a session UUID and a PID; agent worktrees are scratch checkouts.
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+.claude/worktrees/

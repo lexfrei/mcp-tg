@@ -393,6 +393,28 @@ func TestDocsGoVersion_MatchesGoMod(t *testing.T) {
 	}
 }
 
+var docsConfigPage = "../../docs/configuration.md"
+
+// TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault pins the one env var
+// whose default cannot be written as a literal path. The code builds it
+// from os.TempDir(), which is /tmp on Linux but $TMPDIR
+// (/var/folders/...) on macOS — and macOS is a documented install target,
+// since the Homebrew formula is one. The page claimed
+// /tmp/mcp-tg/downloads flatly, which is wrong on the platform most
+// likely to read it.
+func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
+	row := regexp.MustCompile(`(?m)^\|\s*` + "`TELEGRAM_DOWNLOAD_DIR`" + `\s*\|.*$`).
+		FindString(readDocsPage(t, docsConfigPage))
+	if row == "" {
+		t.Fatalf("%s no longer documents TELEGRAM_DOWNLOAD_DIR", docsConfigPage)
+	}
+
+	if strings.Contains(row, "`/tmp/mcp-tg/downloads`") {
+		t.Errorf("%s states an absolute default for TELEGRAM_DOWNLOAD_DIR; "+
+			"the code uses os.TempDir(), which is $TMPDIR on macOS, not /tmp", docsConfigPage)
+	}
+}
+
 var mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
 
 // Every file that tells someone — a runner or a contributor — which
@@ -412,34 +434,171 @@ var mkdocsPinSites = []string{
 // unpinned while all three other sites pinned it — the exact drift the
 // pin exists to prevent, in a repository that pins every action SHA.
 func TestMkdocsMaterialPin_AllSitesAgree(t *testing.T) {
-	pins := make(map[string]string, len(mkdocsPinSites))
+	// Keyed by version so a disagreement names every site on each side,
+	// rather than comparing against a chosen file that may itself be the
+	// one that lost its pin.
+	sitesByVersion := make(map[string][]string, 1)
 
 	for _, site := range mkdocsPinSites {
-		match := mkdocsMaterialPin.FindStringSubmatch(readDocsPage(t, site))
-		if match == nil {
+		// Every pin in the file, not just the first: a second, different
+		// pin further down is exactly the drift this guards.
+		matches := mkdocsMaterialPin.FindAllStringSubmatch(readDocsPage(t, site), -1)
+		if matches == nil {
 			t.Errorf("%s installs mkdocs-material without pinning a version", site)
 
 			continue
 		}
 
-		pins[site] = match[1]
+		for _, match := range matches {
+			sitesByVersion[match[1]] = append(sitesByVersion[match[1]], site)
+		}
 	}
 
-	for site, pinned := range pins {
-		if pinned != pins[mkdocsPinSites[0]] {
-			t.Errorf("%s pins mkdocs-material %s, %s pins %s",
-				site, pinned, mkdocsPinSites[0], pins[mkdocsPinSites[0]])
-		}
+	if len(sitesByVersion) > 1 {
+		t.Errorf("mkdocs-material is pinned to %d different versions: %v", len(sitesByVersion), sitesByVersion)
 	}
 }
 
-var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9-]+)/`)
+var (
+	// A tool named anywhere in prose: `tg_messages_send`, or a family
+	// glob like `tg_messages_*`.
+	docsToolMention = regexp.MustCompile("`(tg_[a-z0-9_]*?)(\\*?)`")
+	docsPagesGlob   = "../../docs/*.md"
+)
 
-// TestDocsSiteURLs_ResolveToPages pins every published docs URL hardcoded
-// in Go source against a page that exists. The revoked-session error
-// hands a locked-out operator such a URL as its only recovery
-// instruction, so a renamed page would ship a 404 inside the one message
-// whose job is telling them what to do.
+// docsPages returns every published page plus the README.
+func docsPages(t *testing.T) []string {
+	t.Helper()
+
+	pages, err := filepath.Glob(docsPagesGlob)
+	if err != nil {
+		t.Fatalf("glob %s: %v", docsPagesGlob, err)
+	}
+
+	if len(pages) == 0 {
+		t.Fatalf("no pages matched %s", docsPagesGlob)
+	}
+
+	return append(pages, readmePage)
+}
+
+// TestDocsToolMentions_NameRealTools pins every tool named in prose, not
+// just the bullets in the tool list. The list is what
+// TestDocsToolList_MatchesRegisteredTools reads, and a name outside it
+// was checked by nothing — which is exactly how `tg_chats_admins`, a
+// tool that has never existed, sat in the peer-identifier section
+// telling readers to call it.
+//
+// A family glob (`tg_messages_*`) passes when at least one registered
+// tool carries the prefix, so a whole family being renamed still fails.
+func TestDocsToolMentions_NameRealTools(t *testing.T) {
+	registered := listRegisteredTools(t)
+
+	names := make(map[string]bool, len(registered))
+	for _, tool := range registered {
+		names[tool.Name] = true
+	}
+
+	mentioned := 0
+
+	for _, page := range docsPages(t) {
+		body := readDocsPage(t, page)
+
+		for _, match := range docsToolMention.FindAllStringSubmatch(body, -1) {
+			mentioned++
+
+			name, glob := match[1], match[2] == "*"
+
+			if glob {
+				if !anyToolHasPrefix(names, name) {
+					t.Errorf("%s mentions `%s*`, but no registered tool starts with %q", page, name, name)
+				}
+
+				continue
+			}
+
+			if !names[name] {
+				t.Errorf("%s mentions `%s`, but no such tool is registered", page, name)
+			}
+		}
+	}
+
+	if mentioned == 0 {
+		t.Error("no tool mentions found across the docs — this test has stopped checking anything")
+	}
+}
+
+func anyToolHasPrefix(names map[string]bool, prefix string) bool {
+	for name := range names {
+		if strings.HasPrefix(name, prefix) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// A published docs link, with the optional heading anchor captured:
+// https://mcp-tg.lexfrei.dev/building/#transport-modes
+var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9-]+)/(?:#([a-z0-9-]+))?`)
+
+var docsHeading = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
+
+// headingSlugs renders a page's headings the way MkDocs slugifies them
+// for anchors: lowercased, non-alphanumerics collapsed to hyphens.
+func headingSlugs(t *testing.T, page string) map[string]bool {
+	t.Helper()
+
+	slugs := make(map[string]bool)
+
+	for _, heading := range docsHeading.FindAllStringSubmatch(readDocsPage(t, page), -1) {
+		text := strings.ToLower(heading[1])
+		text = regexp.MustCompile("`|\\*|\\(|\\)").ReplaceAllString(text, "")
+		slug := strings.Trim(regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(text, "-"), "-")
+
+		slugs[slug] = true
+	}
+
+	return slugs
+}
+
+// checkDocsSiteURLs asserts every published docs URL in one file points
+// at a page that exists, and at a heading that exists when it carries an
+// anchor. Returns how many it checked.
+func checkDocsSiteURLs(t *testing.T, path, body string) int {
+	t.Helper()
+
+	checked := 0
+
+	for _, match := range docsSiteURL.FindAllStringSubmatch(body, -1) {
+		checked++
+
+		page := "../../docs/" + match[1] + ".md"
+
+		if _, err := os.Stat(page); err != nil {
+			t.Errorf("%s links to %s, but %s does not exist", path, match[0], page)
+
+			continue
+		}
+
+		if anchor := match[2]; anchor != "" && !headingSlugs(t, page)[anchor] {
+			t.Errorf("%s links to %s, but %s has no heading slugging to #%s", path, match[0], page, anchor)
+		}
+	}
+
+	return checked
+}
+
+// TestDocsSiteURLs_ResolveToPages pins every published docs URL — in Go
+// source and in the Markdown that is not built by mkdocs — against a page
+// and a heading that exist.
+//
+// Two surfaces need it and neither is covered elsewhere. The
+// revoked-session error hands a locked-out operator such a URL as its
+// only recovery instruction, so a renamed page ships a 404 inside the one
+// message whose job is telling them what to do. And the README carries
+// twelve of them, anchors included: it is the entry point on GitHub, and
+// mkdocs never builds it, so mkdocs.yml's link validation cannot see it.
 func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
 	checked := 0
 
@@ -459,7 +618,7 @@ func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
 			return nil
 		}
 
-		if !strings.HasSuffix(path, ".go") {
+		if !strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, ".md") {
 			return nil
 		}
 
@@ -468,14 +627,7 @@ func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
 			return errors.Wrapf(err, "read %s", path)
 		}
 
-		for _, match := range docsSiteURL.FindAllStringSubmatch(string(body), -1) {
-			checked++
-
-			page := "../../docs/" + match[1] + ".md"
-			if _, err := os.Stat(page); err != nil {
-				t.Errorf("%s links to %s, but %s does not exist", path, match[0], page)
-			}
-		}
+		checked += checkDocsSiteURLs(t, path, string(body))
 
 		return nil
 	})

@@ -14,7 +14,7 @@ golangci-lint run
 
 ## Documentation
 
-User-facing documentation lives in `docs/`, is built with MkDocs Material (`mkdocs.yml`) and publishes to <https://mcp-tg.lexfrei.dev> on every push to master (`.github/workflows/pages.yml`; `pr.yml`'s `docs` job runs the same `mkdocs build --strict` as a gate). `docs/CNAME` carries the custom domain into the built site. README.md is a landing page only — install, quickstart, links — and anything longer belongs on a docs page.
+User-facing documentation lives in `docs/`, is built with MkDocs Material (`mkdocs.yml`) and publishes to <https://mcp-tg.lexfrei.dev> on every push to master (`.github/workflows/pages.yml`; `pr.yml`'s `docs` job runs the same `mkdocs build --strict` as a gate). The custom domain lives in the repository's Pages settings, NOT in a `CNAME` file: GitHub ignores `CNAME` entirely when the site publishes from a custom Actions workflow ("no `CNAME` file is created, and any existing `CNAME` file is ignored and is not required"). A committed `CNAME` would look like the mechanism while being inert, sending anyone whose domain drops to read the wrong file. It is the one piece of site configuration outside version control. README.md is a landing page only — install, quickstart, links — and anything longer belongs on a docs page.
 
 ```bash
 pip install mkdocs-material==9.7.6   # pinned: MkDocs 2.0 drops the plugin system with no migration path

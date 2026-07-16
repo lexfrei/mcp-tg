@@ -542,24 +542,87 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // https://mcp-tg.lexfrei.dev/building/#transport-modes
 var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9-]+)/(?:#([a-z0-9-]+))?`)
 
-var docsHeading = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
+var (
+	docsHeading   = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
+	docsCodeFence = regexp.MustCompile("(?s)```.*?```")
+	slugDrop      = regexp.MustCompile(`[^\w\s-]`)
+	slugSeparator = regexp.MustCompile(`[-\s]+`)
+)
 
-// headingSlugs renders a page's headings the way MkDocs slugifies them
-// for anchors: lowercased, non-alphanumerics collapsed to hyphens.
+// slugifyHeading mirrors python-markdown's toc slugify, which is what
+// MkDocs actually anchors with:
+//
+//	value = re.sub(r'[^\w\s-]', '', value).strip().lower()
+//	return re.sub(r'[-\s]+', '-', value)
+//
+// Two details are load-bearing and both were wrong in the first cut of
+// this helper. `\w` includes the underscore, so `tg_messages_list`
+// anchors as itself rather than as `tg-messages-list` — in a repository
+// where every identifier is snake_case, guessing otherwise fails a
+// correct link and passes a broken one. And the strip happens BEFORE the
+// separator collapse, so an em dash vanishes and leaves the spaces
+// around it to collapse into a single hyphen.
+func slugifyHeading(text string) string {
+	stripped := strings.ToLower(strings.TrimSpace(slugDrop.ReplaceAllString(text, "")))
+
+	return slugSeparator.ReplaceAllString(stripped, "-")
+}
+
+// headingSlugs renders a page's real anchors. Fenced code blocks are cut
+// first: a `# comment` inside a ```bash fence is not a heading, but it
+// matches the heading pattern exactly, so leaving it in mints anchors
+// that do not exist and lets a link to one pass.
 func headingSlugs(t *testing.T, page string) map[string]bool {
 	t.Helper()
 
+	body := docsCodeFence.ReplaceAllString(readDocsPage(t, page), "")
+
 	slugs := make(map[string]bool)
 
-	for _, heading := range docsHeading.FindAllStringSubmatch(readDocsPage(t, page), -1) {
-		text := strings.ToLower(heading[1])
-		text = regexp.MustCompile("`|\\*|\\(|\\)").ReplaceAllString(text, "")
-		slug := strings.Trim(regexp.MustCompile(`[^a-z0-9]+`).ReplaceAllString(text, "-"), "-")
-
-		slugs[slug] = true
+	for _, heading := range docsHeading.FindAllStringSubmatch(body, -1) {
+		slugs[slugifyHeading(heading[1])] = true
 	}
 
 	return slugs
+}
+
+// TestSlugifyHeading_MatchesMkdocs pins the slug rules against what
+// MkDocs actually emits. Verified against a real build: each want below
+// is the id= MkDocs put on the rendered heading.
+func TestSlugifyHeading_MatchesMkdocs(t *testing.T) {
+	for _, tc := range []struct {
+		heading string
+		want    string
+	}{
+		{"Transport modes", "transport-modes"},
+		{"Recovery — revoked session", "recovery-revoked-session"},
+		{"Markdown — Known Limitations", "markdown-known-limitations"},
+		{"Posting as a channel (`sendAs`)", "posting-as-a-channel-sendas"},
+		// The underscore survives: \w includes it. Guessing otherwise
+		// would fail every correct link to an identifier heading.
+		{"`tg_messages_list`", "tg_messages_list"},
+		{"snake_case values", "snake_case-values"},
+	} {
+		if got := slugifyHeading(tc.heading); got != tc.want {
+			t.Errorf("slugifyHeading(%q) = %q, MkDocs anchors it as %q", tc.heading, got, tc.want)
+		}
+	}
+}
+
+// TestHeadingSlugs_IgnoreFencedComments pins the fence stripping: a shell
+// comment inside a code block matches the heading pattern, and counting
+// it as an anchor is a false PASS — a link to that non-existent anchor
+// would sail through and 404 on the site.
+func TestHeadingSlugs_IgnoreFencedComments(t *testing.T) {
+	slugs := headingSlugs(t, "../../docs/installation.md")
+
+	if slugs["the-same-file-feeds-this-shell-so-login-sees-the-credentials-too"] {
+		t.Error("headingSlugs treats a # comment inside a fenced block as a heading")
+	}
+
+	if !slugs["homebrew-macos-linux"] {
+		t.Error("headingSlugs lost a real heading while stripping fences")
+	}
 }
 
 // checkDocsSiteURLs asserts every published docs URL in one file points
@@ -637,6 +700,104 @@ func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
 
 	if checked == 0 {
 		t.Error("no docs-site URLs found in source — this test has stopped checking anything")
+	}
+}
+
+// backtickedValues pulls every `value` out of a documented list.
+func backtickedValues(list string) []string {
+	found := regexp.MustCompile("`([a-z_]+)`").FindAllStringSubmatch(list, -1)
+
+	names := make([]string, 0, len(found))
+	for _, match := range found {
+		names = append(names, match[1])
+	}
+
+	slices.Sort(names)
+
+	return names
+}
+
+var docsTypeValues = regexp.MustCompile(`Values are ([^.]+)\.`)
+
+// TestDocsTypeValues_MatchMessageTypes pins the documented `type` values
+// against telegram.MessageTypes. docs/search.md's structurally identical
+// `filter` list has been pinned against SearchFilters all along, and its
+// docstring names the reason — "the same drift-by-hand failure mode as
+// the tool census" — while this list, one page over, was read by nothing.
+func TestDocsTypeValues_MatchMessageTypes(t *testing.T) {
+	match := docsTypeValues.FindStringSubmatch(readDocsPage(t, docsMessagesPage))
+	if match == nil {
+		t.Fatalf("%s no longer contains a 'Values are ...' type list", docsMessagesPage)
+	}
+
+	documented := backtickedValues(match[1])
+
+	want := telegram.MessageTypes()
+	slices.Sort(want)
+
+	if !slices.Equal(documented, want) {
+		t.Errorf("%s documents type values %v, code labels %v", docsMessagesPage, documented, want)
+	}
+}
+
+var docsScopeValues = regexp.MustCompile(`takes ` + "`scope`" + ` \(([^)]+)\)`)
+
+// TestDocsScopeValues_MatchTheCode pins the documented global-search
+// scopes against the constants IsSearchScope accepts — the same class as
+// the filter and type lists.
+func TestDocsScopeValues_MatchTheCode(t *testing.T) {
+	match := docsScopeValues.FindStringSubmatch(readDocsPage(t, docsSearchPage))
+	if match == nil {
+		t.Fatalf("%s no longer documents the scope values", docsSearchPage)
+	}
+
+	documented := backtickedValues(match[1])
+
+	for _, scope := range documented {
+		if !telegram.IsSearchScope(scope) {
+			t.Errorf("%s documents scope %q, which the code rejects", docsSearchPage, scope)
+		}
+	}
+
+	want := []string{telegram.SearchScopeChannels, telegram.SearchScopeGroups, telegram.SearchScopeUsers}
+	slices.Sort(want)
+
+	if !slices.Equal(documented, want) {
+		t.Errorf("%s documents scopes %v, code accepts %v", docsSearchPage, documented, want)
+	}
+}
+
+var (
+	docsResourcesPage = "../../docs/resources.md"
+	docsBulletName    = regexp.MustCompile("(?m)^- `([^`]+)` —")
+)
+
+// TestDocsResourcesAndPrompts_NameTheRegisteredOnes pins the URIs and
+// names the page prints, not merely how many there are. The census
+// counts 4 and 3 off a live session and throws the identities away, so
+// renaming tg://dialogs to tg://chats would keep the count at 4 and leave
+// the page advertising a URI that resolves to nothing.
+func TestDocsResourcesAndPrompts_NameTheRegisteredOnes(t *testing.T) {
+	sections := strings.Split(readDocsPage(t, docsResourcesPage), "## ")
+
+	documented := make(map[string]bool)
+
+	for _, section := range sections {
+		if strings.HasPrefix(section, "Resources") || strings.HasPrefix(section, "Prompts") {
+			for _, match := range docsBulletName.FindAllStringSubmatch(section, -1) {
+				documented[match[1]] = true
+			}
+		}
+	}
+
+	if len(documented) == 0 {
+		t.Fatalf("%s no longer lists resources or prompts", docsResourcesPage)
+	}
+
+	for _, registered := range registeredResourceAndPromptNames(t) {
+		if !documented[registered] {
+			t.Errorf("%s does not document the registered %q", docsResourcesPage, registered)
+		}
 	}
 }
 

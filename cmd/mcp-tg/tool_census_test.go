@@ -117,6 +117,47 @@ func countRegisteredPrompts(t *testing.T) int {
 	return len(res.Prompts)
 }
 
+// registeredResourceAndPromptNames returns what the docs actually print
+// for each: a resource's URI (or URI template) and a prompt's name. The
+// counts alone cannot catch a rename, which is why the identities are
+// pinned separately.
+func registeredResourceAndPromptNames(t *testing.T) []string {
+	t.Helper()
+
+	cs, ctx := censusSession(t)
+
+	static, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("list resources: %v", err)
+	}
+
+	templates, err := cs.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		t.Fatalf("list resource templates: %v", err)
+	}
+
+	prompts, err := cs.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatalf("list prompts: %v", err)
+	}
+
+	names := make([]string, 0, len(static.Resources)+len(templates.ResourceTemplates)+len(prompts.Prompts))
+
+	for _, resource := range static.Resources {
+		names = append(names, resource.URI)
+	}
+
+	for _, template := range templates.ResourceTemplates {
+		names = append(names, template.URITemplate)
+	}
+
+	for _, prompt := range prompts.Prompts {
+		names = append(names, prompt.Name)
+	}
+
+	return names
+}
+
 // TestResourceAndPromptCensus_MatchesTheDocumentedCounts pins the two
 // numbers the docs print beside the tool total. They were checked
 // nowhere, so a new resource would have left every landing surface

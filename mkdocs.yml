@@ -34,6 +34,11 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+# The docs-link contract test resolves /page/ and /page alike on the strength
+# of this being true (a page is served as <page>/index.html). It is the default,
+# but the tests depend on it, so it is stated rather than assumed.
+use_directory_urls: true
+
 # --strict only fails the build on warnings, and MkDocs reports a broken
 # anchor, an unrecognized link and a page missing from the nav at INFO —
 # so by default a link to a heading that no longer exists builds green.

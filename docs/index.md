@@ -23,7 +23,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Progress | File uploads, media albums, message search |
 | Roots | File path validation for uploads/downloads |
 | Subscriptions | `resources/updated` on new messages in a subscribed chat |
-| Transports | stdio + HTTP/SSE |
+| Transports | stdio + Streamable HTTP |
 | KeepAlive | 30s ping interval |
 | Middleware | Auth guard, session guard, request logging, bool coercion |
 

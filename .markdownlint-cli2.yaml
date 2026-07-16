@@ -5,6 +5,10 @@
 # does not apply. Adding an H1 purely to satisfy it would render as a stray
 # title inside every new pull request.
 ignores:
+  # Other branches' checkouts: .claude/worktrees holds whole copies of this
+  # repository, whose Markdown is not this branch's to lint. The docs-link
+  # test skips it for the same reason.
+  - ".claude/**"
   - ".github/pull_request_template.md"
   - ".github/PULL_REQUEST_TEMPLATE/**"
   - ".github/ISSUE_TEMPLATE/**"

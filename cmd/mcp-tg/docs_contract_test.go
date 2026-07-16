@@ -487,7 +487,10 @@ func stepRunsInARequiredJob(t *testing.T, workflow, step string) bool {
 }
 
 // workflowJob returns one job's block from a workflow, by slicing from
-// its two-space-indented key to the next one.
+// its two-space-indented key to the next one. Comment lines are dropped:
+// a step search over raw YAML would otherwise match a comment that
+// merely quotes the command, so deleting the step while leaving prose
+// about it would pass vacuously.
 func workflowJob(t *testing.T, workflow, job string) string {
 	t.Helper()
 
@@ -499,10 +502,18 @@ func workflowJob(t *testing.T, workflow, job string) string {
 	rest := workflow[start+1:]
 
 	if next := regexp.MustCompile(`(?m)^  [a-z][a-z0-9-]*:$`).FindStringIndex(rest[1:]); next != nil {
-		return rest[:next[0]+1]
+		rest = rest[:next[0]+1]
 	}
 
-	return rest
+	var steps []string
+
+	for line := range strings.SplitSeq(rest, "\n") {
+		if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+			steps = append(steps, line)
+		}
+	}
+
+	return strings.Join(steps, "\n")
 }
 
 var markdownlintPin = regexp.MustCompile(`markdownlint-cli2@(\d+\.\d+\.\d+)`)
@@ -684,6 +695,11 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // A published docs link, with the optional heading anchor captured:
 // https://mcp-tg.lexfrei.dev/building/#transport-modes
 //
+// The page group takes `\w`, not a lowercase-only charset, for the same
+// reason the anchor group does: a link with a capital (/Installation/)
+// would otherwise match nothing and go unchecked, rather than failing
+// honestly against a page that does not exist.
+//
 // The page group spans nested segments, because docsPages walks docs/
 // recursively and a page at docs/guides/foo.md is a legal nav entry
 // serving /guides/foo/. Matching one segment would read that as the page
@@ -707,7 +723,7 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // optional group match EMPTY rather than fail, which skips the anchor
 // check entirely and passes a dead link. Capturing uppercase lets it
 // fail honestly instead.
-var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/((?:[a-z0-9_-]+/)*[a-z0-9_-]+)/?(?:#([\w-]+))?`)
+var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/((?:[\w-]+/)*[\w-]+)/?(?:#([\w-]+))?`)
 
 var (
 	docsHeading   = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
@@ -826,6 +842,104 @@ func TestHeadingSlugs_IgnoreFencedComments(t *testing.T) {
 // into: other branches' checkouts and build output.
 var skippedWalkDirs = map[string]bool{".git": true, ".claude": true, "site": true, "node_modules": true}
 
+// TestDocsTransport_NamesTheImplementedOne pins the docs against the HTTP
+// handler the server actually builds. SSE and Streamable HTTP are two
+// distinct MCP transports in the SDK, not two names for one: HTTP+SSE is
+// the superseded 2024-11-05 transport, and a client told to use it GETs
+// an endpoint event that StreamableHTTPHandler answers with a rejection.
+//
+// The pages advertised "HTTP/SSE" in the protocol-support table — the
+// exact place an integrator reads a transport off — while every worked
+// example says `--transport http`. Whoever believed the table got a
+// connect failure that names nothing.
+func TestDocsTransport_NamesTheImplementedOne(t *testing.T) {
+	if serverUsesHandler(t, "NewSSEHandler") {
+		return // If the server ever serves SSE, the docs may say so.
+	}
+
+	for _, page := range docsPages(t) {
+		if strings.Contains(readDocsPage(t, page), "SSE") {
+			t.Errorf("%s advertises SSE, but the server builds a Streamable HTTP handler and "+
+				"never calls mcp.NewSSEHandler — they are different transports", page)
+		}
+	}
+}
+
+// serverUsesHandler reports whether any non-test Go file in the tree
+// calls the named SDK constructor.
+func serverUsesHandler(t *testing.T, constructor string) bool {
+	t.Helper()
+
+	found := false
+
+	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() {
+			if skippedWalkDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return errors.Wrapf(err, "read %s", path)
+		}
+
+		if strings.Contains(string(body), "mcp."+constructor+"(") {
+			found = true
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk source: %v", err)
+	}
+
+	return found
+}
+
+// existingDocsPages is the set of real page paths, spelled as they are on
+// disk. Walked once: the URL scan asks per link.
+var existingDocsPages = func() func(*testing.T) map[string]bool {
+	var pages map[string]bool
+
+	return func(t *testing.T) map[string]bool {
+		t.Helper()
+
+		if pages != nil {
+			return pages
+		}
+
+		pages = make(map[string]bool)
+
+		err := filepath.WalkDir(docsDir, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !entry.IsDir() && strings.HasSuffix(path, ".md") {
+				pages[path] = true
+			}
+
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("walk %s: %v", docsDir, err)
+		}
+
+		return pages
+	}
+}()
+
 // checkDocsSiteURLs asserts every published docs URL in one file points
 // at a page that exists, and at a heading that exists when it carries an
 // anchor. Returns how many it checked.
@@ -839,7 +953,12 @@ func checkDocsSiteURLs(t *testing.T, path, body string) int {
 
 		page := "../../docs/" + match[1] + ".md"
 
-		if _, err := os.Stat(page); err != nil {
+		// Membership in the real page set, NOT os.Stat: macOS is
+		// case-insensitive, so os.Stat("docs/Installation.md") happily
+		// resolves docs/installation.md and a link that 404s on the
+		// (case-sensitive) site passes on a maintainer's laptop while
+		// failing on Linux CI. Comparing names keeps both honest.
+		if !existingDocsPages(t)[page] {
 			t.Errorf("%s links to %s, but %s does not exist", path, match[0], page)
 
 			continue

@@ -24,7 +24,7 @@ golangci-lint run
 
 ## Transport modes
 
-The server speaks MCP over stdio, HTTP/SSE, or both. Which one it runs is decided by `MCP_HTTP_PORT` and `MCP_HTTP_ONLY` (see [Configuration](configuration.md)).
+The server speaks MCP over stdio, Streamable HTTP, or both. Which one it runs is decided by `MCP_HTTP_PORT` and `MCP_HTTP_ONLY` (see [Configuration](configuration.md)).
 
 ### stdio (default)
 

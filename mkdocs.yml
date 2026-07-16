@@ -1,0 +1,62 @@
+site_name: mcp-tg
+site_description: MCP server for Telegram Client API (MTProto) — 78 tools, 4 resources, 3 prompts.
+site_url: https://mcp-tg.lexfrei.dev/
+repo_url: https://github.com/lexfrei/mcp-tg
+repo_name: lexfrei/mcp-tg
+edit_uri: edit/master/docs/
+copyright: BSD 3-Clause License
+
+theme:
+  name: material
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.sections
+    - content.code.copy
+    - search.highlight
+    - search.suggest
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Configuration: configuration.md
+  - Authentication: authentication.md
+  - Tools: tools.md
+  - Guides:
+      - Messages: messages.md
+      - Peers: peers.md
+      - Search: search.md
+      - Resources and Prompts: resources.md
+      - Posting as a channel: send-as.md
+      - Reactions: reactions.md
+  - Building and Transports: building.md

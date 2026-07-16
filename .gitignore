@@ -35,6 +35,9 @@ temp/
 # Build artifacts
 *.log
 
+# MkDocs build output
+site/
+
 # Personal notes
 TODO.md
 

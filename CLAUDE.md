@@ -331,3 +331,5 @@ Strict config in `.golangci.yml`:
 - `golang.org/x/sync` — errgroup for concurrent transports
 - `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`
 - `golang.org/x/text` — NFKD fold in `slugifyHeading` (`docs_contract_test.go`), so the docs-link pin slugs headings exactly as python-markdown does. Test-only, but a direct dependency
+- `gopkg.in/yaml.v3` — parses the docs workflows in `docs_contract_test.go`. Test-only, and load-bearing: the gate once shipped structurally invalid because a text-level check could not tell a mapping from a list
+- `go.uber.org/zap` + `github.com/gotd/log/logzap` — the zap logger gotd wants for its connection/migration trace, bridged to the DEBUG tier

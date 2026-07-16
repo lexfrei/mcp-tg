@@ -626,6 +626,82 @@ func TestClaudeMD_ReferencesResolve(t *testing.T) {
 	checkDocsPageRefs(t, claudeMD, body)
 }
 
+var (
+	goModDirectRequire = regexp.MustCompile(`(?m)^\t([^\s]+) v[^\s]+$`)
+	// The names a bullet lists BEFORE its em dash — the reason text after it
+	// mentions plenty of things that are not modules.
+	claudeDependency = regexp.MustCompile(`(?m)^- (.+?) —`)
+	backtickedName   = regexp.MustCompile("`([^`]+)`")
+)
+
+// TestClaudeMD_DocumentsEveryDirectDependency pins the dependency list against
+// go.mod's direct requires. The list gives each dependency a reason, which is
+// the only place a reader learns why a module is here at all — and it drifted
+// in the very commit that added one, because nothing read it. A test-only
+// dependency still counts: Go has no such category, so it is direct like any
+// other and must earn its line.
+func TestClaudeMD_DocumentsEveryDirectDependency(t *testing.T) {
+	gomod, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+
+	body := readDocsPage(t, claudeMD)
+
+	section := body[strings.Index(body, "## Dependencies"):]
+
+	documented := make(map[string]bool)
+
+	for _, bullet := range claudeDependency.FindAllStringSubmatch(section, -1) {
+		// One bullet may cover two modules ("zap + logzap").
+		for _, name := range backtickedName.FindAllStringSubmatch(bullet[1], -1) {
+			documented[name[1]] = true
+		}
+	}
+
+	direct, indirect := directRequires(string(gomod))
+
+	for _, module := range direct {
+		if !documented[module] {
+			t.Errorf("%s does not document the direct dependency %s — every one carries its reason there",
+				claudeMD, module)
+		}
+	}
+
+	// The reverse: a bullet for a module that is no longer required, or that is
+	// only indirect, describes a dependency this code does not have.
+	for module := range documented {
+		if indirect[module] {
+			t.Errorf("%s documents %s as a dependency, but go.mod has it as indirect", claudeMD, module)
+		}
+	}
+}
+
+// directRequires returns go.mod's non-indirect module paths, plus the set of
+// indirect ones.
+func directRequires(gomod string) ([]string, map[string]bool) {
+	var direct []string
+
+	indirect := make(map[string]bool)
+
+	for line := range strings.SplitSeq(gomod, "\n") {
+		match := goModDirectRequire.FindStringSubmatch(line)
+		if match == nil {
+			if strings.Contains(line, "// indirect") {
+				if fields := strings.Fields(line); len(fields) > 0 {
+					indirect[fields[0]] = true
+				}
+			}
+
+			continue
+		}
+
+		direct = append(direct, match[1])
+	}
+
+	return direct, indirect
+}
+
 // TestSourceComments_ReferenceRealDocsPages pins the docs paths named in Go
 // comments and test messages. Two of them pointed at a page that had moved,
 // one inside a failure message — misdirecting a reader at exactly the moment

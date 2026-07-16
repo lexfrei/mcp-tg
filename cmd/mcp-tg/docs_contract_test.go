@@ -446,6 +446,29 @@ const (
 // only), and the Markdown lint covers what its config has always described.
 var requiredDocsSteps = []string{"mkdocs build --strict", "markdownlint-cli2-action"}
 
+// workflowTriggerBlock returns the `on:` block — everything up to the next
+// top-level key — so a paths filter under `on:` is not confused with the word
+// appearing anywhere else in the file.
+func workflowTriggerBlock(workflow string) string {
+	start := strings.Index(workflow, "\non:\n")
+	if start < 0 {
+		return ""
+	}
+
+	// Skip past the "on:" line itself before hunting the next top-level key,
+	// or the search matches that very line and returns nothing.
+	body := workflow[start+len("\non:\n"):]
+
+	if next := workflowTopLevelKey.FindStringIndex(body); next != nil {
+		return body[:next[0]]
+	}
+
+	return body
+}
+
+// A top-level key sits in column zero, which is what ends the `on:` block.
+var workflowTopLevelKey = regexp.MustCompile(`(?m)^[A-Za-z_][A-Za-z0-9_-]*:`)
+
 // TestDocsGates_RunOnPullRequests pins both gates into the documentation
 // validation workflow, and pins the paths that must trigger it: a filter
 // that misses a file the build reads means the gate does not run for the
@@ -463,10 +486,15 @@ func TestDocsGates_RunOnPullRequests(t *testing.T) {
 		}
 	}
 
-	for _, path := range []string{"docs/**", "mkdocs.yml", "requirements-docs.txt"} {
-		if !strings.Contains(body, path) {
-			t.Errorf("%s does not trigger on %q, so a change there skips the gate", docsValidateWorkflow, path)
-		}
+	// No paths filter, and this is load-bearing rather than stylistic: GitHub
+	// leaves a workflow skipped by a filter in a Pending check, and a merge
+	// blocked on a required check that never reports is blocked forever — so a
+	// filtered workflow cannot be a required check at all. Filtering this one
+	// would quietly cap it at advisory, which is how the gate stopped gating
+	// once already.
+	if trigger := workflowTriggerBlock(body); strings.Contains(trigger, "paths:") {
+		t.Errorf("%s filters its trigger by paths, so its check can never be required — "+
+			"a broken docs build would merge green", docsValidateWorkflow)
 	}
 }
 
@@ -493,6 +521,81 @@ func TestMkdocsBuild_IsNotQuiet(t *testing.T) {
 			t.Errorf("%s runs %q — --quiet suppresses the warnings --strict counts, "+
 				"so the build reports success while catching nothing", workflow, match)
 		}
+	}
+}
+
+const claudeMD = "../../CLAUDE.md"
+
+var (
+	claudeWorkflowRef = regexp.MustCompile(`\.github/workflows/([A-Za-z0-9._-]+\.ya?ml)`)
+	claudeTestRef     = regexp.MustCompile(`\x60(Test[A-Za-z0-9_]+)\x60`)
+	goTestFunc        = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
+)
+
+// TestClaudeMD_ReferencesResolve pins the contributor guide against the tree
+// it describes. It is the one document here that makes checkable claims and
+// was checked by nothing — so when the docs workflows were reshaped, its
+// paragraph went on describing a `pages.yml` that no longer existed and four
+// test names that had been renamed, in a file whose whole subject is that
+// documentation must not be allowed to say things the code contradicts.
+//
+// Only the two claim kinds a test can settle offline: workflow files it names
+// must exist, and test identifiers it names must be defined.
+func TestClaudeMD_ReferencesResolve(t *testing.T) {
+	body := readDocsPage(t, claudeMD)
+
+	defined := make(map[string]bool)
+
+	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() {
+			if skippedWalkDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		if !strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return errors.Wrapf(err, "read %s", path)
+		}
+
+		for _, fn := range goTestFunc.FindAllStringSubmatch(string(source), -1) {
+			defined[fn[1]] = true
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk tests: %v", err)
+	}
+
+	for _, ref := range claudeWorkflowRef.FindAllStringSubmatch(body, -1) {
+		if _, err := os.Stat("../../.github/workflows/" + ref[1]); err != nil {
+			t.Errorf("%s names .github/workflows/%s, which does not exist", claudeMD, ref[1])
+		}
+	}
+
+	named := 0
+
+	for _, ref := range claudeTestRef.FindAllStringSubmatch(body, -1) {
+		named++
+
+		if !defined[ref[1]] {
+			t.Errorf("%s names %s, which is not a test in this tree — renamed or removed?", claudeMD, ref[1])
+		}
+	}
+
+	if named == 0 {
+		t.Errorf("%s no longer names any test — this check has stopped checking anything", claudeMD)
 	}
 }
 
@@ -530,7 +633,7 @@ func TestDocsWorkflows_PinActionsBySHA(t *testing.T) {
 
 var (
 	mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
-	pipInstallDirect  = regexp.MustCompile(`pip install\s+(?:--upgrade\s+)?mkdocs`)
+	pipInstallDirect  = regexp.MustCompile(`(?m)^\s*pip install\s+(?:--upgrade\s+)?mkdocs`)
 )
 
 const requirementsDocs = "../../requirements-docs.txt"

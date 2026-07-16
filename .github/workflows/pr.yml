@@ -102,7 +102,6 @@ jobs:
       - name: Run tests
         run: go test -race -count=1 ./...
 
-
   build-and-push:
     name: Build (${{ matrix.arch }})
     needs: [lint, test]

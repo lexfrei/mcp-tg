@@ -2,8 +2,6 @@ name: Documentation Validation
 
 on:
   pull_request:
-    paths:
-      - "docs/**"
       - "mkdocs.yml"
       - "requirements-docs.txt"
       - ".markdownlint*.yaml"

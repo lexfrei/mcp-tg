@@ -17,7 +17,7 @@ var ErrSessionRevoked = errors.New(
 		"The daemon cannot re-login itself, and this cannot be fixed from the MCP client " +
 		"(the /mcp re-authenticate action does not apply — this server has no OAuth). " +
 		"Log in interactively in a terminal: run `mcp-tg login`, then restart the daemon. " +
-		"See README → Recovery",
+		"See https://mcp-tg.lexfrei.dev/authentication/ → Recovery",
 )
 
 // NewSessionGuard returns a middleware that fast-fails tool/resource/prompt

@@ -477,7 +477,7 @@ func TestMessagesSearchGlobalHandler_Happy(t *testing.T) {
 }
 
 // TestMessagesSearchGlobalHandler_PeerIDPropagated pins the
-// PeerID-per-message contract that the README documents as the only
+// PeerID-per-message contract that docs/messages.md documents as the only
 // way callers of global search learn which chat a result came from.
 // A regression in messageToItem dropping msg.PeerID would silently
 // break cross-peer attribution; this test catches it.
@@ -522,11 +522,11 @@ func TestMessagesSearchGlobalHandler_PeerIDPropagated(t *testing.T) {
 // TestMessagesSearchGlobalResult_NoParticipantsField pins that the
 // MessagesSearchGlobalResult JSON shape has no Participants field.
 // Global search spans arbitrary peers with unreliable access-hash
-// resolution; documenting it here so the README claim stays honest.
+// resolution; documenting it here so the documented claim stays honest.
 func TestMessagesSearchGlobalResult_NoParticipantsField(t *testing.T) {
 	val := reflect.ValueOf(MessagesSearchGlobalResult{})
 	if _, found := val.Type().FieldByName("Participants"); found {
-		t.Error("MessagesSearchGlobalResult must not expose Participants — see README's tg_messages_search_global caveat")
+		t.Error("MessagesSearchGlobalResult must not expose Participants — see docs/messages.md's tg_messages_search_global caveat")
 	}
 }
 

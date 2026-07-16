@@ -363,7 +363,7 @@ func TestNewLogger_HonoursLevel(t *testing.T) {
 }
 
 // TestNewGotdLogger_HonoursLevel pins that the resolved --log-level also gates
-// the gotd zap logger, not only the slog logger. The README promises `debug`
+// the gotd zap logger, not only the slog logger. The docs promise `debug`
 // turns on the full gotd connection trace and `warn`/`error` quiet it; before
 // the level was threaded, newGotdLogger always ran at zap's default info.
 func TestNewGotdLogger_HonoursLevel(t *testing.T) {

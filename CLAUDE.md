@@ -12,6 +12,24 @@ go test -race ./...
 golangci-lint run
 ```
 
+## Documentation
+
+User-facing documentation lives in `docs/`, is built with MkDocs Material (`mkdocs.yml`) and publishes to <https://mcp-tg.lexfrei.dev> on every push to master (`.github/workflows/pages.yml`; `pr.yml`'s `docs` job runs the same `mkdocs build --strict` as a gate). `docs/CNAME` carries the custom domain into the built site. README.md is a landing page only — install, quickstart, links — and anything longer belongs on a docs page.
+
+```bash
+pip install mkdocs-material==9.7.6   # pinned: MkDocs 2.0 drops the plugin system with no migration path
+mkdocs serve
+```
+
+Four pages make claims the code can contradict, and `cmd/mcp-tg/docs_contract_test.go` pins each one:
+
+- `docs/tools.md` — the `## Tools (N)` heading and the `` - `tg_xxx` `` bullets are parsed and compared against the registered server (`TestDocsToolList_MatchesRegisteredTools`); the annotation table is compared against the census constants (`TestDocsAnnotationTable_MatchesTheCensus`). Keep both shapes exactly when editing.
+- `docs/search.md` — the `Values: ...` list is compared against `telegram.SearchFilters` (`TestDocsFilterValues_MatchSearchFilters`).
+- `docs/messages.md` — the parse-mode contract: both enum values, `allowRawMarkdown`, `entitiesParsed`, the autolink example, the migration note, and the absence of the retired `markdown` alias (`TestDocsParseMode_MatchesTheContract`).
+- `README.md` — only the major-version promise (`TestReadmeMajorVersion_MatchesTheModulePath`).
+
+A page that moves must take its pin with it: the test names the path it read, so a relocated page fails loudly rather than silently stopping to check anything.
+
 ## Architecture
 
 ```text
@@ -76,7 +94,7 @@ internal/testutil/           NoopClient for registration tests
 - `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
-The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release.
+The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release. `TestDocsAnnotationTable_MatchesTheCensus` then pins the published table in `docs/tools.md` against those same constants, so the site cannot drift from the server either.
 
 ### Peer resolution
 
@@ -166,7 +184,7 @@ Global search pagination is a compound cursor (`offsetRate` + `offsetId` + `offs
 Reading tools (`messages_list`, `messages_context`, `messages_get`, `messages_search`, `messages_search_global`) expose reply-header fields on each `MessageItem`:
 
 - Structured `replyTo` object (`messageId`, `topId`, `quoteText`, `fromPeerId`, plus advisory `fromName`/`fromUsername` for cross-chat replies) when the message replies to another. Omitted otherwise.
-- Text `output` emits a `reply to: <parentId>` line (or `reply to: <parentId> in <peer-ref>` for cross-chat replies, followed by a `quote: «...»` line if `quoteText` is present). This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N of M message(s)`, M being the server's total) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies. See README's "Message Output Format" for the full block layout.
+- Text `output` emits a `reply to: <parentId>` line (or `reply to: <parentId> in <peer-ref>` for cross-chat replies, followed by a `quote: «...»` line if `quoteText` is present). This applies to `messages_list`, `messages_context`, `messages_get`, and `messages_search`. `messages_search_global` returns only a summary line (`Found N of M message(s)`, M being the server's total) — its `output` does not format individual messages, so callers must read the JSON `replyTo` field for global-search replies. See `docs/messages.md` ("Message Output Format") for the full block layout.
 
 The first four tools also accept an optional `resolveReplies` parameter (default `false`). When `true`, parent messages that aren't in the returned batch are fetched in a single batched `GetMessages` call and attached as `replyToMessage: { fromName, fromUsername, text }` (text truncated to 200 runes). Cross-chat replies (`replyTo.fromPeerId` points elsewhere) are skipped since we lack the foreign peer's access hash. `messages_search_global` does not offer `resolveReplies` for the same reason — its results span arbitrary peers, a batched lookup is not feasible.
 
@@ -192,7 +210,7 @@ Each message in `output` is a block of `key: value` lines (`from:`, `forwarded f
 
 ### Output format param
 
-The five read tools (`messages_list`, `messages_get`, `messages_context`, `messages_search`, `messages_search_global`) take an optional `format` enum (`full`/`json`/`text`, default `full`) constrained on the wire via `inputSchemaWithEnum` (the `parseMode` precedent) — optional, so it is NOT in the schema `required` set; an omitted value is `full`. `messagesForFormat`/`outputForFormat` (`messages_format.go`) trim the result: `json` clears `Output`, `text` clears `Messages`, `full` keeps both. The two helpers are split (not one two-value function) because gocritic `unnamedResult` and `nonamedreturns` conflict on a multi-value return. Both result fields are now tagged `omitempty`, so a cleared field vanishes from the JSON — this is a deliberate shape change (documented in README "Message Output Format"): a full-mode result with zero messages now also omits `messages`. Handlers apply format LAST, after `resolveReplies`, so the enrichment still runs for `json`/`full`.
+The five read tools (`messages_list`, `messages_get`, `messages_context`, `messages_search`, `messages_search_global`) take an optional `format` enum (`full`/`json`/`text`, default `full`) constrained on the wire via `inputSchemaWithEnum` (the `parseMode` precedent) — optional, so it is NOT in the schema `required` set; an omitted value is `full`. `messagesForFormat`/`outputForFormat` (`messages_format.go`) trim the result: `json` clears `Output`, `text` clears `Messages`, `full` keeps both. The two helpers are split (not one two-value function) because gocritic `unnamedResult` and `nonamedreturns` conflict on a multi-value return. Both result fields are now tagged `omitempty`, so a cleared field vanishes from the JSON — this is a deliberate shape change (documented in `docs/messages.md`, "Message Output Format"): a full-mode result with zero messages now also omits `messages`. Handlers apply format LAST, after `resolveReplies`, so the enrichment still runs for `json`/`full`.
 
 ### Message entities (formatting on read)
 
@@ -220,7 +238,7 @@ On the SINGLE-message paths (`SendMessage`, `EditMessage`, `SendFile`) an echo t
 
 `SendAlbum` is deliberately NOT repaired: there is no single ID to attach a repaired count to, and the album's anomaly already surfaces as `count: 0` ("Sent album with 0 file(s)"), which is visibly wrong rather than quietly plausible — pinned by `TestMediaSendAlbumHandler_UnreadableEchoReportsNothing`. The single-message repair has its own oddity for symmetry's sake — `entitiesParsed: N` beside `messageId: 0` — which is equally loud: a follow-up edit on id 0 fails outright rather than silently editing the wrong message.
 
-Known CommonMark gaps documented in README's "Markdown — Known Limitations": nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
+Known CommonMark gaps documented in `docs/messages.md` ("Markdown — Known Limitations"): nested blockquotes (`> > x`), nested emphasis (`**a *b***`), hard line breaks via two trailing spaces or trailing `\`. Each has a commented-out test in `internal/telegram/markdown_audit_test.go`.
 
 ### Send-as identity (posting as a channel)
 

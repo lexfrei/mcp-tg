@@ -30,7 +30,7 @@ func dialogToItem(dlg *telegram.Dialog) DialogItem {
 }
 
 // dialogPeerType maps a Dialog to the canonical kind label. It MUST
-// agree with peerLabel for the same Peer — the README and CLAUDE.md
+// agree with peerLabel for the same Peer — the docs and CLAUDE.md
 // promise that the JSON 'type' field and the text '[kind:N]' bracket
 // label use the same string. Supergroups arrive as PeerChannel (gotd
 // folds broadcast channels and supergroups into the same type), so

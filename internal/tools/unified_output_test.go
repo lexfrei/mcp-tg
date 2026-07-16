@@ -321,7 +321,7 @@ func TestMessageItem_JSONIncludesNonZeroPeerID(t *testing.T) {
 // 'channel' (gotd folds supergroups and broadcast channels into
 // PeerChannel) — the previous code returned 'group' for IsGroup
 // dialogs, which contradicted the formatPeerRef text rendering and
-// broke the README's 'label = type' guarantee.
+// broke the documented 'label = type' guarantee.
 func TestDialogPeerType_SupergroupMatchesPeerLabel(t *testing.T) {
 	dlg := &telegram.Dialog{
 		Peer:    telegram.InputPeer{Type: telegram.PeerChannel, ID: 500},

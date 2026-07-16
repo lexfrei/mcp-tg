@@ -20,6 +20,7 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/lexfrei/mcp-tg/internal/tools"
 	"golang.org/x/text/unicode/norm"
+	"gopkg.in/yaml.v3"
 )
 
 // The documentation site is built from docs/ and published to
@@ -446,28 +447,42 @@ const (
 // only), and the Markdown lint covers what its config has always described.
 var requiredDocsSteps = []string{"mkdocs build --strict", "markdownlint-cli2-action"}
 
-// workflowTriggerBlock returns the `on:` block — everything up to the next
-// top-level key — so a paths filter under `on:` is not confused with the word
-// appearing anywhere else in the file.
-func workflowTriggerBlock(workflow string) string {
-	start := strings.Index(workflow, "\non:\n")
-	if start < 0 {
-		return ""
+// workflowTrigger parses a workflow and returns its `on.pull_request` mapping.
+// GitHub requires a mapping (or null) there; anything else is an invalid
+// workflow file, which never runs and therefore gates nothing.
+func workflowTrigger(t *testing.T, path string) (map[string]any, bool) {
+	t.Helper()
+
+	var parsed struct {
+		// `on` is YAML 1.1's boolean true, which is why it needs the explicit tag.
+		On map[string]any `yaml:"on"`
 	}
 
-	// Skip past the "on:" line itself before hunting the next top-level key,
-	// or the search matches that very line and returns nothing.
-	body := workflow[start+len("\non:\n"):]
+	if err := yaml.Unmarshal([]byte(readDocsPage(t, path)), &parsed); err != nil {
+		t.Errorf("%s is not valid YAML, so GitHub would reject it and the gate would never run: %v", path, err)
 
-	if next := workflowTopLevelKey.FindStringIndex(body); next != nil {
-		return body[:next[0]]
+		return nil, false
 	}
 
-	return body
+	trigger, present := parsed.On["pull_request"]
+	if !present {
+		t.Errorf("%s does not trigger on pull_request, so it gates no PR", path)
+
+		return nil, false
+	}
+
+	switch value := trigger.(type) {
+	case nil:
+		return map[string]any{}, true
+	case map[string]any:
+		return value, true
+	default:
+		t.Errorf("%s has on.pull_request as %T, but GitHub requires a mapping — "+
+			"the file is invalid and the workflow never runs", path, trigger)
+
+		return nil, false
+	}
 }
-
-// A top-level key sits in column zero, which is what ends the `on:` block.
-var workflowTopLevelKey = regexp.MustCompile(`(?m)^[A-Za-z_][A-Za-z0-9_-]*:`)
 
 // TestDocsGates_RunOnPullRequests pins both gates into the documentation
 // validation workflow, and pins the paths that must trigger it: a filter
@@ -486,13 +501,20 @@ func TestDocsGates_RunOnPullRequests(t *testing.T) {
 		}
 	}
 
-	// No paths filter, and this is load-bearing rather than stylistic: GitHub
-	// leaves a workflow skipped by a filter in a Pending check, and a merge
-	// blocked on a required check that never reports is blocked forever — so a
-	// filtered workflow cannot be a required check at all. Filtering this one
-	// would quietly cap it at advisory, which is how the gate stopped gating
-	// once already.
-	if trigger := workflowTriggerBlock(body); strings.Contains(trigger, "paths:") {
+	// Parsed, not grepped. A substring check for "paths:" passed while the
+	// workflow was structurally invalid — `on.pull_request` had been left as a
+	// list of orphaned path strings, which GitHub rejects outright, so the gate
+	// would never have run at all and every text-level guard still went green.
+	pullRequest, ok := workflowTrigger(t, docsValidateWorkflow)
+	if !ok {
+		return
+	}
+
+	// No paths filter, load-bearing rather than stylistic: GitHub leaves a
+	// workflow skipped by a filter in a Pending check, and a merge blocked on a
+	// required check that never reports is blocked forever — so a filtered
+	// workflow cannot be required at all.
+	if _, filtered := pullRequest["paths"]; filtered {
 		t.Errorf("%s filters its trigger by paths, so its check can never be required — "+
 			"a broken docs build would merge green", docsValidateWorkflow)
 	}
@@ -528,6 +550,7 @@ const claudeMD = "../../CLAUDE.md"
 
 var (
 	claudeWorkflowRef = regexp.MustCompile(`\.github/workflows/([A-Za-z0-9._-]+\.ya?ml)`)
+	docsPageRef       = regexp.MustCompile(`docs/[A-Za-z0-9._/-]+\.md`)
 	claudeTestRef     = regexp.MustCompile(`\x60(Test[A-Za-z0-9_]+)\x60`)
 	goTestFunc        = regexp.MustCompile(`(?m)^func (Test[A-Za-z0-9_]+)\(`)
 )
@@ -539,8 +562,10 @@ var (
 // test names that had been renamed, in a file whose whole subject is that
 // documentation must not be allowed to say things the code contradicts.
 //
-// Only the two claim kinds a test can settle offline: workflow files it names
-// must exist, and test identifiers it names must be defined.
+// Three claim kinds a test can settle offline: workflow files it names must
+// exist, test identifiers it names must be defined, and docs pages it names
+// must be there — a page that moved took six references with it and the
+// guard, reading only the first two kinds, waved them through.
 func TestClaudeMD_ReferencesResolve(t *testing.T) {
 	body := readDocsPage(t, claudeMD)
 
@@ -596,6 +621,60 @@ func TestClaudeMD_ReferencesResolve(t *testing.T) {
 
 	if named == 0 {
 		t.Errorf("%s no longer names any test — this check has stopped checking anything", claudeMD)
+	}
+
+	checkDocsPageRefs(t, claudeMD, body)
+}
+
+// TestSourceComments_ReferenceRealDocsPages pins the docs paths named in Go
+// comments and test messages. Two of them pointed at a page that had moved,
+// one inside a failure message — misdirecting a reader at exactly the moment
+// they are debugging.
+func TestSourceComments_ReferenceRealDocsPages(t *testing.T) {
+	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() {
+			if skippedWalkDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		if !strings.HasSuffix(path, ".go") {
+			return nil
+		}
+
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return errors.Wrapf(err, "read %s", path)
+		}
+
+		checkDocsPageRefs(t, path, string(source))
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk source: %v", err)
+	}
+}
+
+// checkDocsPageRefs asserts every docs/<page>.md named in a body exists.
+func checkDocsPageRefs(t *testing.T, path, body string) {
+	t.Helper()
+
+	for _, ref := range docsPageRef.FindAllString(body, -1) {
+		// A glob is a pattern, not a path.
+		if strings.Contains(ref, "*") {
+			continue
+		}
+
+		if _, err := os.Stat("../../" + ref); err != nil {
+			t.Errorf("%s names %s, which does not exist — moved?", path, ref)
+		}
 	}
 }
 
@@ -694,7 +773,7 @@ var (
 )
 
 // docsPages returns every published page plus the README. It walks rather
-// than globs: a page in a subdirectory (docs/guides/foo.md) is a legal
+// than globs: a page in a subdirectory (docs/<section>/<page>.md) is a legal
 // nav entry, and a glob would drop it silently — the scan would still
 // find mentions elsewhere, so the vacuity guard would not notice.
 func docsPages(t *testing.T) []string {
@@ -1009,15 +1088,15 @@ func checkDocsSiteURLs(t *testing.T, path, body string) int {
 	for _, match := range docsSiteURL.FindAllStringSubmatch(body, -1) {
 		checked++
 
-		// use_directory_urls serves /a/b/ from either docs/a/b.md or
-		// docs/a/b/index.md — a section landing is the latter, so both
+		// use_directory_urls serves a path from either docs/<path>.md or
+		// docs/<path>/index.md — a section landing is the latter, so both
 		// spellings must be tried before calling a link dead.
 		page := "../../docs/" + match[1] + ".md"
 		index := "../../docs/" + match[1] + "/index.md"
 
 		// Membership in the real page set, NOT os.Stat: macOS is
-		// case-insensitive, so os.Stat("docs/Installation.md") happily
-		// resolves docs/installation.md and a link that 404s on the
+		// case-insensitive, so a differently-cased os.Stat happily
+		// resolves docs/getting-started/installation.md and a link that 404s on the
 		// (case-sensitive) site passes on a maintainer's laptop while
 		// failing on Linux CI. Comparing names keeps both honest.
 		pages := existingDocsPages(t)
@@ -1176,7 +1255,7 @@ func backtickedValues(list string) []string {
 var docsTypeValues = regexp.MustCompile(`Values are ([^.]+)\.`)
 
 // TestDocsTypeValues_MatchMessageTypes pins the documented `type` values
-// against telegram.MessageTypes. docs/search.md's structurally identical
+// against telegram.MessageTypes. docs/guides/search.md's structurally identical
 // `filter` list has been pinned against SearchFilters all along, and its
 // docstring names the reason — "the same drift-by-hand failure mode as
 // the tool census" — while this list, one page over, was read by nothing.
@@ -1450,7 +1529,7 @@ func TestDocsParseMode_MatchesTheContract(t *testing.T) {
 // ...@vN` fails while `@latest` silently keeps resolving to v1.
 //
 // It reads every published page, not just the README. The versioning
-// rationale it guards moved to docs/messages.md with the parse-mode
+// rationale it guards moved to docs/guides/messages.md with the parse-mode
 // break, so a README-only check now watches a page that makes no such
 // claim — and a future v2.0.0 promise would be written where the
 // versioning discussion actually lives, out of its sight. Pin the claim

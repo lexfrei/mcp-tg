@@ -1,11 +1,14 @@
 name: Documentation Validation
 
+# No paths filter, deliberately — the one place the house pattern is not copied.
+# GitHub leaves a workflow skipped by a paths filter in a Pending check, and a
+# merge blocked on a required check that never reports is blocked forever, so a
+# filtered workflow can never be a required check at all. This build is the only
+# thing that sees a relative link or an anchor inside docs/ (the URL contract
+# test reads absolute links only), so it has to be able to block. Always run it;
+# the cost is well under a minute on a Go-only PR.
 on:
   pull_request:
-      - "mkdocs.yml"
-      - "requirements-docs.txt"
-      - ".markdownlint*.yaml"
-      - ".github/workflows/docs-validate.yaml"
 
 permissions:
   contents: read
@@ -32,15 +35,21 @@ jobs:
       - name: Install dependencies
         run: pip install --requirement requirements-docs.txt
 
+      # The version comment is the action's TAG, not the linter it bundles: this
+      # tag ships markdownlint-cli2 0.22.1, and the mapping is arbitrary
+      # (v22 -> 0.20.0, v23.0.0 -> 0.22.0, v24.0.0 -> 0.23.0). Read it out of the
+      # action's package.json at this SHA before telling anyone to match it.
       - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23.0.0
+        uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23.2.0
         with:
-          globs: "docs/**/*.md"
+          # The whole repository, not just docs/: README.md and CLAUDE.md are
+          # Markdown too, and .markdownlint-cli2.yaml's ignores are what scope
+          # it — a docs-only glob would leave those ignores unreachable.
+          globs: "**/*.md"
 
       # The site only builds for real on a push to master, where a failure lands
       # on the published documentation. Build it here too: relative links and
-      # anchors inside docs/ are checked by this and nothing else — the URL
-      # contract test reads absolute links only.
+      # anchors inside docs/ are checked by this and nothing else.
       #
       # --quiet must never be added: --strict fails on the warning COUNT and
       # --quiet suppresses the warnings before anything counts them, so the two

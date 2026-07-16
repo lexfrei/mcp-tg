@@ -102,15 +102,17 @@ jobs:
       - name: Run tests
         run: go test -race -count=1 ./...
 
-  docs:
-    name: Docs
-    runs-on: ubuntu-latest
-    # The site only builds on a push to master, where a failure would land on
-    # the published documentation. Build it here too so a broken nav entry or
-    # a cross-reference lost in an edit fails on the PR instead.
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
+      # The docs build lives in THIS job on purpose, rather than in a job of
+      # its own. `Test` is a required status check; a separate job would not
+      # be, and nothing in the workflow graph would depend on it — so a PR
+      # that breaks the docs would merge green, `pages.yml` would then fail
+      # on master, and the site would silently stop updating while the last
+      # good build stayed served. Making it required is a repository setting
+      # nobody is forced to remember; making it a step here is not.
+      #
+      # It earns the slot: relative links inside docs/ (`[Peers](peers.md)`,
+      # `building.md#transport-modes`) are checked by this build and by
+      # nothing else — the URL contract test reads absolute links only.
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.x"
@@ -118,6 +120,9 @@ jobs:
       - name: Install MkDocs Material
         run: pip install mkdocs-material==9.7.6
 
+      # --strict turns warnings into a failed build; mkdocs.yml's validation
+      # block is what makes a broken link, a dead anchor or a page missing
+      # from the nav a warning at all. Both halves are needed.
       - name: Build site
         run: mkdocs build --strict
 

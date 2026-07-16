@@ -10,12 +10,14 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 	"github.com/lexfrei/mcp-tg/internal/tools"
+	"golang.org/x/text/unicode/norm"
 )
 
 // The documentation site is built from docs/ and published to
@@ -369,9 +371,9 @@ func TestDocsToolSubsections_MatchTheirBullets(t *testing.T) {
 }
 
 var (
-	goModDirective  = regexp.MustCompile(`(?m)^go (\d+\.\d+(?:\.\d+)?)$`)
-	docsGoRequires  = regexp.MustCompile(`Go (\d+\.\d+(?:\.\d+)?)\+`)
-	docsBuildingPag = "../../docs/building.md"
+	goModDirective   = regexp.MustCompile(`(?m)^go (\d+\.\d+(?:\.\d+)?)$`)
+	docsGoRequires   = regexp.MustCompile(`Go (\d+\.\d+(?:\.\d+)?)\+`)
+	docsBuildingPage = "../../docs/building.md"
 )
 
 // TestDocsGoVersion_MatchesGoMod pins the documented minimum Go version
@@ -390,13 +392,13 @@ func TestDocsGoVersion_MatchesGoMod(t *testing.T) {
 		t.Fatal("go.mod carries no `go` directive")
 	}
 
-	documented := docsGoRequires.FindStringSubmatch(readDocsPage(t, docsBuildingPag))
+	documented := docsGoRequires.FindStringSubmatch(readDocsPage(t, docsBuildingPage))
 	if documented == nil {
-		t.Fatalf("%s no longer states a minimum Go version", docsBuildingPag)
+		t.Fatalf("%s no longer states a minimum Go version", docsBuildingPage)
 	}
 
 	if want := string(required[1]); documented[1] != want {
-		t.Errorf("%s requires Go %s+, go.mod requires %s", docsBuildingPag, documented[1], want)
+		t.Errorf("%s requires Go %s+, go.mod requires %s", docsBuildingPage, documented[1], want)
 	}
 }
 
@@ -425,6 +427,60 @@ func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
 				"os.TempDir(), which is $TMPDIR on macOS, not /tmp", docsConfigPage, value[0])
 		}
 	}
+}
+
+const prWorkflow = "../../.github/workflows/pr.yml"
+
+// requiredPRJobs are the jobs master's branch protection requires. A
+// check that is not one of these does not block a merge, so a gate
+// placed outside them is advisory no matter what its comment claims.
+var requiredPRJobs = []string{"test"}
+
+// TestDocsBuild_RunsInARequiredJob pins the docs build inside a job whose
+// check is required. It was a standalone `docs` job, which is not in
+// master's required contexts (Lint, Test, Build (amd64), Build (arm64))
+// and which nothing else in the graph depends on — so a PR breaking a
+// relative link merged green, pages.yml then failed on master, and the
+// site quietly stopped updating with the last good build still served.
+//
+// Relative links inside docs/ are checked by this build and nothing else:
+// TestDocsSiteURLs_ResolveToPages reads absolute URLs only. That is why
+// the build has to block rather than inform.
+func TestDocsBuild_RunsInARequiredJob(t *testing.T) {
+	body := readDocsPage(t, prWorkflow)
+
+	if strings.Contains(body, "\n  docs:\n") {
+		t.Error("pr.yml builds the docs in a standalone `docs` job, which master does not require — " +
+			"a broken docs build would not block a merge")
+	}
+
+	for _, job := range requiredPRJobs {
+		jobBody := workflowJob(t, body, job)
+		if strings.Contains(jobBody, "mkdocs build --strict") {
+			return
+		}
+	}
+
+	t.Errorf("no required job in pr.yml runs `mkdocs build --strict` (required: %v)", requiredPRJobs)
+}
+
+// workflowJob returns one job's block from a workflow, by slicing from
+// its two-space-indented key to the next one.
+func workflowJob(t *testing.T, workflow, job string) string {
+	t.Helper()
+
+	start := strings.Index(workflow, "\n  "+job+":\n")
+	if start < 0 {
+		t.Fatalf("pr.yml has no `%s` job", job)
+	}
+
+	rest := workflow[start+1:]
+
+	if next := regexp.MustCompile(`(?m)^  [a-z][a-z0-9-]*:$`).FindStringIndex(rest[1:]); next != nil {
+		return rest[:next[0]+1]
+	}
+
+	return rest
 }
 
 var mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
@@ -475,20 +531,35 @@ var (
 	// A tool named anywhere in prose: `tg_messages_send`, or a family
 	// glob like `tg_messages_*`.
 	docsToolMention = regexp.MustCompile("`(tg_[a-z0-9_]*?)(\\*?)`")
-	docsPagesGlob   = "../../docs/*.md"
+	docsDir         = "../../docs"
 )
 
-// docsPages returns every published page plus the README.
+// docsPages returns every published page plus the README. It walks rather
+// than globs: a page in a subdirectory (docs/guides/foo.md) is a legal
+// nav entry, and a glob would drop it silently — the scan would still
+// find mentions elsewhere, so the vacuity guard would not notice.
 func docsPages(t *testing.T) []string {
 	t.Helper()
 
-	pages, err := filepath.Glob(docsPagesGlob)
+	var pages []string
+
+	err := filepath.WalkDir(docsDir, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if !entry.IsDir() && strings.HasSuffix(path, ".md") {
+			pages = append(pages, path)
+		}
+
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("glob %s: %v", docsPagesGlob, err)
+		t.Fatalf("walk %s: %v", docsDir, err)
 	}
 
 	if len(pages) == 0 {
-		t.Fatalf("no pages matched %s", docsPagesGlob)
+		t.Fatalf("no pages found under %s", docsDir)
 	}
 
 	return append(pages, readmePage)
@@ -572,22 +643,47 @@ var (
 )
 
 // slugifyHeading mirrors python-markdown's toc slugify, which is what
-// MkDocs actually anchors with:
+// MkDocs actually anchors with — all three of its steps:
 //
+//	value = unicodedata.normalize('NFKD', value)
+//	value = value.encode('ascii', 'ignore').decode('ascii')
 //	value = re.sub(r'[^\w\s-]', '', value).strip().lower()
 //	return re.sub(r'[-\s]+', '-', value)
 //
-// Two details are load-bearing and both were wrong in the first cut of
-// this helper. `\w` includes the underscore, so `tg_messages_list`
-// anchors as itself rather than as `tg-messages-list` — in a repository
-// where every identifier is snake_case, guessing otherwise fails a
-// correct link and passes a broken one. And the strip happens BEFORE the
-// separator collapse, so an em dash vanishes and leaves the spaces
-// around it to collapse into a single hyphen.
+// Each step is load-bearing and each was wrong at some point here.
+//
+// The NFKD fold runs FIRST and turns an accented letter into its ASCII
+// base: `Café` slugs as `cafe`, not `caf`. Go's `\w` is ASCII-only, so
+// dropping this step deletes the letter instead of folding it — which
+// fails a correct link and passes a dead one, in both directions.
+//
+// `\w` keeps the underscore, so `tg_messages_list` anchors as itself
+// rather than as `tg-messages-list`. In a repository where every
+// identifier is snake_case, guessing otherwise is the same bug again.
+//
+// The strip happens BEFORE the separator collapse, so an em dash
+// vanishes and leaves the spaces around it to collapse into one hyphen.
+// That one is why `Recovery — revoked session` works.
 func slugifyHeading(text string) string {
-	stripped := strings.ToLower(strings.TrimSpace(slugDrop.ReplaceAllString(text, "")))
+	folded := foldToASCII(text)
+	stripped := strings.ToLower(strings.TrimSpace(slugDrop.ReplaceAllString(folded, "")))
 
 	return slugSeparator.ReplaceAllString(stripped, "-")
+}
+
+// foldToASCII is python's NFKD + ascii-ignore: decompose, then drop
+// everything non-ASCII, which leaves the base letter of an accented rune
+// behind and removes runes that have no ASCII base at all.
+func foldToASCII(text string) string {
+	var out strings.Builder
+
+	for _, r := range norm.NFKD.String(text) {
+		if r < utf8.RuneSelf {
+			out.WriteRune(r)
+		}
+	}
+
+	return out.String()
 }
 
 // headingSlugs renders a page's real anchors. Fenced code blocks are cut
@@ -624,6 +720,11 @@ func TestSlugifyHeading_MatchesMkdocs(t *testing.T) {
 		// would fail every correct link to an identifier heading.
 		{"`tg_messages_list`", "tg_messages_list"},
 		{"snake_case values", "snake_case-values"},
+		// An accented letter FOLDS to its ASCII base rather than being
+		// dropped — python normalizes NFKD and encodes ascii/ignore
+		// before the substitutions. Both verified against a real build.
+		{"Café configuration", "cafe-configuration"},
+		{"Naïve resolver", "naive-resolver"},
 	} {
 		if got := slugifyHeading(tc.heading); got != tc.want {
 			t.Errorf("slugifyHeading(%q) = %q, MkDocs anchors it as %q", tc.heading, got, tc.want)
@@ -708,8 +809,9 @@ func TestCheckDocsSiteURLs_AcceptsAndRejects(t *testing.T) {
 	}
 }
 
-// countURLErrors runs checkDocsSiteURLs against one link and reports how
-// many errors it raised, without failing this test.
+// countURLErrors reports whether checkDocsSiteURLs rejected one link: 1
+// if it raised any error, 0 if it accepted it. Not a count — the probe
+// only records that it failed — but the callers only ask "did it bite?".
 func countURLErrors(t *testing.T, link string) int {
 	t.Helper()
 

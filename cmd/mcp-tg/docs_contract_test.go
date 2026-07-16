@@ -626,6 +626,12 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // A published docs link, with the optional heading anchor captured:
 // https://mcp-tg.lexfrei.dev/building/#transport-modes
 //
+// The page group spans nested segments, because docsPages walks docs/
+// recursively and a page at docs/guides/foo.md is a legal nav entry
+// serving /guides/foo/. Matching one segment would read that as the page
+// "guides" and fail a correct link against a docs/guides.md that never
+// existed — the two halves of this test must agree on what a page is.
+//
 // The trailing slash is OPTIONAL, and that matters: requiring it made a
 // slash-less link match nothing at all, so it was never checked. With
 // use_directory_urls a page is served as <page>/index.html, so
@@ -643,7 +649,7 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 // optional group match EMPTY rather than fail, which skips the anchor
 // check entirely and passes a dead link. Capturing uppercase lets it
 // fail honestly instead.
-var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9_-]+)/?(?:#([\w-]+))?`)
+var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/((?:[a-z0-9_-]+/)*[a-z0-9_-]+)/?(?:#([\w-]+))?`)
 
 var (
 	docsHeading   = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
@@ -758,6 +764,10 @@ func TestHeadingSlugs_IgnoreFencedComments(t *testing.T) {
 	}
 }
 
+// skippedWalkDirs are the directories the URL walk must not descend
+// into: other branches' checkouts and build output.
+var skippedWalkDirs = map[string]bool{".git": true, ".claude": true, "site": true, "node_modules": true}
+
 // checkDocsSiteURLs asserts every published docs URL in one file points
 // at a page that exists, and at a heading that exists when it carries an
 // anchor. Returns how many it checked.
@@ -869,11 +879,13 @@ func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
 			return err
 		}
 
-		// Skip dot-directories: .claude/worktrees holds whole checkouts of
-		// this repository on other branches, whose URLs are not this
-		// branch's problem and whose pages may not exist here.
+		// .claude/worktrees holds whole checkouts of this repository on
+		// other branches, whose URLs are not this branch's problem and
+		// whose pages may not exist here; site/ is build output. Skipping
+		// every dot-directory would be simpler but would also skip
+		// .github, whose issue and PR templates may link to the docs.
 		if entry.IsDir() {
-			if strings.HasPrefix(entry.Name(), ".") && entry.Name() != "." && entry.Name() != ".." {
+			if skippedWalkDirs[entry.Name()] {
 				return filepath.SkipDir
 			}
 

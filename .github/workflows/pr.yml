@@ -127,6 +127,13 @@ jobs:
       - name: Build site
         run: mkdocs build --strict
 
+      # .markdownlint-cli2.yaml has been configured all along but never ran
+      # anywhere, so the only thing keeping the Markdown to it was habit — and
+      # the docs are now most of the Markdown in the repository. Runs in this
+      # job for the same reason the site build does: `Test` is required.
+      - name: Lint Markdown
+        run: npx --yes markdownlint-cli2 "**/*.md" "#node_modules"
+
   build-and-push:
     name: Build (${{ matrix.arch }})
     needs: [lint, test]

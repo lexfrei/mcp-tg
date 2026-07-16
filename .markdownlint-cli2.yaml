@@ -1,5 +1,16 @@
 # markdownlint-cli2 configuration
 
+# GitHub templates are forms, not documents: they open with the first section
+# a contributor fills in, so MD041 (first line must be a top-level heading)
+# does not apply. Adding an H1 purely to satisfy it would render as a stray
+# title inside every new pull request.
+ignores:
+  - ".github/pull_request_template.md"
+  - ".github/PULL_REQUEST_TEMPLATE/**"
+  - ".github/ISSUE_TEMPLATE/**"
+  - "site/**"
+  - "node_modules/**"
+
 # Rule configuration
 config:
   # Disable line length rule - technical documentation often needs longer lines

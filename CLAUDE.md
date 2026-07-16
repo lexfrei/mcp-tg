@@ -21,14 +21,18 @@ pip install mkdocs-material==9.7.6   # pinned: MkDocs 2.0 drops the plugin syste
 mkdocs serve
 ```
 
-Four pages make claims the code can contradict, and `cmd/mcp-tg/docs_contract_test.go` pins each one:
+Documentation that makes a claim the code can contradict is pinned by `cmd/mcp-tg/docs_contract_test.go`. Every number a page states about the server is derived from the server, never from another page:
 
-- `docs/tools.md` — the `## Tools (N)` heading and the `` - `tg_xxx` `` bullets are parsed and compared against the registered server (`TestDocsToolList_MatchesRegisteredTools`); the annotation table is compared against the census constants (`TestDocsAnnotationTable_MatchesTheCensus`). Keep both shapes exactly when editing.
+- `docs/tools.md` — the `## Tools (N)` heading and the `` - `tg_xxx` `` bullets are parsed and compared against the registered server (`TestDocsToolList_MatchesRegisteredTools`); each `### Name (N)` subtotal must equal its own bullet count and they must sum to the total (`TestDocsToolSubsections_MatchTheirBullets`); the annotation table is compared against the census constants (`TestDocsAnnotationTable_MatchesTheCensus`). Keep all three shapes exactly when editing.
+- `README.md`, `docs/index.md`, `mkdocs.yml` — every restatement of the tool / resource / prompt totals, in prose (`78 tools`, `78-tool`, `4 resources`) and in the protocol-table rows (`TestDocsCensusCounts_MatchTheServer`, with `TestDocsCensusCounts_AreActuallyStated` guarding against a page that drops the numbers and passes vacuously). `mkdocs.yml`'s `site_description` counts: Material renders it into the `<meta name="description">` of every page.
 - `docs/search.md` — the `Values: ...` list is compared against `telegram.SearchFilters` (`TestDocsFilterValues_MatchSearchFilters`).
 - `docs/messages.md` — the parse-mode contract: both enum values, `allowRawMarkdown`, `entitiesParsed`, the autolink example, the migration note, and the absence of the retired `markdown` alias (`TestDocsParseMode_MatchesTheContract`).
-- `README.md` — only the major-version promise (`TestReadmeMajorVersion_MatchesTheModulePath`).
+- `docs/building.md` — the minimum Go version against go.mod's `go` directive, which is a hard minimum since Go 1.21, not a hint (`TestDocsGoVersion_MatchesGoMod`).
+- `README.md` — the major-version promise (`TestReadmeMajorVersion_MatchesTheModulePath`).
+- The mkdocs-material version must agree across `pages.yml`, `pr.yml`, `CLAUDE.md` and `README.md` (`TestMkdocsMaterialPin_AllSitesAgree`) — an unpinned local install renders a different site than CI publishes.
+- Every `https://mcp-tg.lexfrei.dev/<page>/` URL hardcoded in Go source must resolve to a file under `docs/` (`TestDocsSiteURLs_ResolveToPages`). The revoked-session error hands an operator such a URL as its only recovery instruction.
 
-A page that moves must take its pin with it: the test names the path it read, so a relocated page fails loudly rather than silently stopping to check anything.
+A page that moves must take its pin with it: each test names the path it read, so a relocated page fails loudly rather than silently stopping to check anything.
 
 ## Architecture
 

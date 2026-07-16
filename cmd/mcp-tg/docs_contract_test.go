@@ -2,13 +2,16 @@ package main
 
 import (
 	"bufio"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
 )
@@ -175,44 +178,259 @@ func TestDocsAnnotationTable_MatchesTheCensus(t *testing.T) {
 	}
 }
 
-// A tool total stated as "78 tools" or "the full 78-tool reference". The
-// tool page's own "## Tools (N)" heading is pinned by
-// TestDocsToolList_MatchesRegisteredTools; this catches the totals the
-// two landing surfaces restate.
-var docsToolCountClaim = regexp.MustCompile(`(\d+)[ -]tools?\b`)
+// censusClaim is one way a page can restate a number the server owns:
+// the prose form ("78 tools", "the full 78-tool reference", "4
+// resources") and the protocol-table form ("| Resources | 4 (...)"),
+// which states the count without ever naming the noun beside it.
+type censusClaim struct {
+	subject string
+	pattern *regexp.Regexp
+	want    int
+}
 
-// The pages that advertise the tool total rather than documenting a
-// subset of it. Only these two are scanned: a guide is free to write
-// "the 6 tools that take sendAs", which is a different number by design,
-// and prose like that on a landing page is what this test wants to catch
-// anyway.
-var docsToolCountPages = []string{readmePage, "../../docs/index.md"}
+func docsCensusClaims() []censusClaim {
+	return []censusClaim{
+		{"tools", regexp.MustCompile(`(\d+)[ -]tools?\b`), wantToolsTotal},
+		{"tools table row", regexp.MustCompile(`(?m)^\| Tools \| (\d+)`), wantToolsTotal},
+		{"resources", regexp.MustCompile(`(\d+) resources?\b`), wantResources},
+		{"resources table row", regexp.MustCompile(`(?m)^\| Resources \| (\d+)`), wantResources},
+		{"prompts", regexp.MustCompile(`(\d+) prompts?\b`), wantPrompts},
+		{"prompts table row", regexp.MustCompile(`(?m)^\| Prompts \| (\d+)`), wantPrompts},
+	}
+}
 
-// TestDocsToolCount_MatchesTheCensus pins the tool total everywhere the
-// landing pages restate it. The heading on the tool page is pinned
-// against the server, but the split left the same number in four more
-// places — a README blurb, its docs link, the index blurb and the
-// protocol table — none of which any test read. Adding a tool would have
-// left them all quietly wrong.
-func TestDocsToolCount_MatchesTheCensus(t *testing.T) {
-	for _, page := range docsToolCountPages {
+// The surfaces that advertise the totals rather than documenting a
+// subset. mkdocs.yml earns its place: site_description becomes the
+// <meta name="description"> of every page Material renders, so a stale
+// number there is what a search engine quotes for the whole site.
+//
+// A guide page is deliberately absent — it is free to write "the 6 tools
+// that take sendAs", a different number by construction.
+var docsCensusPages = []string{readmePage, "../../docs/index.md", "../../mkdocs.yml"}
+
+// TestDocsCensusCounts_MatchTheServer pins every restatement of the tool,
+// resource and prompt totals. Only the tool page's own "## Tools (N)"
+// heading was ever read by a test; the same numbers also sit in two
+// landing blurbs, a docs link, the protocol-support table and the site
+// description, so adding a tool would update one and leave five wrong.
+func TestDocsCensusCounts_MatchTheServer(t *testing.T) {
+	for _, page := range docsCensusPages {
 		body := readDocsPage(t, page)
 
-		claims := docsToolCountClaim.FindAllStringSubmatch(body, -1)
-		if len(claims) == 0 {
-			t.Errorf("%s no longer states the tool total — it is the first number a reader sees", page)
+		for _, claim := range docsCensusClaims() {
+			for _, match := range claim.pattern.FindAllStringSubmatch(body, -1) {
+				claimed, err := strconv.Atoi(match[1])
+				if err != nil {
+					t.Fatalf("%s: unparseable %s count %q: %v", page, claim.subject, match[0], err)
+				}
+
+				if claimed != claim.want {
+					t.Errorf("%s claims %q (%s), but the server registers %d", page, match[0], claim.subject, claim.want)
+				}
+			}
+		}
+	}
+}
+
+// TestDocsCensusCounts_AreActuallyStated guards the test above from
+// passing vacuously: a page that drops the numbers entirely, or reworded
+// past the patterns, would otherwise match nothing and stay green.
+func TestDocsCensusCounts_AreActuallyStated(t *testing.T) {
+	for _, page := range docsCensusPages {
+		body := readDocsPage(t, page)
+
+		if !docsCensusClaims()[0].pattern.MatchString(body) {
+			t.Errorf("%s no longer states the tool total — the first number a reader sees", page)
+		}
+	}
+}
+
+var docsToolSubsection = regexp.MustCompile(`^### .*\((\d+)\)`)
+
+// toolSubsection is one "### Messages (16)" group: the subtotal the
+// heading claims, and the bullets actually listed under it.
+type toolSubsection struct {
+	name    string
+	claimed int
+	bullets int
+}
+
+// docsToolSubsections walks the Tools section and pairs every category
+// heading with the bullets beneath it.
+func docsToolSubsections(t *testing.T) []toolSubsection {
+	t.Helper()
+
+	var (
+		sections []toolSubsection
+		inTools  bool
+	)
+
+	for line := range strings.SplitSeq(readDocsPage(t, docsToolsPage), "\n") {
+		if strings.HasPrefix(line, "## ") {
+			inTools = docsToolsTitle.MatchString(line)
+
+			continue
 		}
 
-		for _, claim := range claims {
-			claimed, err := strconv.Atoi(claim[1])
+		if !inTools {
+			continue
+		}
+
+		if match := docsToolSubsection.FindStringSubmatch(line); match != nil {
+			claimed, err := strconv.Atoi(match[1])
 			if err != nil {
-				t.Fatalf("%s: unparseable tool count %q: %v", page, claim[0], err)
+				t.Fatalf("%s: unparseable subtotal in %q: %v", docsToolsPage, line, err)
 			}
 
-			if claimed != wantToolsTotal {
-				t.Errorf("%s claims %q, the census says %d tools", page, claim[0], wantToolsTotal)
+			sections = append(sections, toolSubsection{name: line, claimed: claimed})
+
+			continue
+		}
+
+		if docsToolBullet.MatchString(line) && len(sections) > 0 {
+			sections[len(sections)-1].bullets++
+		}
+	}
+
+	return sections
+}
+
+// TestDocsToolSubsections_MatchTheirBullets pins the per-category
+// subtotals. The "## Tools (N)" heading directly above them is pinned
+// against the server, which made the gap worse rather than better: a
+// contributor adding a tool gets a red build until the total and the
+// bullet agree, learns the page is guarded, and has no reason to suspect
+// the number in the heading beside it is not.
+func TestDocsToolSubsections_MatchTheirBullets(t *testing.T) {
+	sections := docsToolSubsections(t)
+	if len(sections) == 0 {
+		t.Fatalf("%s no longer groups tools under '### Name (N)' headings", docsToolsPage)
+	}
+
+	sum := 0
+
+	for _, section := range sections {
+		sum += section.claimed
+
+		if section.claimed != section.bullets {
+			t.Errorf("%s: %q claims %d tools, lists %d", docsToolsPage, section.name, section.claimed, section.bullets)
+		}
+	}
+
+	if sum != wantToolsTotal {
+		t.Errorf("%s subtotals sum to %d, the server registers %d tools", docsToolsPage, sum, wantToolsTotal)
+	}
+}
+
+var (
+	goModDirective  = regexp.MustCompile(`(?m)^go (\d+\.\d+(?:\.\d+)?)$`)
+	docsGoRequires  = regexp.MustCompile(`Go (\d+\.\d+(?:\.\d+)?)\+`)
+	docsBuildingPag = "../../docs/building.md"
+)
+
+// TestDocsGoVersion_MatchesGoMod pins the documented minimum Go version
+// against go.mod. Since Go 1.21 the `go` directive is a hard minimum, not
+// a hint — a reader on the version the docs named would be told to
+// upgrade by the toolchain, or silently have a second one downloaded.
+// The page claimed 1.26.1 while go.mod required 1.26.5.
+func TestDocsGoVersion_MatchesGoMod(t *testing.T) {
+	gomod, err := os.ReadFile("../../go.mod")
+	if err != nil {
+		t.Fatalf("read go.mod: %v", err)
+	}
+
+	required := goModDirective.FindSubmatch(gomod)
+	if required == nil {
+		t.Fatal("go.mod carries no `go` directive")
+	}
+
+	documented := docsGoRequires.FindStringSubmatch(readDocsPage(t, docsBuildingPag))
+	if documented == nil {
+		t.Fatalf("%s no longer states a minimum Go version", docsBuildingPag)
+	}
+
+	if want := string(required[1]); documented[1] != want {
+		t.Errorf("%s requires Go %s+, go.mod requires %s", docsBuildingPag, documented[1], want)
+	}
+}
+
+var mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
+
+// Every file that tells someone — a runner or a contributor — which
+// mkdocs-material to install. They must agree: MkDocs 2.0 removes the
+// plugin and theming systems with no migration path, so an unpinned or
+// differently-pinned local install renders a different site than the one
+// CI publishes.
+var mkdocsPinSites = []string{
+	"../../.github/workflows/pages.yml",
+	"../../.github/workflows/pr.yml",
+	"../../CLAUDE.md",
+	readmePage,
+}
+
+// TestMkdocsMaterialPin_AllSitesAgree pins the version across all four
+// places that name it. The README told contributors to install it
+// unpinned while all three other sites pinned it — the exact drift the
+// pin exists to prevent, in a repository that pins every action SHA.
+func TestMkdocsMaterialPin_AllSitesAgree(t *testing.T) {
+	pins := make(map[string]string, len(mkdocsPinSites))
+
+	for _, site := range mkdocsPinSites {
+		match := mkdocsMaterialPin.FindStringSubmatch(readDocsPage(t, site))
+		if match == nil {
+			t.Errorf("%s installs mkdocs-material without pinning a version", site)
+
+			continue
+		}
+
+		pins[site] = match[1]
+	}
+
+	for site, pinned := range pins {
+		if pinned != pins[mkdocsPinSites[0]] {
+			t.Errorf("%s pins mkdocs-material %s, %s pins %s",
+				site, pinned, mkdocsPinSites[0], pins[mkdocsPinSites[0]])
+		}
+	}
+}
+
+var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9-]+)/`)
+
+// TestDocsSiteURLs_ResolveToPages pins every published docs URL hardcoded
+// in Go source against a page that exists. The revoked-session error
+// hands a locked-out operator such a URL as its only recovery
+// instruction, so a renamed page would ship a 404 inside the one message
+// whose job is telling them what to do.
+func TestDocsSiteURLs_ResolveToPages(t *testing.T) {
+	checked := 0
+
+	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return errors.Wrapf(err, "read %s", path)
+		}
+
+		for _, match := range docsSiteURL.FindAllStringSubmatch(string(body), -1) {
+			checked++
+
+			page := "../../docs/" + match[1] + ".md"
+			if _, err := os.Stat(page); err != nil {
+				t.Errorf("%s links to %s, but %s does not exist", path, match[0], page)
 			}
 		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk source: %v", err)
+	}
+
+	if checked == 0 {
+		t.Error("no docs-site URLs found in source — this test has stopped checking anything")
 	}
 }
 

@@ -61,7 +61,7 @@ Everything lives at **[mcp-tg.lexfrei.dev](https://mcp-tg.lexfrei.dev)**:
 The site is built from `docs/` with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and deploys on every push to `master`. To preview locally:
 
 ```bash
-pip install mkdocs-material
+pip install mkdocs-material==9.7.6
 mkdocs serve
 ```
 

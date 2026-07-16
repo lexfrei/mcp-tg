@@ -27,9 +27,19 @@ const (
 	wantIdempotentTools  = 28
 	wantWriteTools       = 10
 	wantDestructiveTools = 9
+
+	// The docs advertise these beside the tool total, so they are pinned
+	// the same way. A resource template counts as a resource: the docs
+	// list four, and two of those are templates.
+	wantResources = 4
+	wantPrompts   = 3
 )
 
-func listRegisteredTools(t *testing.T) []*mcp.Tool {
+// censusSession connects an in-memory client to a fully registered
+// server. Every census test reads its numbers off this session rather
+// than off the registration source, so what is counted is what an MCP
+// client would actually see.
+func censusSession(t *testing.T) (*mcp.ClientSession, context.Context) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -56,12 +66,69 @@ func listRegisteredTools(t *testing.T) []*mcp.Tool {
 		t.Fatalf("client connect: %v", err)
 	}
 
+	return cs, ctx
+}
+
+func listRegisteredTools(t *testing.T) []*mcp.Tool {
+	t.Helper()
+
+	cs, ctx := censusSession(t)
+
 	res, err := cs.ListTools(ctx, nil)
 	if err != nil {
 		t.Fatalf("list tools: %v", err)
 	}
 
 	return res.Tools
+}
+
+// countRegisteredResources returns static resources plus templates. The
+// docs make no distinction — "4 (dialogs, profile, chat info, chat
+// messages)" — and two of those four are URI templates, so counting only
+// the static ones would pin the number 2 against a page that says 4.
+func countRegisteredResources(t *testing.T) int {
+	t.Helper()
+
+	cs, ctx := censusSession(t)
+
+	static, err := cs.ListResources(ctx, nil)
+	if err != nil {
+		t.Fatalf("list resources: %v", err)
+	}
+
+	templates, err := cs.ListResourceTemplates(ctx, nil)
+	if err != nil {
+		t.Fatalf("list resource templates: %v", err)
+	}
+
+	return len(static.Resources) + len(templates.ResourceTemplates)
+}
+
+func countRegisteredPrompts(t *testing.T) int {
+	t.Helper()
+
+	cs, ctx := censusSession(t)
+
+	res, err := cs.ListPrompts(ctx, nil)
+	if err != nil {
+		t.Fatalf("list prompts: %v", err)
+	}
+
+	return len(res.Prompts)
+}
+
+// TestResourceAndPromptCensus_MatchesTheDocumentedCounts pins the two
+// numbers the docs print beside the tool total. They were checked
+// nowhere, so a new resource would have left every landing surface
+// claiming the old count.
+func TestResourceAndPromptCensus_MatchesTheDocumentedCounts(t *testing.T) {
+	if got := countRegisteredResources(t); got != wantResources {
+		t.Errorf("server registers %d resources (incl. templates), docs claim %d", got, wantResources)
+	}
+
+	if got := countRegisteredPrompts(t); got != wantPrompts {
+		t.Errorf("server registers %d prompts, docs claim %d", got, wantPrompts)
+	}
 }
 
 // classifyTool maps a tool onto the four annotation buckets the docs

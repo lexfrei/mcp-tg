@@ -47,7 +47,7 @@ On macOS the item is written through `security(1)` into the stable `apple-tool` 
 
 Where no keychain is reachable — a container, or a headless Linux host with no Secret Service — opt into a plaintext file with `--insecure-storage` (on `mcp-tg login`) or `TELEGRAM_SESSION_INSECURE=true` (for the server/daemon). The two modes must match: an item written to the keychain cannot be read from a file, or vice versa. Without the opt-in, an unreachable keychain fails fast with a clear error instead of silently writing plaintext.
 
-**Upgrading from a file-based session:** earlier versions kept the session in the `~/.mcp-tg/session.json` file. This version reads the keychain by default, so an existing file is no longer picked up — either set `TELEGRAM_SESSION_INSECURE=true` (and pass `--insecure-storage` to `mcp-tg login`) to keep using the file, or run `mcp-tg login` once to move the session into the keychain.
+**Upgrading from a file-based session:** earlier versions kept the session in the `~/.mcp-tg/session.json` file. Current versions read the keychain by default, so an existing file is no longer picked up — either set `TELEGRAM_SESSION_INSECURE=true` (and pass `--insecure-storage` to `mcp-tg login`) to keep using the file, or run `mcp-tg login` once to move the session into the keychain.
 
 ## Recovery — revoked session
 

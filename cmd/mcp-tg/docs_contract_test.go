@@ -1420,6 +1420,20 @@ func TestDocsParseMode_MatchesTheContract(t *testing.T) {
 		t.Errorf("%s no longer carries the parse-mode migration note", docsMessagesPage)
 	}
 
+	// A break note must name its version. The site is not versioned — it
+	// always serves master — so "in this release" means whatever the
+	// reader loads it in. The README at least had `git show v1.0:README.md`
+	// as an escape; a page has none. The output-format note proves the
+	// decay: it said "this release" for six releases running.
+	if drift := regexp.MustCompile(`\*\*Breaking change[^*]*\*\*`).FindAllString(body, -1); drift != nil {
+		for _, note := range drift {
+			if !regexp.MustCompile(`v\d+\.\d+\.\d+`).MatchString(note) {
+				t.Errorf("%s carries %q, which names no version — on an unversioned site "+
+					"'this release' means whenever the page is read", docsMessagesPage, note)
+			}
+		}
+	}
+
 	// The word-opening rule applies to doubled markers and links only —
 	// backticks, fences and autolink brackets trigger anywhere. A page
 	// that claims otherwise sends people to debug a lint that is working

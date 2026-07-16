@@ -34,7 +34,7 @@ The behaviour behind the [tool reference](../tools.md): the shapes tools return,
 
     ---
 
-    The four resources, the three prompts, and subscribing to a chat's new messages.
+    Every resource and prompt the server registers, and subscribing to a chat's new messages.
 
     [:octicons-arrow-right-24: Resources and Prompts](resources.md)
 

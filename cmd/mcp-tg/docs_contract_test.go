@@ -441,6 +441,32 @@ func TestDocsFloodRetries_MatchTheMiddleware(t *testing.T) {
 	}
 }
 
+var mkdocsSiteURL = regexp.MustCompile(`(?m)^site_url:\s*https://([^/\s]+)`)
+
+// TestDocsCNAME_MatchesTheSiteURL pins the two places the domain is written.
+// docs/CNAME is inert for a workflow-published site — it ships for parity and
+// so the domain is in git if publishing ever moves back to a branch — but an
+// inert file that disagrees with site_url is worse than none: whoever reads it
+// reads the wrong domain, and the test suite would not care.
+func TestDocsCNAME_MatchesTheSiteURL(t *testing.T) {
+	cname := strings.TrimSpace(readDocsPage(t, "../../docs/CNAME"))
+
+	site := mkdocsSiteURL.FindStringSubmatch(readDocsPage(t, mkdocsConfig))
+	if site == nil {
+		t.Fatalf("%s carries no site_url", mkdocsConfig)
+	}
+
+	if cname != site[1] {
+		t.Errorf("docs/CNAME says %q, %s publishes to %q", cname, mkdocsConfig, site[1])
+	}
+
+	// The contract tests resolve published links against this host too.
+	if !strings.Contains(docsSiteBase, site[1]) {
+		t.Errorf("docsSiteBase is %q, but the site publishes to %q — the URL pin would check the wrong host",
+			docsSiteBase, site[1])
+	}
+}
+
 // TestMkdocsCopyright_MatchesTheLicense pins the footer every published page
 // carries against the licence it restates. It read 2025-2026 in a project whose
 // first commit is 2026 — a claim contradicted by a file two directories up.

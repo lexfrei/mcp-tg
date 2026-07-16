@@ -19,7 +19,7 @@ User-facing documentation lives in `docs/`, is built with MkDocs Material (`mkdo
 ```bash
 pip install mkdocs-material==9.7.6   # pinned: MkDocs 2.0 drops the plugin system with no migration path
 mkdocs serve
-npx markdownlint-cli2 "**/*.md" "#node_modules"   # same command the Test job runs
+npx --yes markdownlint-cli2@0.23.0 "**/*.md" "#node_modules"   # same command the Test job runs
 ```
 
 `markdownlint-cli2` runs in the same required job. Its config predates this and had never run in CI, so the only thing holding the Markdown to it was habit. GitHub templates are ignored there: they are forms that open with the section a contributor fills in, so MD041 does not apply to them.

@@ -131,8 +131,13 @@ jobs:
       # anywhere, so the only thing keeping the Markdown to it was habit — and
       # the docs are now most of the Markdown in the repository. Runs in this
       # job for the same reason the site build does: `Test` is required.
+      # Pinned for the same reason mkdocs-material is, fourteen lines up:
+      # `npx markdownlint-cli2` resolves to whatever is latest at run time, and
+      # markdownlint adds rules in minor releases — so the first release that
+      # fires on existing prose would turn this REQUIRED check red on an
+      # unrelated PR, with nothing changed in the repository.
       - name: Lint Markdown
-        run: npx --yes markdownlint-cli2 "**/*.md" "#node_modules"
+        run: npx --yes markdownlint-cli2@0.23.0 "**/*.md" "#node_modules"
 
   build-and-push:
     name: Build (${{ matrix.arch }})

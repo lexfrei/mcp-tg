@@ -485,6 +485,44 @@ func workflowJob(t *testing.T, workflow, job string) string {
 	return rest
 }
 
+var markdownlintPin = regexp.MustCompile(`markdownlint-cli2@(\d+\.\d+\.\d+)`)
+
+// Every file that names a markdownlint-cli2 version. `npx markdownlint-cli2`
+// without one resolves to whatever is latest at run time, and markdownlint
+// adds rules in minor releases — so an unpinned invocation in a REQUIRED
+// job turns red on an unrelated PR the day a new rule ships.
+var markdownlintPinSites = []string{"../../.github/workflows/pr.yml", "../../CLAUDE.md"}
+
+// TestMarkdownlintPin_AllSitesAgree pins the linter version across the
+// workflow that gates on it and the doc that tells contributors how to
+// run it, so the two cannot be different engines.
+func TestMarkdownlintPin_AllSitesAgree(t *testing.T) {
+	sitesByVersion := make(map[string][]string, 1)
+
+	for _, site := range markdownlintPinSites {
+		body := readDocsPage(t, site)
+
+		if strings.Contains(body, "markdownlint-cli2 ") {
+			t.Errorf("%s runs markdownlint-cli2 without pinning a version", site)
+		}
+
+		matches := markdownlintPin.FindAllStringSubmatch(body, -1)
+		if matches == nil {
+			t.Errorf("%s names no markdownlint-cli2 version", site)
+
+			continue
+		}
+
+		for _, match := range matches {
+			sitesByVersion[match[1]] = append(sitesByVersion[match[1]], site)
+		}
+	}
+
+	if len(sitesByVersion) > 1 {
+		t.Errorf("markdownlint-cli2 is pinned to %d different versions: %v", len(sitesByVersion), sitesByVersion)
+	}
+}
+
 var mkdocsMaterialPin = regexp.MustCompile(`mkdocs-material==(\d+\.\d+\.\d+)`)
 
 // Every file that tells someone — a runner or a contributor — which

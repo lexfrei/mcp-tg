@@ -29,7 +29,7 @@ Documentation that makes a claim the code can contradict is pinned by `cmd/mcp-t
 - `docs/search.md` — the `Values: ...` list against `telegram.SearchFilters` (`TestDocsFilterValues_MatchSearchFilters`) and the `scope` values against `telegram.IsSearchScope` (`TestDocsScopeValues_MatchTheCode`).
 - `docs/messages.md` — the `Values are ...` list of `type` labels against `telegram.MessageTypes` (`TestDocsTypeValues_MatchMessageTypes`). `MessageTypes` is exported for exactly this, like `SearchFilters`.
 - `docs/resources.md` — the resource URIs and prompt names against a live session (`TestDocsResourcesAndPrompts_NameTheRegisteredOnes`). The counts alone cannot catch a rename.
-- `docs/configuration.md` — `TELEGRAM_DOWNLOAD_DIR` must not claim an absolute default (`TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault`): the code derives it from `os.TempDir()`, which is `$TMPDIR` on macOS, not `/tmp`.
+- `docs/configuration.md` — `TELEGRAM_DOWNLOAD_DIR` must not claim an absolute default (`TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault`): the code derives it from `os.TempDir()`, which is `$TMPDIR` whenever it is set — on every Unix, not just macOS — and `/tmp` only as the fallback.
 - `docs/messages.md` — the parse-mode contract: both enum values, `allowRawMarkdown`, `entitiesParsed`, the autolink example, the migration note, and the absence of the retired `markdown` alias (`TestDocsParseMode_MatchesTheContract`).
 - `docs/building.md` — the minimum Go version against go.mod's `go` directive, which is a hard minimum since Go 1.21, not a hint (`TestDocsGoVersion_MatchesGoMod`).
 - `README.md` — the major-version promise (`TestReadmeMajorVersion_MatchesTheModulePath`).

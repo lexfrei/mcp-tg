@@ -408,11 +408,11 @@ var docsConfigPage = "../../docs/configuration.md"
 
 // TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault pins the one env var
 // whose default cannot be written as a literal path. The code builds it
-// from os.TempDir(), which is /tmp on Linux but $TMPDIR
-// (/var/folders/...) on macOS — and macOS is a documented install target,
-// since the Homebrew formula is one. The page claimed
-// /tmp/mcp-tg/downloads flatly, which is wrong on the platform most
-// likely to read it.
+// from os.TempDir(), which returns $TMPDIR whenever it is set — on EVERY
+// Unix, not just macOS — and falls back to /tmp only when it is not.
+// macOS launchd always sets it, and so do containers, CI runners and
+// systemd PrivateTmp units; Windows has neither path. The page claimed
+// /tmp/mcp-tg/downloads flatly, which is wrong wherever TMPDIR is set.
 func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
 	row := regexp.MustCompile(`(?m)^\|\s*` + "`TELEGRAM_DOWNLOAD_DIR`" + `\s*\|.*$`).
 		FindString(readDocsPage(t, docsConfigPage))
@@ -426,7 +426,7 @@ func TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault(t *testing.T) {
 	for _, value := range regexp.MustCompile("`([^`]+)`").FindAllStringSubmatch(row, -1) {
 		if strings.HasPrefix(value[1], "/") && strings.Contains(value[1], "mcp-tg") {
 			t.Errorf("%s states the absolute default %s for TELEGRAM_DOWNLOAD_DIR; the code uses "+
-				"os.TempDir(), which is $TMPDIR on macOS, not /tmp", docsConfigPage, value[0])
+				"os.TempDir(), which honours $TMPDIR on every Unix", docsConfigPage, value[0])
 		}
 	}
 }

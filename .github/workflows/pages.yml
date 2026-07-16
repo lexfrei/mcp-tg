@@ -37,10 +37,12 @@ jobs:
       - name: Install MkDocs Material
         run: pip install mkdocs-material==9.7.6
 
-      # --strict turns warnings into a failed build; mkdocs.yml's validation
-      # block is what makes a broken link, a dead anchor or a page missing from
-      # the nav a warning in the first place. Both halves are needed: --strict
-      # alone reports all three at INFO and exits 0.
+      # --strict turns warnings into a failed build, and mkdocs.yml's validation
+      # block is what promotes the quiet failures to warnings. Both halves are
+      # needed: of the four, only a broken link to a PAGE is a warning by
+      # default, so --strict alone already fails on that one — while a dead
+      # anchor, an unrecognized link and a page missing from the nav are all
+      # reported at INFO and exit 0.
       - name: Build site
         run: mkdocs build --strict
 

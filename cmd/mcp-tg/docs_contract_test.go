@@ -474,6 +474,32 @@ func TestDocsGates_RunInARequiredJob(t *testing.T) {
 	}
 }
 
+var mkdocsQuietFlag = regexp.MustCompile(`mkdocs build[^\n]*\s(--quiet|-q)\b`)
+
+// TestMkdocsBuild_IsNotQuiet pins the site build against --quiet, which
+// silently disables --strict: --strict fails on the WARNING COUNT, and
+// --quiet suppresses the warnings before they are counted. Verified on
+// 9.7.6, same dead anchor either way:
+//
+//	mkdocs build --strict           -> exit 1
+//	mkdocs build --strict --quiet   -> exit 0
+//
+// The temptation is concrete rather than theoretical: mkdocs-material
+// prints a large red MkDocs 2.0 banner on every build, which is exactly
+// the noise somebody reaches for --quiet to silence — and the gate would
+// go on reporting success while checking nothing.
+//
+// TestDocsGates_RunInARequiredJob cannot see this: `mkdocs build --strict
+// --quiet` still contains the string it looks for.
+func TestMkdocsBuild_IsNotQuiet(t *testing.T) {
+	for _, workflow := range []string{prWorkflow, "../../.github/workflows/pages.yml"} {
+		if match := mkdocsQuietFlag.FindString(readDocsPage(t, workflow)); match != "" {
+			t.Errorf("%s runs %q — --quiet suppresses the warnings --strict counts, "+
+				"so the build reports success while catching nothing", workflow, match)
+		}
+	}
+}
+
 // TestWorkflowJob_StopsAtTheNextJob pins the slicing that every gate
 // check rests on. With a narrower job-key class the `test` block ran on
 // into the following job, so a gate moved OUT of the required job was

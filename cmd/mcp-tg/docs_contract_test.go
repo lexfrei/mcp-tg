@@ -407,6 +407,81 @@ func TestDocsGoVersion_MatchesGoMod(t *testing.T) {
 
 var docsConfigPage = "../../docs/getting-started/configuration.md"
 
+var (
+	goEnvRead  = regexp.MustCompile(`os\.(?:Getenv|LookupEnv)\("([A-Z][A-Z0-9_]*)"\)`)
+	docsEnvRow = regexp.MustCompile("(?m)^\\| `([A-Z][A-Z0-9_]*)` \\|")
+)
+
+// TestDocsEnvVars_MatchTheCode pins the environment table's completeness
+// against the code that reads the variables — in both directions, because
+// each direction fails differently: a new variable that never reaches the
+// table is undiscoverable, and a removed one that stays in the table sends
+// somebody configuring a setting that does nothing.
+//
+// This was the last enumeration on the site with no pin. The tool list, the
+// census, the filter/type/scope values and the resource URIs were all checked
+// against their source while this one — twelve rows, exhaustive, and exactly
+// the kind of claim the code can contradict — rested on being correct today.
+// `tg_chats_admins` is what unpinned-but-currently-correct turns into.
+func TestDocsEnvVars_MatchTheCode(t *testing.T) {
+	read := make(map[string]bool)
+
+	err := filepath.WalkDir("../..", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if entry.IsDir() {
+			if skippedWalkDirs[entry.Name()] {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		// Non-test source only: a test may set any variable it likes.
+		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return errors.Wrapf(err, "read %s", path)
+		}
+
+		for _, match := range goEnvRead.FindAllStringSubmatch(string(source), -1) {
+			read[match[1]] = true
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk source: %v", err)
+	}
+
+	documented := make(map[string]bool)
+	for _, row := range docsEnvRow.FindAllStringSubmatch(readDocsPage(t, docsConfigPage), -1) {
+		documented[row[1]] = true
+	}
+
+	if len(read) == 0 || len(documented) == 0 {
+		t.Fatalf("found %d env reads and %d documented rows — this test has stopped checking anything",
+			len(read), len(documented))
+	}
+
+	for name := range read {
+		if !documented[name] {
+			t.Errorf("the server reads %s, but %s does not document it", name, docsConfigPage)
+		}
+	}
+
+	for name := range documented {
+		if !read[name] {
+			t.Errorf("%s documents %s, which no code reads — removed?", docsConfigPage, name)
+		}
+	}
+}
+
 // TestDocsDownloadDir_DoesNotClaimAnAbsoluteDefault pins the one env var
 // whose default cannot be written as a literal path. The code builds it
 // from os.TempDir(), which returns $TMPDIR whenever it is set — on EVERY

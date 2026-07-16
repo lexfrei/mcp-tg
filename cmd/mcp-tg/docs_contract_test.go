@@ -12,8 +12,10 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/lexfrei/mcp-tg/internal/middleware"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
+	"github.com/lexfrei/mcp-tg/internal/tools"
 )
 
 // The documentation site is built from docs/ and published to
@@ -26,6 +28,11 @@ const (
 	docsMessagesPage = "../../docs/messages.md"
 	readmePage       = "../../README.md"
 	mkdocsConfig     = "../../mkdocs.yml"
+
+	// Split from any page path on purpose: docsSiteURL needs the domain
+	// and a path together to match, so a test can compose a fixture link
+	// from this without the repo-wide URL scan picking the fixture up.
+	docsSiteBase = "https://mcp-tg.lexfrei.dev/"
 )
 
 var (
@@ -545,7 +552,17 @@ func anyToolHasPrefix(names map[string]bool, prefix string) bool {
 
 // A published docs link, with the optional heading anchor captured:
 // https://mcp-tg.lexfrei.dev/building/#transport-modes
-var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9-]+)/(?:#([a-z0-9-]+))?`)
+//
+// The anchor charset must agree with slugifyHeading, and `\w` is what
+// does it. Anything narrower breaks in both directions: `_` is a legal
+// slug character (`tg_messages_list` anchors as itself), so a charset
+// without it truncates a correct link and reports a URL nobody wrote;
+// and an anchor starting outside the charset — `#Message-Output-Format`,
+// copied verbatim from a heading MkDocs slugs lowercase — makes the
+// optional group match EMPTY rather than fail, which skips the anchor
+// check entirely and passes a dead link. Capturing uppercase lets it
+// fail honestly instead.
+var docsSiteURL = regexp.MustCompile(`https://mcp-tg\.lexfrei\.dev/([a-z0-9_-]+)/(?:#([\w-]+))?`)
 
 var (
 	docsHeading   = regexp.MustCompile(`(?m)^#{1,6} +(.+?)\s*$`)
@@ -655,6 +672,55 @@ func checkDocsSiteURLs(t *testing.T, path, body string) int {
 	}
 
 	return checked
+}
+
+// TestCheckDocsSiteURLs_AcceptsAndRejects covers the URL matcher itself,
+// which the two helper tests around it never exercised. Both directions
+// matter and both were broken by an anchor charset that disagreed with
+// slugifyHeading: a correct link to an underscore heading failed, and a
+// dead anchor that starts with an uppercase letter passed by matching
+// the optional group empty.
+func TestCheckDocsSiteURLs_AcceptsAndRejects(t *testing.T) {
+	// Composed rather than written out, because
+	// TestDocsSiteURLs_ResolveToPages scans every .go file in the tree —
+	// this one included. A literal dead link here is indistinguishable
+	// from a real one, and would fail the very scan it is fixture for.
+	link := func(anchor string) string {
+		return docsSiteBase + "messages/" + "#" + anchor
+	}
+
+	// A real heading on that page. `_`-bearing slugs are legal, so a link
+	// like this is CORRECT and must not be reported.
+	t.Run("live anchor is accepted", func(t *testing.T) {
+		if got := countURLErrors(t, link("message-output-format")); got != 0 {
+			t.Errorf("a correct link reported %d errors", got)
+		}
+	})
+
+	// MkDocs slugs headings lowercase, so none of these can exist. A
+	// contributor pasting a heading verbatim writes the first one.
+	for _, anchor := range []string{"Message-Output-Format", "NOPE", "no-such-heading"} {
+		t.Run("dead anchor is rejected: "+anchor, func(t *testing.T) {
+			if got := countURLErrors(t, link(anchor)); got == 0 {
+				t.Errorf("dead anchor #%s passed the check", anchor)
+			}
+		})
+	}
+}
+
+// countURLErrors runs checkDocsSiteURLs against one link and reports how
+// many errors it raised, without failing this test.
+func countURLErrors(t *testing.T, link string) int {
+	t.Helper()
+
+	probe := &testing.T{}
+	checkDocsSiteURLs(probe, "probe.md", link)
+
+	if probe.Failed() {
+		return 1
+	}
+
+	return 0
 }
 
 // TestDocsSiteURLs_ResolveToPages pins every published docs URL — in Go
@@ -775,7 +841,30 @@ func TestDocsScopeValues_MatchTheCode(t *testing.T) {
 var (
 	docsResourcesPage = "../../docs/resources.md"
 	docsBulletName    = regexp.MustCompile("(?m)^- `([^`]+)` —")
+	docsIndexPage     = "../../docs/index.md"
+	docsMiddlewareRow = regexp.MustCompile(`(?m)^\| Middleware \| ([^|]+?) \|`)
 )
+
+// TestDocsMiddlewareRow_CountsTheInstalledOnes pins the protocol table's
+// middleware row against what receivingMiddlewares installs. The row
+// listed three while the server installs four: it predates the session
+// guard, and the numbers around it in that table are pinned while its
+// contents were read by nothing.
+func TestDocsMiddlewareRow_CountsTheInstalledOnes(t *testing.T) {
+	installed := receivingMiddlewares(
+		discardLogger(), tools.BoolFieldRegistry{}, make(chan struct{}), middleware.NewSessionHealth(),
+	)
+
+	row := docsMiddlewareRow.FindStringSubmatch(readDocsPage(t, docsIndexPage))
+	if row == nil {
+		t.Fatalf("%s no longer carries a Middleware row", docsIndexPage)
+	}
+
+	if documented := strings.Split(row[1], ","); len(documented) != len(installed) {
+		t.Errorf("%s lists %d middlewares (%q), the server installs %d",
+			docsIndexPage, len(documented), row[1], len(installed))
+	}
+}
 
 // TestDocsResourcesAndPrompts_NameTheRegisteredOnes pins the URIs and
 // names the page prints, not merely how many there are. The census
@@ -799,9 +888,24 @@ func TestDocsResourcesAndPrompts_NameTheRegisteredOnes(t *testing.T) {
 		t.Fatalf("%s no longer lists resources or prompts", docsResourcesPage)
 	}
 
-	for _, registered := range registeredResourceAndPromptNames(t) {
-		if !documented[registered] {
-			t.Errorf("%s does not document the registered %q", docsResourcesPage, registered)
+	registered := registeredResourceAndPromptNames(t)
+
+	names := make(map[string]bool, len(registered))
+	for _, name := range registered {
+		names[name] = true
+
+		if !documented[name] {
+			t.Errorf("%s does not document the registered %q", docsResourcesPage, name)
+		}
+	}
+
+	// Both directions, like the tool list: a bullet naming a URI that no
+	// longer exists is as wrong as a missing one, and nothing else can
+	// see it — TestDocsToolMentions_NameRealTools only reads `tg_*`
+	// names, never a `tg://` URI or a prompt name.
+	for name := range documented {
+		if !names[name] {
+			t.Errorf("%s documents %q, which is not registered", docsResourcesPage, name)
 		}
 	}
 }

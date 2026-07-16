@@ -25,7 +25,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Subscriptions | `resources/updated` on new messages in a subscribed chat |
 | Transports | stdio + HTTP/SSE |
 | KeepAlive | 30s ping interval |
-| Middleware | Auth guard, request logging, bool coercion |
+| Middleware | Auth guard, session guard, request logging, bool coercion |
 
 ## Telegram Protocol Features
 

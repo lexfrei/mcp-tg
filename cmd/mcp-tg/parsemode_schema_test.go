@@ -22,10 +22,16 @@ func parseModeTools() []string {
 }
 
 type wireSchema struct {
-	Required   []string `json:"required"`
-	Properties map[string]struct {
-		Enum []string `json:"enum"`
-	} `json:"properties"`
+	Required   []string                `json:"required"`
+	Properties map[string]wireProperty `json:"properties"`
+}
+
+// wireProperty is one property as an MCP client receives it. Description
+// is part of that contract, not decoration: it is the only account of a
+// parameter's cost the caller ever sees.
+type wireProperty struct {
+	Enum        []string `json:"enum"`
+	Description string   `json:"description"`
 }
 
 func TestParseModeSchema_RequiredEnumOnTheWire(t *testing.T) {

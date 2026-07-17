@@ -39,8 +39,8 @@ func formatTimestamp(unix int) string {
 //	from: <Name [@username]>
 //	forwarded from: <Name [hidden]> at <ts>           (when Forward.From is a user OR privacy-hidden)
 //	forwarded from channel: <Title [@username]> #<post> by "<author>" at <ts>
-//	reply to: <parentId>                              (same-chat reply)
-//	reply to: <parentId> in <Name [@username]>        (cross-chat reply)
+//	reply to: <parentId>                              (ReplyTo.FromPeerID nil)
+//	reply to: <parentId> in <Name [@username]>        (ReplyTo.FromPeerID set)
 //	quote: «<QuoteText>»
 //	type: <message type>
 //	text:

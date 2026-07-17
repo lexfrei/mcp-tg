@@ -403,6 +403,51 @@ func TestFormatMessage_CrossChatReplyWithQuote(t *testing.T) {
 	}
 }
 
+// TestFormatMessage_SameChatQuoteReplyStillRendersReference pins the
+// surprising half of the reply rendering: writeReplyLines branches on
+// FromPeerID being set, not on the parent actually living in another
+// chat. A reply whose parent sits in the very chat being read therefore
+// renders the same "in <peer-ref>" form as a genuine cross-chat one.
+//
+// Not hypothetical: verified against a live account (2026-07), a
+// quote-reply in a public forum supergroup arrived with FromPeerID equal
+// to the chat being read, while its neighbours in the same batch carried
+// no FromPeerID at all. Telegram documents only the narrower
+// discussion-thread case, so the mechanism is unestablished — but the
+// rendering is not, and that is what this pins.
+//
+// The cross-chat test above only ever passes a foreign peer, so it
+// cannot tell the two branches apart.
+func TestFormatMessage_SameChatQuoteReplyStillRendersReference(t *testing.T) {
+	// The same peer the caller is reading history from.
+	samePeer := telegram.InputPeer{Type: telegram.PeerChannel, ID: 999}
+	msg := &telegram.Message{
+		ID: 11, Date: 1700000000,
+		Text: "quoting a neighbour",
+		ReplyTo: &telegram.ReplyToInfo{
+			MessageID:    700,
+			FromPeerID:   &samePeer,
+			FromName:     "Same Chat",
+			FromUsername: "samechat",
+			QuoteText:    "quoted bit",
+		},
+	}
+
+	got := formatMessage(msg)
+	want := strings.Join([]string{
+		"[11] 2023-11-14T22:13:20Z",
+		"reply to: 700 in Same Chat [@samechat]",
+		"quote: «quoted bit»",
+		"type: text",
+		"text:",
+		"quoting a neighbour",
+	}, "\n")
+
+	if got != want {
+		t.Errorf("formatMessage() =\n%s\nwant\n%s", got, want)
+	}
+}
+
 func TestFormatMessages_TrailingNewline(t *testing.T) {
 	// formatMessages appends a single '\n' so terminal-style consumers
 	// get a clean line-break after the last block. Pin both the

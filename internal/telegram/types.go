@@ -98,8 +98,13 @@ type ReplyToInfo struct {
 
 // PeerRef pairs an InputPeer with its human-readable display name and
 // optional @username. It is used wherever a message references another
-// peer (sender, forwarded-from origin, cross-chat reply target) so the
-// caller gets a single consistent identifier shape instead of bare IDs.
+// peer (sender, forwarded-from origin) so the caller gets a single
+// consistent identifier shape instead of bare IDs.
+//
+// A reply target is NOT one of them, despite the rendered line looking
+// the same: ReplyToInfo carries its own FromPeerID plus FromName and
+// FromUsername rather than a PeerRef. Nor is that target necessarily in
+// another chat — see ReplyToInfo.
 type PeerRef struct {
 	Peer     InputPeer `json:"peer"`
 	Name     string    `json:"name,omitempty"`

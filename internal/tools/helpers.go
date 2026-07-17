@@ -225,6 +225,11 @@ func hasMorePage(count, requestedLimit int) bool {
 	return count >= effective
 }
 
+// maxIDsPerRequest is a blanket guard on user-supplied id lists, shared by
+// delete/forward/get. It is not a per-method limit read from Telegram, and
+// it is stricter than the ceiling getMessagesMaxIDs (resolve_replies.go)
+// chunks the same wrapper method at — see that constant before changing
+// either.
 const maxIDsPerRequest = 100
 
 // validateIDCount returns an error if too many IDs are provided.

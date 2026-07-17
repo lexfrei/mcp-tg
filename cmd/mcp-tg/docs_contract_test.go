@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -1806,4 +1807,427 @@ func TestDocsMajorVersion_MatchesTheModulePath(t *testing.T) {
 				"add the /vN suffix to go.mod or drop the promise", page)
 		}
 	}
+}
+
+// resolveRepliesParam is the parameter the reply-parent enrichment is
+// spelled with on the wire, and replyParentLimitDecl locates the rune cap
+// it applies. The cap lives unexported in another package, so the number
+// is read from the declaration rather than referenced — a rename or a
+// move fails the test loudly instead of silently pinning nothing.
+const (
+	resolveRepliesParam  = "resolveReplies"
+	resolveRepliesSource = "../../internal/tools/resolve_replies.go"
+	toolHelpersSource    = "../../internal/tools/helpers.go"
+	messagesListSource   = "../../internal/tools/messages_list.go"
+)
+
+var (
+	replyParentLimitDecl  = regexp.MustCompile(`(?m)^const replyParentTextLimit = (\d+)$`)
+	getMessagesCapDecl    = regexp.MustCompile(`(?m)^const getMessagesMaxIDs = (\d+)$`)
+	maxIDsPerRequestDecl  = regexp.MustCompile(`(?m)^const maxIDsPerRequest = (\d+)$`)
+	messagesListLimitDecl = regexp.MustCompile(`(?m)^const maxMessagesListLimit = (\d+)$`)
+)
+
+// docsResolveRepliesTools returns the tools the messages page lists as
+// accepting resolveReplies, parsed from the sentence that introduces
+// them. Pinning the prose list is the point: the parameter is offered by
+// four of the five read tools, and the fifth's absence is a deliberate
+// design constraint rather than an oversight, so a page that quietly
+// adds or drops a name is exactly the drift worth catching.
+func docsResolveRepliesTools(t *testing.T) []string {
+	t.Helper()
+
+	body := readDocsPage(t, docsMessagesPage)
+
+	sentence := regexp.MustCompile(
+		"((?:`tg_[a-z_]+`(?:, | and )?)+) accept an optional `" + resolveRepliesParam + "`",
+	).FindStringSubmatch(body)
+	if sentence == nil {
+		t.Fatalf("%s no longer names the tools that accept %s", docsMessagesPage, resolveRepliesParam)
+	}
+
+	matches := regexp.MustCompile("`(tg_[a-z_]+)`").FindAllStringSubmatch(sentence[1], -1)
+
+	names := make([]string, 0, len(matches))
+	for _, match := range matches {
+		names = append(names, match[1])
+	}
+
+	return names
+}
+
+// TestDocsResolveReplies_MatchesTheOfferingTools pins the documented
+// list against the registered input schemas. The parameter is optional,
+// so nothing else fails when a tool gains or loses it — the page would
+// just start lying, either sending a caller to pass a parameter that is
+// rejected, or hiding one that works.
+func TestDocsResolveReplies_MatchesTheOfferingTools(t *testing.T) {
+	offering := make(map[string]bool)
+
+	for _, tool := range listRegisteredTools(t) {
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("%s: marshal InputSchema: %v", tool.Name, err)
+		}
+
+		var schema wireSchema
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("%s: unmarshal InputSchema: %v", tool.Name, err)
+		}
+
+		if _, ok := schema.Properties[resolveRepliesParam]; ok {
+			offering[tool.Name] = true
+		}
+	}
+
+	if len(offering) == 0 {
+		t.Fatalf("no registered tool accepts %s — the page documents a parameter that is gone",
+			resolveRepliesParam)
+	}
+
+	documented := docsResolveRepliesTools(t)
+
+	for _, name := range documented {
+		if !offering[name] {
+			t.Errorf("%s says %s accepts %s, but its input schema has no such property",
+				docsMessagesPage, name, resolveRepliesParam)
+		}
+	}
+
+	for name := range offering {
+		if !slices.Contains(documented, name) {
+			t.Errorf("%s accepts %s, but %s does not list it",
+				name, resolveRepliesParam, docsMessagesPage)
+		}
+	}
+
+	// The exclusion is load-bearing, and it is the half a list check
+	// cannot see: a page listing the four correct tools stays green even
+	// as the sentence explaining why the fifth is absent goes stale.
+	if offering["tg_messages_search_global"] {
+		t.Errorf("tg_messages_search_global now accepts %s — %s documents it as deliberately absent",
+			resolveRepliesParam, docsMessagesPage)
+	}
+}
+
+// docsFieldTable returns the field names documented in the first column
+// of the table inside the named section. Reading the table rather than
+// the whole page body is what makes the pin two-way: a substring search
+// over the page can only ask whether a real field is mentioned somewhere,
+// and would wave through an invented one — which is precisely how a tool
+// that never existed lived in the peer guide until the prose was pinned.
+func docsFieldTable(t *testing.T, body, heading string) []string {
+	t.Helper()
+
+	start := strings.Index(body, heading+"\n")
+	if start < 0 {
+		t.Fatalf("%s no longer has a %q section — this pin now watches nothing",
+			docsMessagesPage, heading)
+	}
+
+	section := body[start+len(heading):]
+	if end := strings.Index(section, "\n#"); end >= 0 {
+		section = section[:end]
+	}
+
+	var fields []string
+
+	// The first cell only: the Meaning column names other fields in
+	// passing, and those are prose, not a claim about this shape. The
+	// identifier pattern spans the whole json-tag character set, not
+	// just letters — a tag carrying a digit would otherwise be invisible
+	// from the docs side and fail as "the table never names it", which
+	// points at the wrong half of the mismatch.
+	for _, row := range regexp.MustCompile(`(?m)^\|([^|]+)\|`).FindAllStringSubmatch(section, -1) {
+		for _, ident := range regexp.MustCompile("`([a-zA-Z0-9_]+)`").FindAllStringSubmatch(row[1], -1) {
+			fields = append(fields, ident[1])
+		}
+	}
+
+	if len(fields) == 0 {
+		t.Fatalf("%s: the %q section documents no fields in a table", docsMessagesPage, heading)
+	}
+
+	return fields
+}
+
+// TestDocsReplyFields_MatchTheStructTags pins the documented reply fields
+// against the JSON tags that actually ship, in both directions. A field
+// renamed in Go otherwise stays documented under its old name, and both
+// structs serialize through omitempty — so a consumer reading the retired
+// name sees an absent field and cannot tell a rename from a message that
+// simply is not a reply. A documented field that ships under no name at
+// all fails the same way and is never observable.
+func TestDocsReplyFields_MatchTheStructTags(t *testing.T) {
+	body := readDocsPage(t, docsMessagesPage)
+
+	for _, shape := range []struct {
+		name    string
+		heading string
+		typ     reflect.Type
+	}{
+		{"replyTo", "## Reply Metadata", reflect.TypeFor[telegram.ReplyToInfo]()},
+		{"replyToMessage", "### Resolving Parent Messages", reflect.TypeFor[tools.ReplyToMessage]()},
+	} {
+		if !strings.Contains(body, "`"+shape.name+"`") {
+			t.Errorf("%s no longer documents the %s object", docsMessagesPage, shape.name)
+		}
+
+		var tags []string
+
+		for field := range shape.typ.Fields() {
+			tag, _, _ := strings.Cut(field.Tag.Get("json"), ",")
+			if tag != "" && tag != "-" {
+				tags = append(tags, tag)
+			}
+		}
+
+		documented := docsFieldTable(t, body, shape.heading)
+
+		for _, tag := range tags {
+			if !slices.Contains(documented, tag) {
+				t.Errorf("%s.%s serializes as %q, which the %q table never names",
+					shape.name, fieldNameForTag(shape.typ, tag), tag, shape.heading)
+			}
+		}
+
+		for _, name := range documented {
+			if !slices.Contains(tags, name) {
+				t.Errorf("the %q table documents %s.%s, which no field serializes as",
+					shape.heading, shape.name, name)
+			}
+		}
+	}
+}
+
+// fieldNameForTag names the Go field carrying a json tag, so a failure points at the
+// declaration to fix rather than at the tag the reader already knows.
+func fieldNameForTag(typ reflect.Type, tag string) string {
+	for f := range typ.Fields() {
+		if name, _, _ := strings.Cut(f.Tag.Get("json"), ","); name == tag {
+			return f.Name
+		}
+	}
+
+	return tag
+}
+
+// TestDocsReplyNumbers_MatchTheCode pins each number the reply section
+// publishes against the constant that enforces it.
+//
+// The truncation length is lossy and its only signal is an ellipsis that
+// looks the same at any cap, so a caller sizing its own layout around a
+// stale number is cut short silently. The batch size is Telegram's own
+// per-call id ceiling — the docs quote it to explain the round-trip cost,
+// and it is the number that decides whether the enrichment promise holds
+// at all, so a drift between the two is a promise the code stops keeping.
+func TestDocsReplyNumbers_MatchTheCode(t *testing.T) {
+	body := readDocsPage(t, docsMessagesPage)
+
+	for _, pin := range []struct {
+		constant string
+		source   string
+		decl     *regexp.Regexp
+		claim    func(value string) string
+	}{
+		{
+			constant: "replyParentTextLimit",
+			source:   resolveRepliesSource,
+			decl:     replyParentLimitDecl,
+			claim:    func(v string) string { return "truncated to " + v + " runes" },
+		},
+		{
+			constant: "getMessagesMaxIDs",
+			source:   resolveRepliesSource,
+			decl:     getMessagesCapDecl,
+			claim:    func(v string) string { return "one request per " + v + " missing parents" },
+		},
+		{
+			// The round-trip explanation turns on which tool can collect
+			// more than getMessagesMaxIDs parents, so the cap that rules
+			// tg_messages_get out is load-bearing for the claim above it.
+			constant: "maxIDsPerRequest",
+			source:   toolHelpersSource,
+			decl:     maxIDsPerRequestDecl,
+			claim:    func(v string) string { return "at most " + v + " `ids` per call" },
+		},
+		{
+			// The one number the whole section rests on: it is why the
+			// cap is reachable, and therefore why the chunking exists.
+			// Lower maxMessagesListLimit to 200 and the rationale becomes
+			// quietly false with nothing red.
+			constant: "maxMessagesListLimit",
+			source:   messagesListSource,
+			decl:     messagesListLimitDecl,
+			claim:    func(v string) string { return "its ceiling being " + v },
+		},
+	} {
+		source, err := os.ReadFile(pin.source)
+		if err != nil {
+			t.Errorf("read %s: %v", pin.source, err)
+
+			continue
+		}
+
+		match := pin.decl.FindSubmatch(source)
+		if match == nil {
+			t.Errorf("%s is no longer declared in %s — this pin now watches nothing",
+				pin.constant, pin.source)
+
+			continue
+		}
+
+		claim := pin.claim(string(match[1]))
+		if !strings.Contains(body, claim) {
+			t.Errorf("%s does not state %q, which is what %s enforces via %s",
+				docsMessagesPage, claim, pin.source, pin.constant)
+		}
+	}
+
+	// The page's round-trip argument turns on the other tools NOT reaching
+	// getMessagesMaxIDs. Read straight from the exported symbol rather than
+	// a declaration regex, since maxHistoryPage is defined as DefaultLimit
+	// and both live in a package this test already imports.
+	//
+	// Scoped to tg_messages_context deliberately. DefaultLimit owns ONLY
+	// that tool's ceiling: tg_messages_search stops at 100 because Telegram
+	// stops it, which nothing here enforces and which merely coincides with
+	// this number. Pinning the search half here would be a claim checked
+	// against the wrong owner — move DefaultLimit to 50 and this test would
+	// demand the page say 50 for a tool that still returns 100.
+	perPage := "at most " + strconv.Itoa(telegram.DefaultLimit) +
+		" messages however wide a window it is asked for"
+	if !strings.Contains(body, perPage) {
+		t.Errorf("%s does not state %q, the server page size tg_messages_context is bounded by",
+			docsMessagesPage, perPage)
+	}
+}
+
+// docsToolParamPair matches the page's "`tg_x` (`param`)" construct,
+// which names a tool and one of its parameters together.
+//
+// The construct means PARAMETER, and only that. A parenthetical holding a
+// VALUE — "`tg_messages_send` (`plain`)" — is the same shape and would
+// fail this pin, correctly-shaped prose reported as a missing property.
+// No page writes that today; if one needs to, name the parameter too
+// ("`tg_messages_send` (`parseMode`: `plain`)") rather than loosening the
+// pattern, since the pairing is exactly what has to stay checkable.
+//
+// The identifier class spans the whole json-tag set for the same reason
+// docsFieldTable's does: a parameter carrying a digit would otherwise go
+// silently unpinned instead of being checked.
+var docsToolParamPair = regexp.MustCompile("`(tg_[a-z0-9_]+)` \\(`([a-zA-Z0-9_]+)`\\)")
+
+// TestDocsToolParams_NameRealProperties pins every parameter the docs
+// attribute to a named tool against that tool's registered input schema.
+//
+// Naming a real tool and a real-sounding parameter that belongs to a
+// DIFFERENT tool passes every other pin: the tool-mention test only asks
+// whether the name exists, and the resolveReplies test inspects one
+// property. So the page claimed tg_messages_context took a `limit` — it
+// takes `radius` — and nothing noticed. The reader loses either way: the
+// parameter is rejected if they try it, and the sentence explaining what
+// bounds the tool describes a knob that does not exist.
+func TestDocsToolParams_NameRealProperties(t *testing.T) {
+	schemas := make(map[string]map[string]wireProperty)
+
+	for _, tool := range listRegisteredTools(t) {
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("%s: marshal InputSchema: %v", tool.Name, err)
+		}
+
+		var schema wireSchema
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("%s: unmarshal InputSchema: %v", tool.Name, err)
+		}
+
+		schemas[tool.Name] = schema.Properties
+	}
+
+	for _, page := range docsPages(t) {
+		pairs := docsToolParamPair.FindAllStringSubmatch(readDocsPage(t, page), -1)
+		for _, pair := range pairs {
+			tool, param := pair[1], pair[2]
+
+			props, ok := schemas[tool]
+			if !ok {
+				t.Errorf("%s pairs %s with %q, but no such tool is registered", page, tool, param)
+
+				continue
+			}
+
+			if _, ok := props[param]; !ok {
+				t.Errorf("%s says %s takes %q, but its input schema has no such property",
+					page, tool, param)
+			}
+		}
+	}
+}
+
+// TestResolveRepliesDescription_StatesItsCost pins the one account of
+// resolveReplies' cost an MCP client ever sees: the parameter description
+// in the tool's own schema. Nothing else reaches the caller — the guide is
+// a website, and a caller budgeting round-trips reads the schema.
+//
+// tg_messages_list is the only tool whose enrichment can exceed one
+// request (limit 1000 → up to five chunks); the rest stop at 100 messages,
+// so a single call remains true for them and their wording stays put. The
+// description said "extra API call", singular, which was exactly right
+// until the lookup was chunked — the change that made it wrong is the one
+// that introduced the batching, so the number comes from the same constant
+// the chunking uses.
+func TestResolveRepliesDescription_StatesItsCost(t *testing.T) {
+	source, err := os.ReadFile(resolveRepliesSource)
+	if err != nil {
+		t.Fatalf("read %s: %v", resolveRepliesSource, err)
+	}
+
+	decl := getMessagesCapDecl.FindSubmatch(source)
+	if decl == nil {
+		t.Fatalf("getMessagesMaxIDs is no longer declared in %s — this pin now watches nothing",
+			resolveRepliesSource)
+	}
+
+	// Terminated deliberately: a bare "per 200" is a prefix of "per 2000",
+	// so a description that overstated the chunk tenfold would satisfy the
+	// pin meant to catch exactly that.
+	perChunk := "per " + string(decl[1]) + " unseen"
+
+	for _, tool := range listRegisteredTools(t) {
+		if tool.Name != "tg_messages_list" {
+			continue
+		}
+
+		raw, err := json.Marshal(tool.InputSchema)
+		if err != nil {
+			t.Fatalf("%s: marshal InputSchema: %v", tool.Name, err)
+		}
+
+		var schema wireSchema
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("%s: unmarshal InputSchema: %v", tool.Name, err)
+		}
+
+		got := schema.Properties[resolveRepliesParam].Description
+		if got == "" {
+			t.Fatalf("%s: %s has no description — the caller is told nothing about its cost",
+				tool.Name, resolveRepliesParam)
+		}
+
+		if !strings.Contains(got, perChunk) {
+			t.Errorf("%s: %s is described as %q, which never mentions %q — this tool's "+
+				"enrichment costs one request per chunk, and the schema is the only place "+
+				"the caller learns it", tool.Name, resolveRepliesParam, got, perChunk)
+		}
+
+		if strings.Contains(got, "extra API call)") {
+			t.Errorf("%s: %s still promises a single %q — true before the lookup was chunked, "+
+				"and up to five requests off now", tool.Name, resolveRepliesParam, "extra API call")
+		}
+
+		return
+	}
+
+	t.Fatal("tg_messages_list is not registered — this pin now watches nothing")
 }

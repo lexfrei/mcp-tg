@@ -13,31 +13,34 @@ type mockClient struct {
 	messages       []telegram.Message
 	parentMessages []telegram.Message // see getMessages for selection rules
 	getMessagesFn  func(ids []int) []telegram.Message
-	getHistoryFn   func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
-	resolvePeerFn  func(identifier string) (telegram.InputPeer, error)
-	message        *telegram.Message
-	total          int
-	historyHasMore bool
-	dialogs        []telegram.Dialog
-	user           *telegram.User
-	users          []telegram.User
-	group          *telegram.GroupInfo
-	info           *telegram.PeerInfo
-	infos          []telegram.PeerInfo
-	photos         []telegram.Photo
-	topics         []telegram.ForumTopic
-	topic          *telegram.ForumTopic
-	sets           []telegram.StickerSet
-	setFull        *telegram.StickerSetFull
-	folders        []telegram.Folder
-	folder         *telegram.Folder
-	uploaded       *telegram.UploadedFile
-	reactions      []telegram.ReactionUser
-	statuses       []telegram.ContactStatus
-	link           string
-	filePath       string
-	peer           telegram.InputPeer
-	transcription  *telegram.Transcription
+	// getMessagesErrFn fails a GetMessages call based on the request,
+	// so a test can model a server that rejects an over-long id list.
+	getMessagesErrFn func(ids []int) error
+	getHistoryFn     func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
+	resolvePeerFn    func(identifier string) (telegram.InputPeer, error)
+	message          *telegram.Message
+	total            int
+	historyHasMore   bool
+	dialogs          []telegram.Dialog
+	user             *telegram.User
+	users            []telegram.User
+	group            *telegram.GroupInfo
+	info             *telegram.PeerInfo
+	infos            []telegram.PeerInfo
+	photos           []telegram.Photo
+	topics           []telegram.ForumTopic
+	topic            *telegram.ForumTopic
+	sets             []telegram.StickerSet
+	setFull          *telegram.StickerSetFull
+	folders          []telegram.Folder
+	folder           *telegram.Folder
+	uploaded         *telegram.UploadedFile
+	reactions        []telegram.ReactionUser
+	statuses         []telegram.ContactStatus
+	link             string
+	filePath         string
+	peer             telegram.InputPeer
+	transcription    *telegram.Transcription
 
 	// Error to return
 	err           error
@@ -58,6 +61,7 @@ type mockClient struct {
 	nextRate             int
 	getMessagesCalls     int
 	getMessagesIDs       []int
+	getMessagesSizes     []int // per-call id count, to assert chunking
 	getHistoryCalls      int
 	getHistoryOpts       []telegram.HistoryOpts
 	lastTranscribeID     int
@@ -95,6 +99,18 @@ func (m *mockClient) GetMessages(_ context.Context, peer telegram.InputPeer, ids
 	m.lastPeer = peer
 	m.getMessagesCalls++
 	m.getMessagesIDs = append(m.getMessagesIDs, ids...)
+	m.getMessagesSizes = append(m.getMessagesSizes, len(ids))
+
+	// Per-call error, keyed on the request itself. The flat err field
+	// cannot express a server that rejects THIS call and accepts the
+	// next — which is what an id-count cap is, and why nothing caught
+	// the resolver sending an unchunked list.
+	if m.getMessagesErrFn != nil {
+		err := m.getMessagesErrFn(ids)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if m.getMessagesFn != nil {
 		return m.getMessagesFn(ids), m.err

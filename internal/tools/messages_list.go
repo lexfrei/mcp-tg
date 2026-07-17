@@ -18,7 +18,7 @@ type MessagesListParams struct {
 	ToDate         *int   `json:"toDate,omitempty"         jsonschema:"Start from the newest message at or before this unix timestamp"`
 	Type           string `json:"type,omitempty"           jsonschema:"Optional message type filter"`
 	Format         string `json:"format,omitempty"         jsonschema:"Output shape: full (default), json (messages only), text (output only)"`
-	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch parent message text for replies (default false, extra API call)"`
+	ResolveReplies *bool  `json:"resolveReplies,omitempty" jsonschema:"Fetch reply parent text (default false; one call per 200 unseen)"`
 }
 
 // MessagesListResult is the output of the tg_messages_list tool.

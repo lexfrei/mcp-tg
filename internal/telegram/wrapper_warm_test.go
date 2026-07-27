@@ -11,6 +11,7 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 )
 
 var (
@@ -39,7 +40,7 @@ func (f *fakeInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.De
 	return encodeAndDecode(f.response, output)
 }
 
-func encodeAndDecode(resp tg.MessagesDialogsClass, output bin.Decoder) error {
+func encodeAndDecode(resp bin.Encoder, output bin.Decoder) error {
 	var buf bin.Buffer
 
 	err := resp.Encode(&buf)
@@ -76,7 +77,7 @@ func TestWarmDialogsCache_PopulatesChannelAccessHash(t *testing.T) {
 	}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	cached, hit := wrap.cache.Lookup(PeerChannel, channelID)
 	if !hit {
@@ -97,8 +98,8 @@ func TestWarmDialogsCache_ThrottledOnSecondCall(t *testing.T) {
 	invoker := &fakeInvoker{response: &tg.MessagesDialogs{}}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	// First warm scans both folders (2 calls); the second is throttled.
 	if got := invoker.calls.Load(); got != 2 {
@@ -110,14 +111,14 @@ func TestWarmDialogsCache_AllowsRetryAfterFirstPageError(t *testing.T) {
 	invoker := &fakeInvoker{err: errTestBoom}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	// A failed warm never stamps completion, so the throttle stays open.
 	if wrap.warmedAt.Load() != 0 {
 		t.Errorf("expected warmedAt unset after a failed warm, got %d", wrap.warmedAt.Load())
 	}
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	// Each warm attempts both folders (main + archive), and the second
 	// warm is not throttled — 2 folders × 2 attempts.
@@ -136,7 +137,7 @@ func TestWarmDialogsCache_PaginatesMainUntilComplete(t *testing.T) {
 	}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	if got := invoker.mainCalls.Load(); got != 3 {
 		t.Errorf("expected 3 main pages (2 slices + terminal), got %d", got)
@@ -173,7 +174,7 @@ func TestWarmDialogsCache_PaginatesBeyondFivePages(t *testing.T) {
 	}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	if _, hit := wrap.cache.Lookup(PeerChannel, targetID); !hit {
 		t.Fatalf("expected channel %d on page 6 to be cached after warm", targetID)
@@ -207,7 +208,7 @@ func TestWarmDialogsCache_SeedsArchivedChannels(t *testing.T) {
 	}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	if _, hit := wrap.cache.Lookup(PeerChannel, archivedID); !hit {
 		t.Fatalf("expected archived channel %d to be cached after warm", archivedID)
@@ -226,13 +227,13 @@ func TestWarmDialogsCache_ArchiveFirstPageErrorAllowsRetry(t *testing.T) {
 	invoker := &archiveFailInvoker{}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	if wrap.warmedAt.Load() != 0 {
 		t.Errorf("expected warmedAt reset after archive first-page error, got %d", wrap.warmedAt.Load())
 	}
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	// Two full attempts: each scans the main list and then hits the
 	// failing archive first page (2 requests per attempt).
@@ -254,134 +255,410 @@ func TestWarmDialogsCache_SafetyBoundStopsUnboundedSlices(t *testing.T) {
 	invoker := &folderScriptedInvoker{main: main}
 	wrap := newWrapperWithInvoker(invoker)
 
-	_, _ = wrap.warmDialogsCache(t.Context())
+	_ = wrap.warmDialogsCache(t.Context())
 
 	if got := invoker.mainCalls.Load(); got != int32(warmDialogsMaxPages) {
 		t.Errorf("expected main warm capped at %d pages, got %d", warmDialogsMaxPages, got)
 	}
 }
 
-func TestResolvePeer_ColdMissWarmsCacheAndReturnsHash(t *testing.T) {
+func TestResolvePeer_ColdChannelAsksTheServerForItsHash(t *testing.T) {
+	// A numeric channel the cache does not know is resolved by asking
+	// Telegram directly — one channels.getChannels round trip, no dialog
+	// scan. The invoker fails any messages.getDialogs, so a warm would
+	// fail the test rather than quietly rescue it.
 	channelID := int64(3282239618)
 	channelHash := int64(0xCAFEBABE)
 
-	invoker := &warmingInvoker{channelID: channelID, channelHash: channelHash}
+	invoker := &getChannelsInvoker{channelID: channelID, channelHash: channelHash}
 	wrap := newWrapperWithInvoker(invoker)
 
-	identifier := "-100" + int64ToString(channelID)
-
-	peer, err := wrap.ResolvePeer(t.Context(), identifier)
+	peer, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
 	if err != nil {
 		t.Fatalf("ResolvePeer: %v", err)
 	}
 
-	if peer.AccessHash != channelHash {
-		t.Errorf("resolved AccessHash = %x, want %x", peer.AccessHash, channelHash)
+	if peer.Type != PeerChannel || peer.ID != channelID || peer.AccessHash != channelHash {
+		t.Errorf("resolved peer = %+v, want channel %d hash %x", peer, channelID, channelHash)
 	}
 
-	if peer.Type != PeerChannel || peer.ID != channelID {
-		t.Errorf("resolved peer = %+v, want channel %d", peer, channelID)
-	}
-}
-
-func TestResolvePeer_ColdMissUnresolvedChannelReturnsClearError(t *testing.T) {
-	// The warm returns no dialogs, so the numeric channel stays
-	// unresolved and must surface a clear, actionable error instead of a
-	// hash-0 peer that later fails as an opaque CHANNEL_INVALID.
-	wrap := newWrapperWithInvoker(coldChannelInvoker{})
-
-	channelID := int64(3282239618)
-
-	_, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
-	if !errors.Is(err, ErrChannelNotCached) {
-		t.Fatalf("expected ErrChannelNotCached, got %v", err)
+	if got := invoker.calls.Load(); got != 1 {
+		t.Errorf("expected exactly 1 channels.getChannels call, got %d", got)
 	}
 }
 
-func TestResolvePeer_WarmFailureSurfacesRetryableError(t *testing.T) {
-	// The dialog warm fails outright (its first page errors), so a
-	// numeric channel miss is inconclusive — ResolvePeer must surface the
-	// retryable failure, not the terminal ErrChannelNotCached that tells
-	// the caller to go open a channel which may well be in their dialogs.
-	wrap := newWrapperWithInvoker(warmFailInvoker{})
+func TestResolvePeer_UnreachableChannelFallsBackWithoutACacheError(t *testing.T) {
+	// The server refuses to hand out the hash (the account cannot address
+	// this channel at all). That is not a cache problem, so ResolvePeer
+	// must not invent a cache-shaped error telling the caller to go warm
+	// something: it returns the hash-0 peer and lets the request that
+	// follows fail with the server's own CHANNEL_INVALID.
+	wrap := newWrapperWithInvoker(refusingChannelInvoker{})
 
 	channelID := int64(3282239618)
 
-	_, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
+	peer, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
+	if err != nil {
+		t.Fatalf("expected a hash-0 fallback, got error: %v", err)
+	}
+
+	if peer.Type != PeerChannel || peer.ID != channelID || peer.AccessHash != 0 {
+		t.Errorf("expected hash-0 channel peer %d, got %+v", channelID, peer)
+	}
+}
+
+func TestResolvePeer_FloodWaitIsNotMistakenForARefusal(t *testing.T) {
+	// A FLOOD_WAIT that outlived its retries says nothing about the peer.
+	// Swallowing it into the hash-0 fallback would hide the one actionable
+	// fact (how long to wait) behind a second request that floods the same
+	// way, so it must propagate from both the channel and the user path.
+	cases := map[string]struct {
+		invoker tg.Invoker
+		peer    string
+	}{
+		"channel lookup": {floodingInvoker{request: floodChannels}, "-100" + int64ToString(3282239618)},
+		"dialog warm":    {floodingInvoker{request: floodDialogs}, int64ToString(424242)},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			wrap := newWrapperWithInvoker(tc.invoker)
+
+			_, err := wrap.ResolvePeer(t.Context(), tc.peer)
+			if err == nil {
+				t.Fatal("expected the FLOOD_WAIT to propagate, got a silent fallback")
+			}
+
+			if _, isFlood := tgerr.AsFloodWait(err); !isFlood {
+				t.Errorf("expected a FLOOD_WAIT error, got: %v", err)
+			}
+		})
+	}
+}
+
+func TestResolvePeer_DeadContextPropagates(t *testing.T) {
+	// A cancelled context is not a verdict on the peer either. Reporting a
+	// hash-0 fallback would send the caller into a second request that
+	// cannot run.
+	wrap := newWrapperWithInvoker(refusingChannelInvoker{})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := wrap.ResolvePeer(ctx, "-100"+int64ToString(3282239618))
 	if err == nil {
-		t.Fatal("expected an error from a failed warm")
-	}
-
-	if errors.Is(err, ErrChannelNotCached) {
-		t.Errorf("expected a retryable warm error, got terminal ErrChannelNotCached: %v", err)
+		t.Fatal("expected the cancelled context to propagate, got a silent fallback")
 	}
 }
 
-// warmFailInvoker rejects the peer probe and fails every dialog fetch, so
-// the warm never completes.
+func TestResolvePeer_ConcurrentColdChannelsShareOneRequest(t *testing.T) {
+	// Two cold resolutions of the SAME channel race. Each would otherwise
+	// issue its own channels.getChannels; the singleflight must collapse
+	// them, as the dialog warm this path replaced already did.
+	channelID := int64(3282239618)
+	channelHash := int64(0xCAFEF00D)
+
+	invoker := &blockingChannelInvoker{
+		getChannelsInvoker: getChannelsInvoker{channelID: channelID, channelHash: channelHash},
+		entered:            make(chan struct{}),
+		release:            make(chan struct{}),
+	}
+	wrap := newWrapperWithInvoker(invoker)
+	ident := "-100" + int64ToString(channelID)
+
+	hashes := make(chan int64, 2)
+	resolve := func() {
+		peer, err := wrap.ResolvePeer(t.Context(), ident)
+		if err != nil {
+			t.Errorf("concurrent resolve: %v", err)
+		}
+
+		hashes <- peer.AccessHash
+	}
+
+	go resolve()
+	<-invoker.entered // the lookup is in flight with the cache still empty
+	go resolve()
+	close(invoker.release)
+
+	for range 2 {
+		if got := <-hashes; got != channelHash {
+			t.Errorf("resolved AccessHash = %x, want %x", got, channelHash)
+		}
+	}
+
+	if got := invoker.calls.Load(); got != 1 {
+		t.Errorf("expected the two racing resolves to share 1 request, got %d", got)
+	}
+}
+
+func TestShared_RetriesALeadersCancellationOnItsOwnContext(t *testing.T) {
+	// singleflight hands the LEADER's error to every waiter. When that
+	// error is the leader's own cancellation, a waiter whose request is
+	// still alive must not take it as an answer: reported as-is it would
+	// leave a reachable peer unresolved, which is the false verdict this
+	// resolver exists to stop giving. It retries on its own context.
+	wrap := newWrapperWithInvoker(refusingChannelInvoker{})
+
+	var calls int
+
+	err := wrap.shared(t.Context(), "channel:1", func(context.Context) error {
+		calls++
+		if calls == 1 {
+			return context.Canceled // as if inherited from another caller
+		}
+
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("shared: %v", err)
+	}
+
+	if calls != 2 {
+		t.Errorf("expected the inherited cancellation to be retried, got %d call(s)", calls)
+	}
+}
+
+func TestResolvePeer_UnknownUserDoesNotRescanOnEveryCall(t *testing.T) {
+	// A scan that RAN and still missed is the best answer the dialog list
+	// can give. Unlatching the throttle there would make every repeat of
+	// the same unknown ID pay for another full scan — two attempts at ~14 s
+	// each on a large account, for an answer that will not change.
+	invoker := &fakeInvoker{response: &tg.MessagesDialogs{}}
+	wrap := newWrapperWithInvoker(invoker)
+
+	ident := int64ToString(777001)
+
+	for range 2 {
+		peer, err := wrap.ResolvePeer(t.Context(), ident)
+		if err != nil {
+			t.Fatalf("ResolvePeer: %v", err)
+		}
+
+		if peer.AccessHash != 0 {
+			t.Fatalf("expected an unresolved user, got %+v", peer)
+		}
+	}
+
+	// One warm, both folders. The second resolve rides the throttle.
+	if got := invoker.calls.Load(); got != 2 {
+		t.Errorf("expected a single warm across both resolves (2 pages), got %d", got)
+	}
+}
+
+func TestFetchChannelByID_SkipsARequestThatRacedItsWay(t *testing.T) {
+	// A caller can miss the cache, queue behind a lookup for the same
+	// channel, and reach the request only after that lookup filled the
+	// cache. Rechecking inside the shared call keeps it from repeating a
+	// request whose answer is already in hand — and from surfacing that
+	// request's FLOOD_WAIT for a peer that is no longer cold.
+	channelID := int64(3282239618)
+	channelHash := int64(0xCAFEF00D)
+
+	invoker := &getChannelsInvoker{channelID: channelID, channelHash: channelHash}
+	wrap := newWrapperWithInvoker(invoker)
+	wrap.cache.Store(InputPeer{Type: PeerChannel, ID: channelID, AccessHash: channelHash})
+
+	err := wrap.fetchChannelByID(t.Context(), channelID)
+	if err != nil {
+		t.Fatalf("fetchChannelByID: %v", err)
+	}
+
+	if got := invoker.calls.Load(); got != 0 {
+		t.Errorf("expected no request for an already-cached channel, got %d", got)
+	}
+}
+
+func TestResolvePeer_ExhaustedRetryReportsTheCancellation(t *testing.T) {
+	// The retry above is bounded at one. When it is cancelled too, the
+	// caller must hear about it: a cancellation says nothing about the
+	// peer, so answering with the hash-0 fallback would blame a reachable
+	// channel for someone else's dead request.
+	invoker := &cancellingInvoker{}
+	wrap := newWrapperWithInvoker(invoker)
+
+	_, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(3282239618))
+	if err == nil {
+		t.Fatal("expected the cancellation to propagate, got a silent fallback")
+	}
+
+	if got := invoker.calls.Load(); got != 2 {
+		t.Errorf("expected the lookup and one bounded retry, got %d call(s)", got)
+	}
+}
+
+// cancellingInvoker answers every lookup with a cancellation the caller's
+// own context did not produce.
+type cancellingInvoker struct{ calls atomic.Int32 }
+
+func (c *cancellingInvoker) Invoke(_ context.Context, input bin.Encoder, _ bin.Decoder) error {
+	if _, ok := input.(*tg.ChannelsGetChannelsRequest); !ok {
+		return errUnexpectedRequest
+	}
+
+	c.calls.Add(1)
+
+	return context.Canceled
+}
+
+func TestShared_ReportsItsOwnCancellation(t *testing.T) {
+	// The retry above keys on the CALLER's context still being alive, so a
+	// caller whose own context is dead gets the cancellation reported
+	// rather than retried in a loop.
+	wrap := newWrapperWithInvoker(refusingChannelInvoker{})
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err := wrap.shared(ctx, "channel:2", func(context.Context) error {
+		return context.Canceled
+	})
+	if err == nil {
+		t.Fatal("expected the caller's own cancellation to surface")
+	}
+}
+
+func TestResolvePeer_AbandonedWaiterStopsWaiting(t *testing.T) {
+	// The leader holds a slow lookup open. A second caller whose own
+	// request is already cancelled must not block on it — singleflight's
+	// plain Do would, and the leader here is the slowest call in the
+	// resolver (a full dialog warm can run for seconds).
+	invoker := &blockingChannelInvoker{
+		getChannelsInvoker: getChannelsInvoker{channelID: 3282239618, channelHash: 0xCAFEF00D},
+		entered:            make(chan struct{}),
+		release:            make(chan struct{}),
+	}
+	wrap := newWrapperWithInvoker(invoker)
+	ident := "-100" + int64ToString(3282239618)
+
+	go func() { _, _ = wrap.ResolvePeer(t.Context(), ident) }()
+	<-invoker.entered // the leader is in flight and will not return yet
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	returned := make(chan error, 1)
+
+	go func() {
+		_, err := wrap.ResolvePeer(ctx, ident)
+		returned <- err
+	}()
+
+	select {
+	case err := <-returned:
+		if err == nil {
+			t.Error("expected the abandoned waiter to report its cancellation")
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("the abandoned waiter blocked on the leader's call")
+	}
+
+	close(invoker.release)
+}
+
+// blockingChannelInvoker holds the first channels.getChannels open until
+// released, forcing a second concurrent resolver to either share the
+// in-flight request or issue its own — which the call count then catches.
+type blockingChannelInvoker struct {
+	getChannelsInvoker
+
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingChannelInvoker) Invoke(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
+	b.once.Do(func() {
+		close(b.entered)
+		<-b.release
+	})
+
+	err := ctx.Err()
+	if err != nil {
+		return fmt.Errorf("blocked call: %w", err)
+	}
+
+	return b.getChannelsInvoker.Invoke(ctx, input, output)
+}
+
+// floodingInvoker answers one request kind with an exhausted FLOOD_WAIT.
+type floodingInvoker struct{ request floodTarget }
+
+type floodTarget int
+
+const (
+	floodChannels floodTarget = iota
+	floodDialogs
+)
+
+func (f floodingInvoker) Invoke(_ context.Context, input bin.Encoder, _ bin.Decoder) error {
+	var match bool
+
+	switch f.request {
+	case floodChannels:
+		_, match = input.(*tg.ChannelsGetChannelsRequest)
+	case floodDialogs:
+		_, match = input.(*tg.MessagesGetDialogsRequest)
+	}
+
+	if !match {
+		return errUnexpectedRequest
+	}
+
+	return tgerr.New(420, "FLOOD_WAIT_30")
+}
+
+// warmFailInvoker fails every dialog fetch, so the warm never completes.
 type warmFailInvoker struct{}
 
 func (warmFailInvoker) Invoke(_ context.Context, input bin.Encoder, _ bin.Decoder) error {
-	switch input.(type) {
-	case *tg.MessagesGetPeerDialogsRequest:
-		return errChannelInvalidFix
-	case *tg.MessagesGetDialogsRequest:
-		return errTestBoom
-	default:
+	if _, ok := input.(*tg.MessagesGetDialogsRequest); !ok {
 		return errUnexpectedRequest
-	}
-}
-
-func TestResolvePeer_ChannelLaterPageWarmFailureIsRetryable(t *testing.T) {
-	// The target channel sits beyond a main-list page that fails mid-scan.
-	// The warm never completed, so a miss is inconclusive and must surface
-	// as retryable — not the terminal ErrChannelNotCached, which would
-	// also latch the throttle against a retry.
-	wrap := newWrapperWithInvoker(&laterPageFailInvoker{})
-
-	// Large enough that -100<id> lands below the channel threshold.
-	channelID := int64(3282239618)
-
-	_, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
-	if err == nil {
-		t.Fatal("expected an error from an incomplete warm")
-	}
-
-	if errors.Is(err, ErrChannelNotCached) {
-		t.Errorf("expected a retryable error for an incomplete warm, got terminal: %v", err)
-	}
-}
-
-// laterPageFailInvoker serves one good main-list page and then fails the
-// next, so the warm caches some peers but never completes its scan.
-type laterPageFailInvoker struct{ mainCalls atomic.Int32 }
-
-func (l *laterPageFailInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
-	req, ok := input.(*tg.MessagesGetDialogsRequest)
-	if !ok {
-		if _, isProbe := input.(*tg.MessagesGetPeerDialogsRequest); isProbe {
-			return errChannelInvalidFix
-		}
-
-		return errUnexpectedRequest
-	}
-
-	if folderID, set := req.GetFolderID(); set && folderID == warmArchiveFolderID {
-		return encodeAndDecode(&tg.MessagesDialogs{}, output)
-	}
-
-	if l.mainCalls.Add(1) == 1 {
-		return encodeAndDecode(warmSlice(100), output)
 	}
 
 	return errTestBoom
 }
 
-func TestWarmDialogsCache_ScansArchiveEvenWhenMainHitsCap(t *testing.T) {
-	// The main list never exhausts (hits the cap), but the target channel
-	// is archived. The archive pass must still run so the channel resolves
-	// instead of failing with a scan-limit error.
-	archivedID := int64(3282239618)
+// getChannelsInvoker answers channels.getChannels with the target channel
+// and rejects everything else, so a test can prove the channel path never
+// falls back to a dialog scan.
+type getChannelsInvoker struct {
+	channelID   int64
+	channelHash int64
+	calls       atomic.Int32
+}
+
+func (g *getChannelsInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	if _, ok := input.(*tg.ChannelsGetChannelsRequest); !ok {
+		return errUnexpectedRequest
+	}
+
+	g.calls.Add(1)
+
+	resp := &tg.MessagesChats{
+		Chats: []tg.ChatClass{channelWithHash(g.channelID, g.channelHash, "Test")},
+	}
+
+	return encodeAndDecode(resp, output)
+}
+
+// refusingChannelInvoker answers channels.getChannels the way the server
+// does for a channel this account may not address.
+type refusingChannelInvoker struct{}
+
+func (refusingChannelInvoker) Invoke(_ context.Context, input bin.Encoder, _ bin.Decoder) error {
+	if _, ok := input.(*tg.ChannelsGetChannelsRequest); !ok {
+		return errUnexpectedRequest
+	}
+
+	return errChannelInvalidFix
+}
+
+func TestResolvePeer_ArchivedUserResolvesEvenWhenMainHitsCap(t *testing.T) {
+	// The main list never exhausts (hits the cap), but the target user's
+	// dialog is archived. The archive pass must still run, otherwise the
+	// user stays unresolved on an account with a long main list.
+	archivedID := int64(424242)
 	archivedHash := int64(0xABCDEF)
 
 	wrap := newWrapperWithInvoker(&mainCapArchiveHitInvoker{
@@ -389,9 +666,9 @@ func TestWarmDialogsCache_ScansArchiveEvenWhenMainHitsCap(t *testing.T) {
 		archivedHash: archivedHash,
 	})
 
-	peer, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(archivedID))
+	peer, err := wrap.ResolvePeer(t.Context(), int64ToString(archivedID))
 	if err != nil {
-		t.Fatalf("expected the archived channel to resolve despite the main cap, got: %v", err)
+		t.Fatalf("expected the archived user to resolve despite the main cap, got: %v", err)
 	}
 
 	if peer.AccessHash != archivedHash {
@@ -400,7 +677,7 @@ func TestWarmDialogsCache_ScansArchiveEvenWhenMainHitsCap(t *testing.T) {
 }
 
 // mainCapArchiveHitInvoker never exhausts the main list (forcing the cap)
-// but serves the target channel as a complete archive page.
+// but serves the target user as a complete archive page.
 type mainCapArchiveHitInvoker struct {
 	archivedID   int64
 	archivedHash int64
@@ -410,63 +687,21 @@ type mainCapArchiveHitInvoker struct {
 func (m *mainCapArchiveHitInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
 	req, ok := input.(*tg.MessagesGetDialogsRequest)
 	if !ok {
-		if _, isProbe := input.(*tg.MessagesGetPeerDialogsRequest); isProbe {
-			return errChannelInvalidFix
-		}
-
 		return errUnexpectedRequest
 	}
 
 	if folderID, set := req.GetFolderID(); set && folderID == warmArchiveFolderID {
 		resp := &tg.MessagesDialogs{
 			Dialogs: []tg.DialogClass{
-				&tg.Dialog{Peer: &tg.PeerChannel{ChannelID: m.archivedID}, TopMessage: 1},
+				&tg.Dialog{Peer: &tg.PeerUser{UserID: m.archivedID}, TopMessage: 1},
 			},
-			Chats: []tg.ChatClass{channelWithHash(m.archivedID, m.archivedHash, "Archived")},
+			Users: []tg.UserClass{userWithHash(m.archivedID, m.archivedHash)},
 		}
 
 		return encodeAndDecode(resp, output)
 	}
 
 	return encodeAndDecode(warmSlice(4000+m.mainPage.Add(1)), output)
-}
-
-func TestResolvePeer_ChannelBeyondScanLimitIsNotTerminal(t *testing.T) {
-	// The main list never exhausts (every page is a slice), so the warm
-	// hits its safety cap without proving the channel absent. The miss
-	// must surface ErrDialogScanLimit, not the terminal ErrChannelNotCached.
-	wrap := newWrapperWithInvoker(&unboundedSliceInvoker{})
-
-	channelID := int64(3282239618)
-
-	_, err := wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
-	if err == nil {
-		t.Fatal("expected an error from a cap-limited warm")
-	}
-
-	if errors.Is(err, ErrChannelNotCached) {
-		t.Errorf("a cap-limited warm must not be terminal, got: %v", err)
-	}
-
-	if !errors.Is(err, ErrDialogScanLimit) {
-		t.Errorf("expected ErrDialogScanLimit, got: %v", err)
-	}
-}
-
-// unboundedSliceInvoker never returns a complete result, so the folder
-// scan runs to the safety cap without exhausting.
-type unboundedSliceInvoker struct{ page atomic.Int64 }
-
-func (u *unboundedSliceInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
-	if _, ok := input.(*tg.MessagesGetPeerDialogsRequest); ok {
-		return errChannelInvalidFix
-	}
-
-	if _, ok := input.(*tg.MessagesGetDialogsRequest); !ok {
-		return errUnexpectedRequest
-	}
-
-	return encodeAndDecode(warmSlice(2000+u.page.Add(1)), output)
 }
 
 func TestResolvePeer_UserInDialogsResolvesViaWarm(t *testing.T) {
@@ -488,50 +723,26 @@ func TestResolvePeer_UserInDialogsResolvesViaWarm(t *testing.T) {
 	}
 }
 
-func TestResolvePeer_StaleRetryReScansToTerminal(t *testing.T) {
-	// The full retry contract: a throttled miss returns ErrChannelWarmStale
-	// and resets the throttle, so an immediate retry re-scans and — the
-	// channel still absent — returns the terminal ErrChannelNotCached.
-	wrap := newWrapperWithInvoker(coldChannelInvoker{})
-
-	_, _ = wrap.warmDialogsCache(t.Context()) // latch the throttle
-
-	ident := "-100" + int64ToString(3282239618)
-
-	_, first := wrap.ResolvePeer(t.Context(), ident)
-	if !errors.Is(first, ErrChannelWarmStale) {
-		t.Fatalf("first (throttled) resolve: want ErrChannelWarmStale, got %v", first)
-	}
-
-	_, second := wrap.ResolvePeer(t.Context(), ident)
-	if !errors.Is(second, ErrChannelNotCached) {
-		t.Fatalf("retry should re-scan to a terminal verdict, got %v", second)
-	}
-}
-
-// warmUserInvoker rejects the peer probe and serves the target user as a
-// single complete dialog page, so the warm caches its access hash.
+// warmUserInvoker serves the target user as a single complete dialog page,
+// so the warm caches its access hash.
 type warmUserInvoker struct {
 	userID   int64
 	userHash int64
 }
 
 func (w *warmUserInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
-	switch input.(type) {
-	case *tg.MessagesGetPeerDialogsRequest:
-		return errChannelInvalidFix
-	case *tg.MessagesGetDialogsRequest:
-		resp := &tg.MessagesDialogs{
-			Dialogs: []tg.DialogClass{
-				&tg.Dialog{Peer: &tg.PeerUser{UserID: w.userID}, TopMessage: 1},
-			},
-			Users: []tg.UserClass{userWithHash(w.userID, w.userHash)},
-		}
-
-		return encodeAndDecode(resp, output)
-	default:
+	if _, ok := input.(*tg.MessagesGetDialogsRequest); !ok {
 		return errUnexpectedRequest
 	}
+
+	resp := &tg.MessagesDialogs{
+		Dialogs: []tg.DialogClass{
+			&tg.Dialog{Peer: &tg.PeerUser{UserID: w.userID}, TopMessage: 1},
+		},
+		Users: []tg.UserClass{userWithHash(w.userID, w.userHash)},
+	}
+
+	return encodeAndDecode(resp, output)
 }
 
 func userWithHash(userID, accessHash int64) *tg.User {
@@ -541,43 +752,78 @@ func userWithHash(userID, accessHash int64) *tg.User {
 	return usr
 }
 
-func TestResolvePeer_ThrottledChannelMissIsRetryableAndResetsThrottle(t *testing.T) {
-	// A completed warm latches the throttle. A later cold channel resolve
-	// within the window skips the warm, so its miss rests on a possibly
-	// stale scan — it must be retryable (ErrChannelWarmStale), NOT the
-	// terminal ErrChannelNotCached, and must reset the throttle so a retry
-	// re-scans (catching e.g. a channel joined on another session since).
-	wrap := newWrapperWithInvoker(coldChannelInvoker{})
+func TestResolvePeer_ThrottledUserMissRescansOnRetry(t *testing.T) {
+	// A completed warm latches the throttle, so a later cold user resolve
+	// within the window skips the scan and misses against a cache up to a
+	// minute stale — a user first messaged on another device since would
+	// stay unresolvable for the whole window. The miss must unlatch the
+	// throttle so the immediate retry rescans and finds them.
+	invoker := &appearingUserInvoker{userID: 424242, userHash: 0x5151ABCD}
+	wrap := newWrapperWithInvoker(invoker)
 
-	// First warm completes on an empty dialog set and latches the throttle.
-	ran, err := wrap.warmDialogsCache(t.Context())
-	if !ran || err != nil {
-		t.Fatalf("expected the first warm to run and complete, got ran=%v err=%v", ran, err)
-	}
+	// The first warm completes on an empty dialog set and latches the throttle.
+	_ = wrap.warmDialogsCache(t.Context())
 
 	if wrap.warmedAt.Load() == 0 {
 		t.Fatal("expected a completed warm to latch the throttle")
 	}
 
-	channelID := int64(3282239618)
-
-	_, err = wrap.ResolvePeer(t.Context(), "-100"+int64ToString(channelID))
-	if !errors.Is(err, ErrChannelWarmStale) {
-		t.Fatalf("expected ErrChannelWarmStale for a throttled miss, got: %v", err)
+	// The user now exists, but this resolve is throttled out of rescanning.
+	peer, err := wrap.ResolvePeer(t.Context(), int64ToString(invoker.userID))
+	if err != nil {
+		t.Fatalf("a throttled miss must fall back, not error: %v", err)
 	}
 
-	if errors.Is(err, ErrChannelNotCached) {
-		t.Errorf("a throttled miss must not be the terminal ErrChannelNotCached: %v", err)
+	if peer.AccessHash != 0 {
+		t.Fatalf("expected the throttled resolve to miss, got hash %x", peer.AccessHash)
 	}
 
 	if wrap.warmedAt.Load() != 0 {
-		t.Errorf("a throttled channel miss must reset the throttle for retry, got %d", wrap.warmedAt.Load())
+		t.Fatalf("a throttled miss must unlatch the throttle, got %d", wrap.warmedAt.Load())
 	}
+
+	retry, err := wrap.ResolvePeer(t.Context(), int64ToString(invoker.userID))
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+
+	if retry.AccessHash != invoker.userHash {
+		t.Errorf("retry should rescan and resolve, got %+v", retry)
+	}
+}
+
+// appearingUserInvoker serves empty dialog pages until the target user is
+// "discovered", then includes them — the shape of a user first messaged on
+// another device after the last warm.
+type appearingUserInvoker struct {
+	userID   int64
+	userHash int64
+	warms    atomic.Int32
+}
+
+func (a *appearingUserInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	if _, ok := input.(*tg.MessagesGetDialogsRequest); !ok {
+		return errUnexpectedRequest
+	}
+
+	// The first warm scans both folders and finds nothing.
+	if a.warms.Add(1) <= 2 {
+		return encodeAndDecode(&tg.MessagesDialogs{}, output)
+	}
+
+	resp := &tg.MessagesDialogs{
+		Dialogs: []tg.DialogClass{
+			&tg.Dialog{Peer: &tg.PeerUser{UserID: a.userID}, TopMessage: 1},
+		},
+		Users: []tg.UserClass{userWithHash(a.userID, a.userHash)},
+	}
+
+	return encodeAndDecode(resp, output)
 }
 
 func TestResolvePeer_UserWarmFailureKeepsHashZeroFallback(t *testing.T) {
 	// A numeric user whose warm fails must still fall back to the hash-0
-	// peer — only channels get a terminal verdict; the tools layer labels
+	// peer rather than surfacing the warm's failure: the tools layer labels
 	// unresolved users per parameter (from / offsetPeer).
 	wrap := newWrapperWithInvoker(warmFailInvoker{})
 
@@ -594,20 +840,20 @@ func TestResolvePeer_UserWarmFailureKeepsHashZeroFallback(t *testing.T) {
 }
 
 func TestResolvePeer_ConcurrentColdMissShareWarm(t *testing.T) {
-	// Two cold resolutions race. The first wins the singleflight and
+	// Two cold user resolutions race. The first wins the singleflight and
 	// blocks inside the warm; the second must queue on it and observe the
-	// warmed cache, not a premature miss reported as ErrChannelNotCached.
-	channelID := int64(3282239618)
-	channelHash := int64(0xCAFEF00D)
+	// warmed cache rather than a premature miss.
+	userID := int64(424242)
+	userHash := int64(0xCAFEF00D)
 
 	invoker := &blockingWarmInvoker{
-		channelID:   channelID,
-		channelHash: channelHash,
-		entered:     make(chan struct{}),
-		release:     make(chan struct{}),
+		userID:   userID,
+		userHash: userHash,
+		entered:  make(chan struct{}),
+		release:  make(chan struct{}),
 	}
 	wrap := newWrapperWithInvoker(invoker)
-	ident := "-100" + int64ToString(channelID)
+	ident := int64ToString(userID)
 
 	type result struct {
 		peer InputPeer
@@ -628,8 +874,8 @@ func TestResolvePeer_ConcurrentColdMissShareWarm(t *testing.T) {
 			t.Errorf("concurrent resolve returned error: %v", got.err)
 		}
 
-		if got.peer.AccessHash != channelHash {
-			t.Errorf("resolved AccessHash = %x, want %x", got.peer.AccessHash, channelHash)
+		if got.peer.AccessHash != userHash {
+			t.Errorf("resolved AccessHash = %x, want %x", got.peer.AccessHash, userHash)
 		}
 	}
 }
@@ -638,20 +884,16 @@ func TestResolvePeer_ConcurrentColdMissShareWarm(t *testing.T) {
 // a second concurrent resolver is forced to share the in-flight warm
 // through the singleflight instead of observing a premature miss.
 type blockingWarmInvoker struct {
-	channelID   int64
-	channelHash int64
-	entered     chan struct{}
-	release     chan struct{}
-	once        sync.Once
+	userID   int64
+	userHash int64
+	entered  chan struct{}
+	release  chan struct{}
+	once     sync.Once
 }
 
 func (b *blockingWarmInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
 	req, ok := input.(*tg.MessagesGetDialogsRequest)
 	if !ok {
-		if _, isProbe := input.(*tg.MessagesGetPeerDialogsRequest); isProbe {
-			return errChannelInvalidFix
-		}
-
 		return errUnexpectedRequest
 	}
 
@@ -666,9 +908,9 @@ func (b *blockingWarmInvoker) Invoke(_ context.Context, input bin.Encoder, outpu
 
 	resp := &tg.MessagesDialogs{
 		Dialogs: []tg.DialogClass{
-			&tg.Dialog{Peer: &tg.PeerChannel{ChannelID: b.channelID}, TopMessage: 1},
+			&tg.Dialog{Peer: &tg.PeerUser{UserID: b.userID}, TopMessage: 1},
 		},
-		Chats: []tg.ChatClass{channelWithHash(b.channelID, b.channelHash, "Test")},
+		Users: []tg.UserClass{userWithHash(b.userID, b.userHash)},
 	}
 
 	return encodeAndDecode(resp, output)
@@ -754,48 +996,6 @@ func (a *archiveFailInvoker) Invoke(_ context.Context, input bin.Encoder, output
 	}
 
 	return encodeAndDecode(&tg.MessagesDialogs{}, output)
-}
-
-// warmingInvoker rejects the peer-specific GetPeerDialogs probe (the
-// hash-0 channel is CHANNEL_INVALID) and answers the full-dialog warm
-// with the target channel, mirroring the real cold-miss recovery path.
-type warmingInvoker struct {
-	channelID   int64
-	channelHash int64
-}
-
-func (w *warmingInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
-	switch input.(type) {
-	case *tg.MessagesGetPeerDialogsRequest:
-		return errChannelInvalidFix
-	case *tg.MessagesGetDialogsRequest:
-		resp := &tg.MessagesDialogs{
-			Dialogs: []tg.DialogClass{
-				&tg.Dialog{Peer: &tg.PeerChannel{ChannelID: w.channelID}, TopMessage: 1},
-			},
-			Chats: []tg.ChatClass{channelWithHash(w.channelID, w.channelHash, "Test")},
-		}
-
-		return encodeAndDecode(resp, output)
-	default:
-		return errUnexpectedRequest
-	}
-}
-
-// coldChannelInvoker rejects the peer probe and returns empty dialog
-// pages for both folders, so the warm caches nothing and the numeric
-// channel stays unresolved.
-type coldChannelInvoker struct{}
-
-func (coldChannelInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
-	switch input.(type) {
-	case *tg.MessagesGetPeerDialogsRequest:
-		return errChannelInvalidFix
-	case *tg.MessagesGetDialogsRequest:
-		return encodeAndDecode(&tg.MessagesDialogs{}, output)
-	default:
-		return errUnexpectedRequest
-	}
 }
 
 func int64ToString(value int64) string {

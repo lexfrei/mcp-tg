@@ -195,11 +195,10 @@ var ErrQueryOrFilterRequired = errors.New("query or filter is required")
 var ErrSearchCriteriaRequired = errors.New("query, filter or from is required")
 
 // ErrFromUnresolved is returned when the sender filter resolves without
-// an access hash — a numeric USER ID the client has never seen resolves
-// with hash 0 and a nil error, and sending it on would fail with a server
-// error naming neither the parameter nor the remedy. (A never-seen
-// numeric channel sender instead surfaces ErrChannelNotCached from
-// ResolvePeer's warm.)
+// an access hash — a numeric ID the client has never seen, and which the
+// server would not hand a hash out for, resolves with hash 0 and a nil
+// error. Sending it on would fail with a server error naming neither the
+// parameter nor the remedy.
 var ErrFromUnresolved = errors.New(
 	"from resolved without an access hash; pass @username, or look the peer up via tg_dialogs_list first",
 )
@@ -214,11 +213,9 @@ var ErrPartialCursor = errors.New(
 )
 
 // ErrOffsetPeerUnresolved is returned when the pagination cursor's peer
-// resolves without an access hash — a numeric USER cursor, typically
-// after a restart cleared the peer cache the previous page had seeded.
-// Sending it on would fail with a server error naming neither the
-// parameter nor the fix. (A numeric channel cursor instead surfaces
-// ErrChannelNotCached from ResolvePeer's warm.)
+// resolves without an access hash — typically after a restart cleared the
+// peer cache the previous page had seeded. Sending it on would fail with a
+// server error naming neither the parameter nor the fix.
 var ErrOffsetPeerUnresolved = errors.New(
 	"offsetPeer resolved without an access hash; re-run the first page to seed the peer cache",
 )
@@ -297,6 +294,8 @@ func explainMTProtoCode(raw string) string {
 		return "the forum topic has been deleted"
 	case strings.Contains(raw, "PEER_ID_INVALID"):
 		return "the peer is invalid; resolve via @username if you used a numeric ID"
+	case strings.Contains(raw, "CHANNEL_INVALID"):
+		return "this account cannot address that channel; resolve via @username if you used a numeric ID"
 	case strings.Contains(raw, "USER_BANNED_IN_CHANNEL"):
 		return "this account is banned in the target channel"
 	case strings.Contains(raw, "CHAT_WRITE_FORBIDDEN"):

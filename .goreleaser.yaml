@@ -78,13 +78,18 @@ brews:
       SH
       chmod 0755, libexec/"mcp-tg-daemon"
     test: |
-      # The binary has no --version flag and every real command talks to
-      # Telegram, so missing credentials is the only offline path. The vars
-      # must be cleared explicitly: the caveats tell users to export them, and
-      # with them set the process opens a live MTProto connection and never
-      # returns — brew test would hang.
+      # Every real command talks to Telegram, so both checks here are the ones
+      # that stay offline. The credentials must be cleared explicitly: the
+      # caveats tell users to export them, and with them set the process opens
+      # a live MTProto connection and never returns — brew test would hang.
       assert_match "TELEGRAM_APP_ID is required",
         shell_output("TELEGRAM_APP_ID= TELEGRAM_APP_HASH= #{bin}/mcp-tg 2>&1", 1)
+      # --version exits before any Telegram work, and it is the only thing that
+      # checks the ldflags above reached this build: the linker ignores -X for a
+      # symbol that does not exist without a word, so a rename would ship a
+      # formula whose every release introduces itself as "dev". Homebrew's
+      # `version` has no leading v, and the build line carries it as a substring.
+      assert_match version.to_s, shell_output("#{bin}/mcp-tg --version")
     service: |
       run [opt_libexec/"mcp-tg-daemon"]
       keep_alive true

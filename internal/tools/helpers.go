@@ -60,9 +60,7 @@ func validateTopicID(
 // for a numeric USER ID it has never seen, and the resulting
 // SEND_AS_PEER_INVALID or PEER_ID_INVALID from the server names neither
 // the parameter nor the remedy. Listing the chat's identities once seeds
-// the cache and makes the same numeric ID work. (A never-seen numeric
-// channel — the usual send-as identity — instead surfaces
-// ErrChannelNotCached from ResolvePeer's warm, before this guard.)
+// the cache and makes the same numeric ID work.
 //
 // A legacy basic group has no access hash by design and can never be an
 // identity, so it is refused outright rather than blamed on the cache.

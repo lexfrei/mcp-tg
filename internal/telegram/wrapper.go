@@ -16,6 +16,7 @@ import (
 	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/telegram/uploader"
 	"github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -150,29 +151,20 @@ func (w *Wrapper) ResolvePeer(
 		return cached, nil
 	}
 
-	if resolved, ok := w.resolveViaDialogs(ctx, peer); ok {
+	resolved, ok, err := w.resolveByID(ctx, peer)
+	if err != nil {
+		return InputPeer{}, err
+	}
+
+	if ok {
 		return resolved, nil
 	}
 
-	if peer.Type == PeerChat {
-		return peer, nil
-	}
-
-	ran, warmErr := w.warmDialogsCache(ctx)
-
-	if cached, hit := w.cache.Lookup(peer.Type, peer.ID); hit {
-		return cached, nil
-	}
-
-	// Only channels need a terminal access-hash verdict here — a channel
-	// with no hash is CHANNEL_INVALID for every request. Users and basic
-	// groups keep the hash-0 fallback (the tools layer labels those per
-	// parameter: from / offsetPeer), so a warm that failed or was skipped
-	// never denies them.
-	if peer.Type == PeerChannel {
-		return InputPeer{}, w.channelResolveError(peer.ID, ran, warmErr)
-	}
-
+	// Hash-0 fallback. A cache miss is not a failure worth reporting: the
+	// request that follows fails with the server's own error, which names
+	// the real problem (CHANNEL_INVALID, PEER_ID_INVALID) and the remedy
+	// (@username). A cache-shaped error told the caller to go warm an
+	// internal cache instead, which is our bookkeeping, not their problem.
 	return peer, nil
 }
 
@@ -2054,49 +2046,199 @@ func (w *Wrapper) serverConfig(ctx context.Context) (*cachedServerConfig, error)
 	return val.(*cachedServerConfig), nil //nolint:forcetypeassert // Do() callback always returns *cachedServerConfig.
 }
 
-// warmDialogsCache paginates the full dialog list once per throttle window
-// to populate the peer cache with access hashes for all joined chats.
-// Called on cold cache miss for numeric peer IDs that require access_hash.
-// Peers cached by pages that did succeed still help subsequent lookups —
-// ResolvePeer consults the cache before treating a miss as terminal.
+// resolveByID fetches the access hash for a numeric peer ID the cache does
+// not know, straight from the server.
 //
-// Concurrency: a singleflight collapses racing callers onto ONE warm, so
-// a caller that arrives while a warm is in flight WAITS for it and then
-// observes the same populated cache — it cannot see a premature miss and
-// report a channel absent while the warm is still running. The completion
-// stamp is written only AFTER a warm succeeds (like serverConfig), so a
-// failed warm never latches the throttle and the next lookup retries.
+// Channels have a direct lookup: channels.getChannels accepts
+// access_hash=0 and answers with the real object for any channel this
+// account may address — one round trip, and authoritative in a way no
+// local cache is.
 //
-// It reports whether a fresh scan happened this call (ran) — false ONLY
-// when the outer throttle skipped the warm; when a concurrent caller's
-// scan is shared through the singleflight, ran is still true because a
-// fresh scan did complete. The error is non-nil only when a warm RAN and
-// a folder was not scanned to exhaustion (page error or ErrDialogScanLimit).
-// ResolvePeer needs both: ran tells "fresh negative" from "throttled,
-// possibly stale", and err tells "could not look" from "looked and missed".
-func (w *Wrapper) warmDialogsCache(ctx context.Context) (bool, error) {
-	if w.warmThrottled() {
-		return false, nil
-	}
+// Users have none. users.getUsers rejects a zero access hash
+// (PEER_ID_INVALID) even for a user this account has an open dialog with,
+// and so does messages.getPeerDialogs, so the dialog list is the only
+// client-side source of a user's hash. It costs a full paginated scan,
+// hence the throttle inside warmDialogsCache; a miss unlatches it so the
+// next call rescans rather than answering from a stale scan.
+//
+// A lookup failure normally reads as "no hash for this ID" and leaves the
+// caller with the hash-0 fallback, but an operational failure must NOT: a
+// cancelled context or an exhausted FLOOD_WAIT says nothing about the peer,
+// and swallowing it would hide the actionable error behind a second doomed
+// request. Those propagate.
+func (w *Wrapper) resolveByID(ctx context.Context, peer InputPeer) (InputPeer, bool, error) {
+	// Whether the answer below rests on a scan this call did NOT run.
+	stale := false
 
-	_, err, _ := w.warmSF.Do("dialogs", func() (any, error) {
-		// A warm that a racing caller just completed makes ours redundant.
-		if w.warmThrottled() {
-			return struct{}{}, nil
+	switch peer.Type {
+	case PeerChannel:
+		err := w.fetchChannelByID(ctx, peer.ID)
+		if err != nil {
+			return InputPeer{}, false, err
 		}
 
-		e := w.paginateWarmDialogs(ctx)
-		if e == nil {
+	case PeerUser:
+		stale = w.warmThrottled()
+
+		// Whatever pages did land are cached, and the lookup below decides.
+		err := w.warmDialogsCache(ctx)
+		if operational(ctx, err) {
+			return InputPeer{}, false, err
+		}
+
+	case PeerChat:
+		// Basic groups carry no access hash by design.
+		return InputPeer{}, false, nil
+	}
+
+	cached, hit := w.cache.Lookup(peer.Type, peer.ID)
+
+	// A miss drawn from a scan the throttle skipped proves nothing — a user
+	// first messaged on another device since would stay unresolvable for the
+	// rest of the window — so unlatch and let the retry rescan. A miss from
+	// a scan that DID run this call is as good an answer as the dialog list
+	// can give, and unlatching there would make every repeat of the same
+	// unknown ID pay for a full scan.
+	if !hit && stale {
+		w.warmedAt.Store(0)
+	}
+
+	return cached, hit, nil
+}
+
+// fetchChannelByID caches the channel's access hash, asking the server for
+// it by ID alone. Racing callers collapse onto one request: without that,
+// every concurrent cold miss on the same channel issues its own, and the
+// dialog warm this replaced was singleflighted for exactly that reason.
+func (w *Wrapper) fetchChannelByID(ctx context.Context, channelID int64) error {
+	fetch := func(ctx context.Context) error {
+		// A caller that queued behind a lookup which has since finished
+		// would otherwise repeat it — the same redundancy the warm avoids
+		// by rechecking its throttle here.
+		if _, hit := w.cache.Lookup(PeerChannel, channelID); hit {
+			return nil
+		}
+
+		chats, err := w.api.ChannelsGetChannels(ctx, []tg.InputChannelClass{
+			&tg.InputChannel{ChannelID: channelID},
+		})
+		if err != nil {
+			return err //nolint:wrapcheck // classified by the caller, not surfaced raw.
+		}
+
+		w.cachePeersOf(chats.GetChats(), nil)
+
+		return nil
+	}
+
+	err := w.shared(ctx, "channel:"+strconv.FormatInt(channelID, 10), fetch)
+	if operational(ctx, err) {
+		return errors.Wrap(err, "resolving channel")
+	}
+
+	return nil
+}
+
+// shared collapses racing callers of the same key onto one call while
+// keeping each caller's OWN context authoritative. singleflight hands the
+// leader's context to the shared call and its error to every waiter, which
+// crosses two callers' lifetimes in both directions: a waiter whose request
+// was abandoned would keep waiting on a leader that may be slow (a full
+// dialog warm), and a waiter that is still very much alive would inherit
+// the leader's cancellation as if the SERVER had refused it — the exact
+// false verdict this resolver exists to stop giving. So a dead context
+// stops waiting, and a leader's cancellation is retried on the waiter's own
+// context rather than reported as an answer about the peer.
+func (w *Wrapper) shared(ctx context.Context, key string, call func(context.Context) error) error {
+	var err error
+
+	// Two attempts: ours, plus one more for a leader cancelled under us.
+	// The retry goes back THROUGH the singleflight rather than around it,
+	// so several waiters orphaned by the same leader collapse onto one
+	// retry instead of each issuing its own.
+	for range 2 {
+		result := w.warmSF.DoChan(key, func() (any, error) {
+			return nil, call(ctx)
+		})
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err() //nolint:wrapcheck // the caller classifies it.
+		case shared := <-result:
+			err = shared.Err
+		}
+
+		if err == nil || ctx.Err() != nil || !isContextError(err) {
+			return err
+		}
+	}
+
+	return err
+}
+
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// operational reports whether a resolution failure describes the CONNECTION
+// rather than the peer. A refusal ("this account cannot address that ID") is
+// the answer to the lookup and leaves the hash-0 fallback in place; a dead
+// context or a FLOOD_WAIT that outlived its retries is not, and hiding it
+// would cost the caller a second request that fails the same way with a
+// vaguer message.
+//
+// A cancellation counts whether it is the CALLER's or one inherited from a
+// shared call whose own caller went away: `shared` retries the latter once,
+// and if that retry is cancelled too, reporting it as a peer refusal would
+// blame the peer for a lifetime problem.
+func operational(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if ctx.Err() != nil || isContextError(err) {
+		return true
+	}
+
+	_, flood := tgerr.AsFloodWait(err)
+
+	return flood
+}
+
+// warmDialogsCache paginates the full dialog list once per throttle window
+// to populate the peer cache with access hashes for all joined chats. It is
+// the only client-side source of a USER's access hash, so a cold numeric
+// user lookup goes through it. Peers cached by pages that did succeed still
+// help — ResolvePeer consults the cache afterwards either way, so a partial
+// scan never loses ground and a failed one needs no report.
+//
+// Concurrency: `shared` collapses racing callers onto ONE warm, so a caller
+// that arrives while a warm is in flight WAITS for it and then observes the
+// same populated cache rather than a premature miss — but only for as long
+// as its own context lives, since a warm is the slowest call here and an
+// abandoned request must not ride it. The completion stamp is written only
+// AFTER a warm succeeds (like serverConfig), so a failed or capped warm
+// never latches the throttle and the next lookup retries.
+func (w *Wrapper) warmDialogsCache(ctx context.Context) error {
+	if w.warmThrottled() {
+		return nil
+	}
+
+	err := w.shared(ctx, "dialogs", func(ctx context.Context) error {
+		// A warm that a racing caller just completed makes ours redundant.
+		if w.warmThrottled() {
+			return nil
+		}
+
+		err := w.paginateWarmDialogs(ctx)
+		if err == nil {
 			w.warmedAt.Store(time.Now().UnixNano())
 		}
 
-		return struct{}{}, e
+		return err
 	})
-	if err != nil {
-		return true, errors.Wrap(err, "warming dialog cache")
-	}
 
-	return true, nil
+	return errors.Wrap(err, "warming dialog cache")
 }
 
 // warmThrottled reports whether a warm completed within the throttle
@@ -2108,37 +2250,16 @@ func (w *Wrapper) warmThrottled() bool {
 	return prev != 0 && time.Now().UnixNano()-prev < int64(warmDialogsThrottle)
 }
 
-// channelResolveError classifies a numeric-channel cache miss after a warm
-// attempt. Only a fresh scan that ran this call AND completed proves the
-// channel absent (ErrChannelNotCached, terminal). A warm that did not
-// complete is inconclusive (surface its error), and a warm skipped by the
-// throttle rests on a possibly-stale scan — invalidate the stamp so a
-// retry re-scans, and report the retryable ErrChannelWarmStale.
-func (w *Wrapper) channelResolveError(channelID int64, ran bool, warmErr error) error {
-	if warmErr != nil {
-		return errors.Wrap(warmErr, "resolving channel")
-	}
-
-	if !ran {
-		w.warmedAt.Store(0)
-
-		return errors.Wrapf(ErrChannelWarmStale, "channel %d", channelID)
-	}
-
-	return errors.Wrapf(ErrChannelNotCached, "channel %d", channelID)
-}
-
 func (w *Wrapper) paginateWarmDialogs(ctx context.Context) error {
 	// Scan the main list (folder 0, left implicit so the request stays
 	// byte-identical to a plain listing) AND the archive — always both,
-	// even if one fails. An archived channel lives only in folder 1, so a
+	// even if one fails. An archived dialog lives only in folder 1, so a
 	// main-folder failure (a page error, or the scan cap on a huge list)
 	// must not skip the archive; the target may be cached there and
 	// ResolvePeer's cache check would then still succeed. A folder not
-	// scanned to exhaustion is remembered as an incomplete warm, so the
-	// caller leaves the throttle unlatched and ResolvePeer withholds the
-	// terminal "not cached" verdict — but only after every folder was
-	// given its chance to seed the cache.
+	// scanned to exhaustion is remembered as an incomplete warm, which
+	// leaves the throttle unlatched so the next lookup rescans — but only
+	// after every folder was given its chance to seed the cache.
 	var warmErr error
 
 	for _, folderID := range []int{0, warmArchiveFolderID} {
@@ -2154,12 +2275,12 @@ func (w *Wrapper) paginateWarmDialogs(ctx context.Context) error {
 // warmFolder paginates one peer folder into the cache. It succeeds (nil)
 // only when the folder is scanned to exhaustion — the server returns a
 // complete *tg.MessagesDialogs or a page yields no cursor. Every other
-// exit is an error, because the terminal "channel not cached" verdict may
-// only be drawn from a fully-scanned folder: a page fetch that fails, or
-// the safety bound reached with the folder still not exhausted
-// (ErrDialogScanLimit), both leave the channel's absence unproven. Peers
-// cached by earlier pages still help — ResolvePeer consults the cache
-// before treating a miss as terminal.
+// exit is an error: a page fetch that fails, or the safety bound reached
+// with the folder still not exhausted (ErrDialogScanLimit), both leave the
+// scan incomplete, and only a completed scan may latch the throttle —
+// otherwise a partial view of the dialog list would be treated as the
+// whole one for the rest of the window. Peers cached by earlier pages
+// still help; ResolvePeer consults the cache either way.
 func (w *Wrapper) warmFolder(ctx context.Context, folderID int) error {
 	var (
 		offsetDate int
@@ -2258,47 +2379,6 @@ func findMessageDate(messages []tg.MessageClass, messageID int) int {
 	}
 
 	return 0
-}
-
-// resolveViaDialogs fetches peer details using GetPeerDialogs
-// to obtain a valid access hash for numeric IDs.
-func (w *Wrapper) resolveViaDialogs(
-	ctx context.Context, peer InputPeer,
-) (InputPeer, bool) {
-	result, err := w.api.MessagesGetPeerDialogs(ctx, []tg.InputDialogPeerClass{
-		&tg.InputDialogPeer{Peer: InputPeerToTG(peer)},
-	})
-	if err != nil {
-		return InputPeer{}, false
-	}
-
-	w.cacheFromPeerDialogs(result)
-
-	cached, hit := w.cache.Lookup(peer.Type, peer.ID)
-
-	return cached, hit
-}
-
-func (w *Wrapper) cacheFromPeerDialogs(result *tg.MessagesPeerDialogs) {
-	if result == nil {
-		return
-	}
-
-	for _, usr := range result.Users {
-		if typed, ok := usr.(*tg.User); ok {
-			w.cache.Store(InputPeer{
-				Type: PeerUser, ID: typed.ID, AccessHash: typed.AccessHash,
-			})
-		}
-	}
-
-	for _, chat := range result.Chats {
-		if typed, ok := chat.(*tg.Channel); ok {
-			w.cache.Store(InputPeer{
-				Type: PeerChannel, ID: typed.ID, AccessHash: typed.AccessHash,
-			})
-		}
-	}
 }
 
 // searchGlobalPage converts an MTProto search response into one result

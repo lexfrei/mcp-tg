@@ -166,4 +166,13 @@ func TestVersionFlag_PrintsBuildAndExitsZero(t *testing.T) {
 	if !strings.Contains(stdout.String(), "mcp-tg ") {
 		t.Errorf("--version must print the build line to stdout, got stdout=%s stderr=%s", stdout.String(), stderr.String())
 	}
+
+	// The Homebrew formula asserts `version.to_s` against this output, and
+	// Homebrew's version is the tag with no leading v. So the build line must
+	// carry the BARE semver as a substring, not only a v-prefixed one — a
+	// reformat to "mcp-tg version=v1.2.3" would keep the check above green and
+	// break brew test in the tap, where nobody looks.
+	if bare := strings.TrimPrefix(version, "v"); !strings.Contains(stdout.String(), bare) {
+		t.Errorf("build line must contain the bare version %q for the brew test, got %s", bare, stdout.String())
+	}
 }

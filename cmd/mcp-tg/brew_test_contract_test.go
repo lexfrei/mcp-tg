@@ -53,6 +53,22 @@ func brewTestContract(t *testing.T) (string, string) {
 	return match[1], code[1]
 }
 
+// TestBrewFormulaContract_ChecksTheVersionFlag pins the formula's OTHER
+// assertion, the one on `mcp-tg --version`. It is what catches a release whose
+// ldflags missed, and TestVersionFlag_PrintsBuildAndExitsZero pins the output
+// shape it greps for — but only while the formula still runs it. Drop the line
+// from the YAML and that pin guards a check nobody performs.
+func TestBrewFormulaContract_ChecksTheVersionFlag(t *testing.T) {
+	raw, err := os.ReadFile("../../.goreleaser.yaml")
+	if err != nil {
+		t.Fatalf("read .goreleaser.yaml: %v", err)
+	}
+
+	if !strings.Contains(string(raw), `assert_match version.to_s, shell_output("#{bin}/mcp-tg --version")`) {
+		t.Error("the brew test no longer runs --version; a release with unset ldflags would ship unnoticed")
+	}
+}
+
 func TestBrewFormulaContract_NoCredentialsExitsOneWithoutNetwork(t *testing.T) {
 	if os.Getenv(brewContractHelper) == "1" {
 		main()

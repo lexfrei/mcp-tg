@@ -21,7 +21,13 @@ func validatePathAgainstRoots(ctx context.Context, session *mcp.ServerSession, f
 		return nil
 	}
 
-	roots, err := session.ListRoots(ctx, nil)
+	// SEP-2577 deprecated roots in protocol 2026-07-28 with a window of at least
+	// twelve months. The replacement is to take paths through tool parameters,
+	// resource URIs or configuration, which changes how every file-taking tool is
+	// called rather than anything in this file. Until that lands this is the only
+	// path validation the server has, and removing it early would silently widen
+	// what a client may write to.
+	roots, err := session.ListRoots(ctx, nil) //nolint:staticcheck // SEP-2577 roots deprecation, functional for 12+ months
 	if err != nil {
 		if isMethodNotFound(err) {
 			return nil
@@ -53,7 +59,9 @@ func validatePathAgainstRoots(ctx context.Context, session *mcp.ServerSession, f
 	return ErrPathOutsideRoots
 }
 
-func rootToPath(root *mcp.Root) string {
+// rootToPath takes the deprecated mcp.Root for the same reason
+// validatePathAgainstRoots still calls ListRoots: see the note there.
+func rootToPath(root *mcp.Root) string { //nolint:staticcheck // SEP-2577 roots deprecation, functional for 12+ months
 	parsed, err := url.Parse(root.URI)
 	if err != nil {
 		return ""

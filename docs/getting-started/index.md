@@ -16,6 +16,14 @@ This is a **user account** client over MTProto, not a bot — so it authenticate
 
     [:octicons-arrow-right-24: Installation](installation.md)
 
+-   :material-robot:{ .lg .middle } **Agent Setup**
+
+    ---
+
+    A page written for your AI agent — hand it over and the agent walks you through the whole setup.
+
+    [:octicons-arrow-right-24: Agent Setup](agent-setup.md)
+
 -   :material-cog:{ .lg .middle } **Configuration**
 
     ---
@@ -39,11 +47,10 @@ This is a **user account** client over MTProto, not a bot — so it authenticate
 Get an app id and hash from [my.telegram.org](https://my.telegram.org) — the public builds carry no credentials — then:
 
 ```bash
-export TELEGRAM_APP_ID=12345
-export TELEGRAM_APP_HASH=your_app_hash
-
-mcp-tg login                  # interactive, writes the session to the OS keychain
-claude mcp add mcp-tg -- mcp-tg
+brew install lexfrei/tap/mcp-tg
+claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
 ```
 
-Serving several MCP clients at once? Run one shared HTTP daemon instead of a process each — see [Transport modes](../building.md#transport-modes).
+On the first tool call the server asks for the phone and login code right in the client, and the session lands in the OS keychain (see [Authentication](authentication.md)).
+
+Running many agent sessions or several MCP clients? Run one shared HTTP daemon instead of a process each — see [Installation](installation.md#shared-daemon-many-sessions).

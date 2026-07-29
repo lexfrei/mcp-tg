@@ -6,25 +6,34 @@ Every install path needs Telegram API credentials from [my.telegram.org](https:/
 
 ```bash
 brew install lexfrei/tap/mcp-tg
+claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
+```
 
-# The public build bakes in no credentials. Put an app id and hash from
-# https://my.telegram.org/apps into the config file the service reads:
+That is the whole setup for a single client: the client starts one server process over stdio, and on the first tool call the server asks for the phone and login code right in the client (see [Authentication](authentication.md)). To keep the 2FA password out of the MCP client, run `mcp-tg login` in a terminal once before the first call — the server then reuses the stored session.
+
+There is no Homebrew build for Windows: Homebrew has no native Windows support, and its casks are macOS-only. Windows users take the binary from the release archives below, or run the container under WSL.
+
+### Shared daemon (many sessions)
+
+Running many agent sessions or several MCP clients, a server process per session adds up — Telegram sees a separate connection from each. The formula ships a `brew services` unit that runs one headless HTTP daemon serving every client on the machine:
+
+```bash
+# The service reads its credentials from this file; put the app id and hash there.
 $EDITOR "$(brew --prefix)/etc/mcp-tg/mcp-tg.env"
 
 # The same file feeds this shell, so login sees the credentials too.
 set -a; . "$(brew --prefix)/etc/mcp-tg/mcp-tg.env"; set +a
-mcp-tg login                      # interactive, writes the session to the OS keychain
+mcp-tg login                      # the headless daemon cannot prompt — log in from the terminal
 
 brew services start mcp-tg        # shared HTTP daemon on 127.0.0.1:8787
+claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 ```
 
-The service runs the headless HTTP mode, so a single daemon serves every MCP client on the machine — point clients at it with `claude mcp add --transport http mcp-tg http://127.0.0.1:8787` (see [Transport modes](../building.md#transport-modes)).
+The trade-off between the two modes is described in [Transport modes](../building.md#transport-modes).
 
 Do not reach for `sudo brew services start`: that installs a LaunchDaemon, which runs as root and reads the **System** keychain, while `mcp-tg login` wrote the session to your **login** keychain. The daemon would insist you log in, which you already did.
 
 A service manager passes only the variables its unit declares, and credentials cannot ship inside a public formula — so the service is a small wrapper that sources `$(brew --prefix)/etc/mcp-tg/mcp-tg.env` on every start. That is the one file to edit, it survives upgrades and reboots, and nothing depends on your login shell. Uncomment `TELEGRAM_SESSION_INSECURE=true` in it if (and only if) you logged in with `--insecure-storage` — the session backend must match on both sides, or the daemon looks for the session where it was never written.
-
-There is no Homebrew build for Windows: Homebrew has no native Windows support, and its casks are macOS-only. Windows users take the binary from the release archives below, or run the container under WSL.
 
 ## Container
 
@@ -50,7 +59,7 @@ export TELEGRAM_APP_HASH=your_app_hash
 
 ## Registering with an MCP client
 
-With Claude Code, over stdio via the container:
+The Homebrew paths above already register the server. For the container image, register the same `docker run` command over stdio:
 
 ```bash
 claude mcp add mcp-tg -- docker run --rm -i \
@@ -60,10 +69,4 @@ claude mcp add mcp-tg -- docker run --rm -i \
   ghcr.io/lexfrei/mcp-tg:latest
 ```
 
-Or point every client at one already-running HTTP daemon instead of spawning a process each:
-
-```bash
-claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
-```
-
-The trade-off between the two is described in [Transport modes](../building.md#transport-modes).
+For a direct binary, `claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- /path/to/mcp-tg` works the same way.

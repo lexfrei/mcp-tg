@@ -128,20 +128,42 @@ func TestSubscription_EndToEnd(t *testing.T) {
 
 	// A new message in the subscribed chat, delivered as a pushed update
 	// carrying the peer (the from-another-device shape, not the self-send echo).
-	fireErr := broker.HandleNewMessage(
-		ctx, tg.Entities{}, &tg.UpdateNewMessage{Message: &tg.Message{PeerID: &tg.PeerUser{UserID: selfID}}},
-	)
-	if fireErr != nil {
-		t.Fatalf("HandleNewMessage: %v", fireErr)
+	//
+	// The message is fired repeatedly because Subscribe returning does not mean
+	// the server has registered the watch. Under protocol 2026-07-28 the legacy
+	// resources/subscribe RPC is gone: Subscribe opens a long-lived
+	// subscriptions/listen stream carrying the URI and returns as soon as it is
+	// sent, while the server registers the subscription when it handles that
+	// stream. Firing once raced that gap and the notification was simply
+	// addressed to nobody. A sleep would hide the race rather than wait for it.
+	fire := func() {
+		if err := broker.HandleNewMessage(
+			ctx, tg.Entities{}, &tg.UpdateNewMessage{Message: &tg.Message{PeerID: &tg.PeerUser{UserID: selfID}}},
+		); err != nil {
+			t.Errorf("HandleNewMessage: %v", err)
+		}
 	}
 
-	select {
-	case got := <-updates:
-		if got != uri {
-			t.Fatalf("resources/updated URI = %q, want %q", got, uri)
+	deadline := time.After(5 * time.Second)
+	retry := time.NewTicker(50 * time.Millisecond)
+
+	defer retry.Stop()
+
+	fire()
+
+	for {
+		select {
+		case got := <-updates:
+			if got != uri {
+				t.Fatalf("resources/updated URI = %q, want %q", got, uri)
+			}
+
+			return
+		case <-retry.C:
+			fire()
+		case <-deadline:
+			t.Fatal("timed out waiting for resources/updated notification")
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for resources/updated notification")
 	}
 }
 

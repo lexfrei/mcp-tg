@@ -4,6 +4,12 @@
   "rangeStrategy": "pin",
   "packageRules": [
     {
+      "description": "Hold go-sdk at 1.6.x. v1.7.0 implements protocol 2026-07-28, which replaces resources/updated with a single subscriptions/listen stream and removes resources/subscribe and resources/unsubscribe outright (they answer MethodNotFound). SubscriptionBroker and its wiring are built on the removed calls, so TestSubscription_EndToEnd times out waiting for a notification that the new protocol never sends. That is a migration of the subscription architecture, not a version bump. The same release also deprecates roots (SEP-2577), which trips staticcheck in internal/tools/roots.go. Drop this rule with the migration.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["github.com/modelcontextprotocol/go-sdk"],
+      "allowedVersions": "<1.7.0"
+    },
+    {
       "description": "Group all Go module updates into one PR",
       "matchManagers": ["gomod"],
       "groupName": "go modules",

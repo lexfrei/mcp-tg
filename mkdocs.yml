@@ -165,6 +165,7 @@ nav:
   - Getting Started:
       - getting-started/index.md
       - Installation: getting-started/installation.md
+      - Agent Setup: getting-started/agent-setup.md
       - Configuration: getting-started/configuration.md
       - Authentication: getting-started/authentication.md
   - Tools: tools.md

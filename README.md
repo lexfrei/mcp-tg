@@ -26,21 +26,17 @@ Details for every path: [Installation](https://mcp-tg.lexfrei.dev/getting-starte
 
 ## Quickstart
 
-Get an app id and hash from [my.telegram.org](https://my.telegram.org) — the public builds carry no credentials — then log in once and register the server:
+Get an app id and hash from [my.telegram.org](https://my.telegram.org) — the public builds carry no credentials — then register the server:
 
 ```bash
-export TELEGRAM_APP_ID=12345
-export TELEGRAM_APP_HASH=your_app_hash
-
-# Interactive terminal login. Phone, code and 2FA password are read from the
-# TTY and never touch MCP; the session lands in the OS keychain.
-mcp-tg login
-
-# One server process per client, over stdio:
-claude mcp add mcp-tg -- mcp-tg
+claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
 ```
 
-Serving several MCP clients at once? Run one shared HTTP daemon instead of a process each — `brew services start mcp-tg`, then `claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user`. See [Transport modes](https://mcp-tg.lexfrei.dev/building/#transport-modes).
+On the first tool call the server asks for the phone and login code right in the client, and the session lands in the OS keychain. To keep the 2FA password out of the MCP client, run `mcp-tg login` in a terminal once instead — see [Authentication](https://mcp-tg.lexfrei.dev/getting-started/authentication/).
+
+Running many agent sessions or several MCP clients? A server process per session adds up — run one shared HTTP daemon instead: `brew services start mcp-tg`, then `claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user`. See [Transport modes](https://mcp-tg.lexfrei.dev/building/#transport-modes).
+
+Or skip the steps entirely: tell your agent to read [Agent Setup](https://mcp-tg.lexfrei.dev/getting-started/agent-setup/) and it does the rest.
 
 ## Documentation
 

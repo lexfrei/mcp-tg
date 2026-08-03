@@ -51,7 +51,7 @@ jobs:
       # renovate bump moves the tag and leaves the number behind, which is what
       # happened when this comment still claimed 0.22.1 under a v24 pin.
       - name: Run markdownlint
-        uses: DavidAnson/markdownlint-cli2-action@6bf21b07787794f89a243495939cd651942aeabe # v24.1.0
+        uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
         with:
           # The whole repository, not just docs/: README.md and CLAUDE.md are
           # Markdown too, and .markdownlint-cli2.yaml's ignores are what scope

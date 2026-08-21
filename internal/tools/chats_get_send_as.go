@@ -95,12 +95,10 @@ func sendAsItems(options []telegram.SendAsOption) []SendAsItem {
 
 	for idx, opt := range options {
 		items[idx] = SendAsItem{
-			ParticipantItem: ParticipantItem{
-				ID:       opt.Peer.ID,
-				Type:     participantTypeLabel(opt.Peer.Type),
-				Name:     opt.Name,
-				Username: opt.Username,
-			},
+			ID:              opt.Peer.ID,
+			Type:            participantTypeLabel(opt.Peer.Type),
+			Name:            opt.Name,
+			Username:        opt.Username,
 			Peer:            formatPeer(opt.Peer),
 			PremiumRequired: opt.PremiumRequired,
 		}

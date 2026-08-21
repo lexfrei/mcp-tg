@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Go 1.26.5+
+- Go 1.27.0+
 - Telegram API credentials from [my.telegram.org](https://my.telegram.org)
 
 ## Building

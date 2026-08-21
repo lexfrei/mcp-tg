@@ -1092,6 +1092,60 @@ func firstMessageFromUpdates(updates []tg.UpdateClass, users, chats map[int64]pe
 	return nil
 }
 
+// updateClassesOf returns the individual updates inside an UpdatesClass
+// envelope, including the compact *tg.UpdateShort form that unwrapUpdates
+// deliberately rejects (see its doc comment) — that rejection is correct
+// for unwrapUpdates's callers, which need the parallel Users/Chats arrays
+// for enrichment, but a caller that only inspects the raw UpdateClass
+// values, like deletedScheduledCount, has no such requirement, and
+// messages.deleteScheduledMessages is a single-update, no-enrichment RPC
+// exactly the shape the server may compact into UpdateShort.
+func updateClassesOf(result tg.UpdatesClass) []tg.UpdateClass {
+	if short, ok := result.(*tg.UpdateShort); ok {
+		return []tg.UpdateClass{short.Update}
+	}
+
+	updates, _, _, ok := unwrapUpdates(result)
+	if !ok {
+		return nil
+	}
+
+	return updates
+}
+
+// deletedScheduledCount reads the actual number of scheduled messages the
+// server removed from the tg.UpdatesClass messages.deleteScheduledMessages
+// answers with. Telegram fires updateDeleteScheduledMessages carrying the
+// IDs that were really in the queue — deleting an ID Telegram never had
+// leaves the queue unchanged and no update fires for it, so this returns 0
+// in that case rather than the request size. An update whose SentMessages
+// is set reports scheduled messages that fired on their own schedule, not
+// ones this call deleted, and is excluded. Peer matching follows the same
+// reasoning as samePeer: the envelope is not guaranteed to carry only the
+// update this call asked for.
+func deletedScheduledCount(result tg.UpdatesClass, peer InputPeer) int {
+	count := 0
+
+	for _, update := range updateClassesOf(result) {
+		del, isDelete := update.(*tg.UpdateDeleteScheduledMessages)
+		if !isDelete {
+			continue
+		}
+
+		if _, sent := del.GetSentMessages(); sent {
+			continue
+		}
+
+		if !samePeer(extractPeerID(del.Peer), peer) {
+			continue
+		}
+
+		count += len(del.Messages)
+	}
+
+	return count
+}
+
 // editedMessageFromUpdate converts the messages.editMessage echo. It is
 // kept apart from messageFromUpdate so the send paths cannot reach the
 // edit updates, and it matches on msgID rather than taking the first

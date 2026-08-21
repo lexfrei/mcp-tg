@@ -68,6 +68,81 @@ func TestMessagesDeleteHandler_ScheduledRoutesToTheScheduledQueue(t *testing.T) 
 	}
 }
 
+// Deleted must report the server's affected count, not the request size:
+// an id already gone contributes nothing to Telegram's own count, and a
+// caller relying on Deleted to confirm a real deletion needs that gap
+// visible instead of papered over with len(ids).
+func TestMessagesDeleteHandler_ScheduledReportsTheServersAffectedCount(t *testing.T) {
+	scheduled := true
+	mock := &mockClient{deleteAffected: 1}
+	handler := NewMessagesDeleteHandler(mock)
+
+	_, structured, err := handler(context.Background(), nil, MessagesDeleteParams{
+		Peer:      "@channel",
+		IDs:       []int{22, 23, 24},
+		Scheduled: &scheduled,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.Deleted == nil || *structured.Deleted != 1 {
+		t.Errorf("Deleted = %v, want a pointer to the server's count (1), not len(ids) (3)", structured.Deleted)
+	}
+
+	if !strings.Contains(structured.Output, "Deleted 1 ") {
+		t.Errorf("Output = %q, want it to name the server's count", structured.Output)
+	}
+}
+
+func TestMessagesDeleteHandler_ScheduledDeletedZeroWhenNothingMatched(t *testing.T) {
+	scheduled := true
+	mock := &mockClient{deleteAffected: 0}
+	handler := NewMessagesDeleteHandler(mock)
+
+	_, structured, err := handler(context.Background(), nil, MessagesDeleteParams{
+		Peer:      "@channel",
+		IDs:       []int{22, 23},
+		Scheduled: &scheduled,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.Deleted == nil || *structured.Deleted != 0 {
+		t.Errorf("Deleted = %v, want a pointer to 0 when nothing in the queue matched the ids", structured.Deleted)
+	}
+}
+
+// The ordinary history path has no server-verified affected-count to
+// report (see Wrapper.DeleteMessages), so Deleted must be nil rather than
+// a number dressed up as server truth — the exact defect this tool used
+// to have before this fix.
+func TestMessagesDeleteHandler_OrdinaryDeleteOmitsTheUnverifiableCount(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewMessagesDeleteHandler(mock)
+
+	_, structured, err := handler(context.Background(), nil, MessagesDeleteParams{
+		Peer: "@channel",
+		IDs:  []int{22, 23, 24},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.Deleted != nil {
+		t.Errorf("Deleted = %v, want nil for an ordinary delete", structured.Deleted)
+	}
+
+	if !strings.Contains(structured.Output, "Requested deletion of 3 ") {
+		t.Errorf("Output = %q, want it to name the request size without claiming server verification", structured.Output)
+	}
+
+	if strings.Contains(structured.Output, "Deleted") {
+		t.Errorf("Output = %q, want it not to say \"Deleted\" without a verified count", structured.Output)
+	}
+}
+
 func TestMessagesDeleteHandler_RequiresPeerAndIDs(t *testing.T) {
 	handler := NewMessagesDeleteHandler(&mockClient{})
 

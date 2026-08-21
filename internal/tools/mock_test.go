@@ -50,9 +50,15 @@ type mockClient struct {
 	// deleteIDs and deleteScheduledIDs record which of the two delete
 	// RPCs ran, so a test can prove where the scheduled flag routes;
 	// deleteRevoke pins the nil-means-true default of the revoke param.
+	// deleteAffected is what DeleteScheduledMessages reports back — it
+	// stands in for Telegram's own queue-affected count, deliberately
+	// settable to something other than len(ids) so a test can prove the
+	// result reports the server's count, not the request's. Ordinary
+	// DeleteMessages has no equivalent server-verified count to mock.
 	deleteIDs          []int
 	deleteScheduledIDs []int
 	deleteRevoke       bool
+	deleteAffected     int
 	lastPeer           telegram.InputPeer
 	lastQuery          string
 	lastTopicID        int
@@ -209,7 +215,9 @@ func (m *mockClient) EditMessage(_ context.Context, peer telegram.InputPeer, _ i
 	return m.message, m.err
 }
 
-func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, ids []int, revoke bool) error {
+func (m *mockClient) DeleteMessages(
+	_ context.Context, peer telegram.InputPeer, ids []int, revoke bool,
+) error {
 	m.lastPeer = peer
 	m.deleteIDs = ids
 	m.deleteRevoke = revoke
@@ -217,11 +225,13 @@ func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, 
 	return m.err
 }
 
-func (m *mockClient) DeleteScheduledMessages(_ context.Context, peer telegram.InputPeer, ids []int) error {
+func (m *mockClient) DeleteScheduledMessages(
+	_ context.Context, peer telegram.InputPeer, ids []int,
+) (int, error) {
 	m.lastPeer = peer
 	m.deleteScheduledIDs = ids
 
-	return m.err
+	return m.deleteAffected, m.err
 }
 
 func (m *mockClient) ForwardMessages(

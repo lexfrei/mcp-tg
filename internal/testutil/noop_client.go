@@ -52,8 +52,8 @@ func (NoopClient) DeleteMessages(_ context.Context, _ telegram.InputPeer, _ []in
 	return nil
 }
 
-func (NoopClient) DeleteScheduledMessages(_ context.Context, _ telegram.InputPeer, _ []int) error {
-	return nil
+func (NoopClient) DeleteScheduledMessages(_ context.Context, _ telegram.InputPeer, _ []int) (int, error) {
+	return 0, nil
 }
 
 func (NoopClient) ForwardMessages(

@@ -23,10 +23,12 @@ type ChatsSetPhotoResult struct {
 }
 
 // NewChatsSetPhotoHandler creates a handler for the tg_chats_set_photo tool.
-func NewChatsSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsSetPhotoParams, ChatsSetPhotoResult] {
+func NewChatsSetPhotoHandler(
+	client telegram.Client, fileRoots []string,
+) mcp.ToolHandlerFor[ChatsSetPhotoParams, ChatsSetPhotoResult] {
 	return func(
 		ctx context.Context,
-		req *mcp.CallToolRequest,
+		_ *mcp.CallToolRequest,
 		params ChatsSetPhotoParams,
 	) (*mcp.CallToolResult, ChatsSetPhotoResult, error) {
 		if params.Peer == "" {
@@ -39,7 +41,7 @@ func NewChatsSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[ChatsSet
 				validationErr(ErrPathRequired)
 		}
 
-		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		rootErr := validatePathAgainstRoots(fileRoots, params.Path)
 		if rootErr != nil {
 			return &mcp.CallToolResult{IsError: true}, ChatsSetPhotoResult{},
 				validationErr(rootErr)

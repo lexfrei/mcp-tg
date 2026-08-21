@@ -21,7 +21,6 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Completions | Peer argument autocompletion from dialogs |
 | Elicitation | Auth flow (phone, code, 2FA password) |
 | Progress | File uploads, media albums, message search |
-| Roots | File path validation for uploads/downloads |
 | Subscriptions | `resources/updated` on new messages in a subscribed chat |
 | Transports | stdio + Streamable HTTP |
 | KeepAlive | 30s ping interval |

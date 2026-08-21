@@ -21,7 +21,9 @@ type MediaUploadResult struct {
 }
 
 // NewMediaUploadHandler creates a handler for the tg_media_upload tool.
-func NewMediaUploadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaUploadParams, MediaUploadResult] {
+func NewMediaUploadHandler(
+	client telegram.Client, fileRoots []string,
+) mcp.ToolHandlerFor[MediaUploadParams, MediaUploadResult] {
 	return func(
 		ctx context.Context,
 		req *mcp.CallToolRequest,
@@ -32,7 +34,7 @@ func NewMediaUploadHandler(client telegram.Client) mcp.ToolHandlerFor[MediaUploa
 				validationErr(ErrPathRequired)
 		}
 
-		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		rootErr := validatePathAgainstRoots(fileRoots, params.Path)
 		if rootErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaUploadResult{},
 				validationErr(rootErr)

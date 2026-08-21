@@ -231,7 +231,7 @@ func TestAudit_TopicIDValidatedOnSendFile(t *testing.T) {
 	mock := &mockClient{
 		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
 	}
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	topicID := 7
 
@@ -255,7 +255,7 @@ func TestAudit_TopicIDValidatedOnMediaAlbum(t *testing.T) {
 	mock := &mockClient{
 		peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
 	}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	topicID := 7
 

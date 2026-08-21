@@ -90,7 +90,7 @@ func callParseModeTool(t *testing.T, tool string, args map[string]any) *mcp.Call
 	close(authDone)
 
 	server := newHeadlessServer(
-		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
 		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
 	)
 

@@ -39,7 +39,7 @@ func TestRegisterTools(t *testing.T) {
 
 	client := testutil.NoopClient{}
 	registry := tools.BoolFieldRegistry{}
-	registerTools(server, client, registry, "/tmp/mcp-tg/downloads")
+	registerTools(server, client, registry, "/tmp/mcp-tg/downloads", nil)
 
 	// Sample several tools spread across registration phases. If any of
 	// these is missing, someone registered the tool via mcp.AddTool instead
@@ -91,7 +91,7 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 	close(authDone) // simulate completed auth so the guard lets calls through
 
 	server := newHeadlessServer(
-		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
 		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
 	)
 
@@ -140,7 +140,7 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 	health.MarkRevoked("AUTH_KEY_UNREGISTERED")
 
 	server := buildServer(
-		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
 		tgclient.NewSubscriptionBroker(), authDone, health, nil, discardLogger(),
 	)
 

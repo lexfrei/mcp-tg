@@ -35,7 +35,7 @@ type MediaSendAlbumResult struct {
 
 // NewMediaSendAlbumHandler creates a handler for the tg_media_send_album tool.
 func NewMediaSendAlbumHandler(
-	client telegram.Client,
+	client telegram.Client, fileRoots []string,
 ) mcp.ToolHandlerFor[MediaSendAlbumParams, MediaSendAlbumResult] {
 	return func(
 		ctx context.Context,
@@ -65,7 +65,7 @@ func NewMediaSendAlbumHandler(
 				validationErr(lintErr)
 		}
 
-		msgs, err := sendAlbum(ctx, client, req, &params)
+		msgs, err := sendAlbum(ctx, client, req, &params, fileRoots)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaSendAlbumResult{}, err
 		}
@@ -79,12 +79,13 @@ func NewMediaSendAlbumHandler(
 }
 
 func sendAlbum(
-	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params *MediaSendAlbumParams,
+	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest,
+	params *MediaSendAlbumParams, fileRoots []string,
 ) ([]telegram.Message, error) {
 	token := req.Params.GetProgressToken()
 
 	for _, filePath := range params.Paths {
-		rootErr := validatePathAgainstRoots(ctx, req.Session, filePath)
+		rootErr := validatePathAgainstRoots(fileRoots, filePath)
 		if rootErr != nil {
 			return nil, validationErr(rootErr)
 		}

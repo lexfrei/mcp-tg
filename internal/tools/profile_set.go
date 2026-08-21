@@ -113,10 +113,12 @@ type ProfileSetPhotoResult struct {
 }
 
 // NewProfileSetPhotoHandler creates a handler for the tg_profile_set_photo tool.
-func NewProfileSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[ProfileSetPhotoParams, ProfileSetPhotoResult] {
+func NewProfileSetPhotoHandler(
+	client telegram.Client, fileRoots []string,
+) mcp.ToolHandlerFor[ProfileSetPhotoParams, ProfileSetPhotoResult] {
 	return func(
 		ctx context.Context,
-		req *mcp.CallToolRequest,
+		_ *mcp.CallToolRequest,
 		params ProfileSetPhotoParams,
 	) (*mcp.CallToolResult, ProfileSetPhotoResult, error) {
 		if params.Path == "" {
@@ -124,7 +126,7 @@ func NewProfileSetPhotoHandler(client telegram.Client) mcp.ToolHandlerFor[Profil
 				validationErr(ErrPathRequired)
 		}
 
-		rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+		rootErr := validatePathAgainstRoots(fileRoots, params.Path)
 		if rootErr != nil {
 			return &mcp.CallToolResult{IsError: true}, ProfileSetPhotoResult{},
 				validationErr(rootErr)

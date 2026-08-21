@@ -18,7 +18,17 @@ type MessagesDeleteParams struct {
 
 // MessagesDeleteResult is the output of the tg_messages_delete tool.
 type MessagesDeleteResult struct {
-	Deleted int    `json:"deleted"`
+	// Deleted is the server's own affected-count for the scheduled queue:
+	// an id already gone from the queue contributes nothing to it, so a
+	// caller can tell a genuine removal from a no-op without a follow-up
+	// read. It is omitted for an ordinary history delete: Telegram gives
+	// no equivalent per-request signal there — messages.affectedMessages
+	// carries a PtsCount, but that field belongs to the update-sequence
+	// mechanism, not to a count of what this call actually removed (see
+	// Wrapper.DeleteMessages), so a caller who needs confirmation for a
+	// history delete has to read the messages back rather than trust a
+	// number this tool cannot honestly provide.
+	Deleted *int   `json:"deleted,omitempty"`
 	Output  string `json:"output"`
 }
 
@@ -50,19 +60,26 @@ func NewMessagesDeleteHandler(client telegram.Client) mcp.ToolHandlerFor[Message
 		scheduled := deref(params.Scheduled)
 
 		if scheduled {
-			err = client.DeleteScheduledMessages(ctx, peer, params.IDs)
-		} else {
-			err = client.DeleteMessages(ctx, peer, params.IDs, revokeOrDefault(params.Revoke))
+			affected, deleteErr := client.DeleteScheduledMessages(ctx, peer, params.IDs)
+			if deleteErr != nil {
+				return &mcp.CallToolResult{IsError: true}, MessagesDeleteResult{},
+					telegramErr("failed to delete messages", deleteErr)
+			}
+
+			return nil, MessagesDeleteResult{
+				Deleted: &affected,
+				Output:  fmt.Sprintf("Deleted %d scheduled message(s)", affected),
+			}, nil
 		}
 
-		if err != nil {
+		deleteErr := client.DeleteMessages(ctx, peer, params.IDs, revokeOrDefault(params.Revoke))
+		if deleteErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesDeleteResult{},
-				telegramErr("failed to delete messages", err)
+				telegramErr("failed to delete messages", deleteErr)
 		}
 
 		return nil, MessagesDeleteResult{
-			Deleted: len(params.IDs),
-			Output:  fmt.Sprintf("Deleted %d %s", len(params.IDs), deletedKind(scheduled)),
+			Output: fmt.Sprintf("Requested deletion of %d message(s)", len(params.IDs)),
 		}, nil
 	}
 }
@@ -89,16 +106,6 @@ func revokeOrDefault(revoke *bool) bool {
 	}
 
 	return *revoke
-}
-
-// deletedKind names the queue in the result line, so a caller reading only
-// the output text can tell which of the two deletions ran.
-func deletedKind(scheduled bool) string {
-	if scheduled {
-		return "scheduled message(s)"
-	}
-
-	return "message(s)"
 }
 
 // MessagesDeleteTool returns the MCP tool definition for tg_messages_delete.

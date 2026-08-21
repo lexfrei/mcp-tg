@@ -667,7 +667,17 @@ func (w *Wrapper) EditMessage(
 	return echoOrSubmitted(editedMessageFromUpdate(result, msgID, peer), msgID, req.Entities), nil
 }
 
-// DeleteMessages deletes messages from a chat.
+// DeleteMessages deletes messages from a chat. It cannot report how many
+// were actually removed: messages.affectedMessages carries a PtsCount, but
+// that field belongs to the update-sequence/gap-detection mechanism
+// (core.telegram.org/api/updates defines pts_count only on Update
+// constructors in the update stream, not on method-response types like
+// AffectedMessages), and Telegram's own reference client, tdlib, confirms
+// the practical answer: DeleteMessagesQuery::on_result feeds PtsCount
+// straight into its local pts-sync bookkeeping and never compares it
+// against the request to learn what was actually deleted — tdlib exposes
+// no affected-count from this RPC to its own callers either. Treat
+// PtsCount as sync-only; do not derive a deleted-count from it.
 func (w *Wrapper) DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error {
 	if peer.Type == PeerChannel {
 		_, err := w.api.ChannelsDeleteMessages(ctx, &tg.ChannelsDeleteMessagesRequest{
@@ -691,13 +701,16 @@ func (w *Wrapper) DeleteMessages(ctx context.Context, peer InputPeer, ids []int,
 // published history, so messages.deleteScheduledMessages is the only RPC
 // that reaches them; messages.deleteMessages with the same IDs would
 // delete whatever is published under those numbers.
-func (w *Wrapper) DeleteScheduledMessages(ctx context.Context, peer InputPeer, ids []int) error {
-	_, err := w.api.MessagesDeleteScheduledMessages(ctx, &tg.MessagesDeleteScheduledMessagesRequest{
+func (w *Wrapper) DeleteScheduledMessages(ctx context.Context, peer InputPeer, ids []int) (int, error) {
+	result, err := w.api.MessagesDeleteScheduledMessages(ctx, &tg.MessagesDeleteScheduledMessagesRequest{
 		Peer: InputPeerToTG(peer),
 		ID:   ids,
 	})
+	if err != nil {
+		return 0, errors.Wrap(err, "deleting scheduled messages")
+	}
 
-	return errors.Wrap(err, "deleting scheduled messages")
+	return deletedScheduledCount(result, peer), nil
 }
 
 // ForwardMessages forwards messages from one chat to another.

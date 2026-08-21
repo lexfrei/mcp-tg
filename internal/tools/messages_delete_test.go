@@ -71,9 +71,15 @@ func TestMessagesDeleteHandler_ScheduledRoutesToTheScheduledQueue(t *testing.T) 
 func TestMessagesDeleteHandler_RequiresPeerAndIDs(t *testing.T) {
 	handler := NewMessagesDeleteHandler(&mockClient{})
 
+	tooMany := make([]int, maxIDsPerRequest+1)
+	for i := range tooMany {
+		tooMany[i] = i + 1
+	}
+
 	cases := map[string]MessagesDeleteParams{
-		"no peer": {IDs: []int{1}},
-		"no ids":  {Peer: "@channel"},
+		"no peer":      {IDs: []int{1}},
+		"no ids":       {Peer: "@channel"},
+		"too many ids": {Peer: "@channel", IDs: tooMany},
 	}
 
 	for name, params := range cases {
@@ -87,5 +93,45 @@ func TestMessagesDeleteHandler_RequiresPeerAndIDs(t *testing.T) {
 				t.Error("expected the result to be flagged as an error")
 			}
 		})
+	}
+}
+
+// The mock must record the revoke argument: the schema documents default
+// true, the sibling delete-history tool defaults the same-named parameter to
+// false via plain deref, and nothing but these assertions keeps a cleanup
+// from crossing the two.
+func TestMessagesDeleteHandler_RevokeDefaultsToTrue(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewMessagesDeleteHandler(mock)
+
+	_, _, err := handler(context.Background(), nil, MessagesDeleteParams{
+		Peer: "@channel",
+		IDs:  []int{1},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mock.deleteRevoke {
+		t.Error("deleteRevoke = false, want the omitted revoke to default to true")
+	}
+}
+
+func TestMessagesDeleteHandler_ExplicitRevokeFalseIsPassedThrough(t *testing.T) {
+	revoke := false
+	mock := &mockClient{}
+	handler := NewMessagesDeleteHandler(mock)
+
+	_, _, err := handler(context.Background(), nil, MessagesDeleteParams{
+		Peer:   "@channel",
+		IDs:    []int{1},
+		Revoke: &revoke,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if mock.deleteRevoke {
+		t.Error("deleteRevoke = true, want an explicit false to reach the client")
 	}
 }

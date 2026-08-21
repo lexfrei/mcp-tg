@@ -48,9 +48,11 @@ type mockClient struct {
 
 	// Last call tracking
 	// deleteIDs and deleteScheduledIDs record which of the two delete
-	// RPCs ran, so a test can prove where the scheduled flag routes.
+	// RPCs ran, so a test can prove where the scheduled flag routes;
+	// deleteRevoke pins the nil-means-true default of the revoke param.
 	deleteIDs          []int
 	deleteScheduledIDs []int
+	deleteRevoke       bool
 	lastPeer           telegram.InputPeer
 	lastQuery          string
 	lastTopicID        int
@@ -207,9 +209,10 @@ func (m *mockClient) EditMessage(_ context.Context, peer telegram.InputPeer, _ i
 	return m.message, m.err
 }
 
-func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, ids []int, _ bool) error {
+func (m *mockClient) DeleteMessages(_ context.Context, peer telegram.InputPeer, ids []int, revoke bool) error {
 	m.lastPeer = peer
 	m.deleteIDs = ids
+	m.deleteRevoke = revoke
 
 	return m.err
 }

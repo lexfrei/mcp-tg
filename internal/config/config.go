@@ -52,6 +52,18 @@ var ErrHTTPOnlyRequiresPort = errors.New("MCP_HTTP_ONLY requires MCP_HTTP_PORT t
 // ErrInvalidInsecureStorage is returned when TELEGRAM_SESSION_INSECURE is not a valid boolean.
 var ErrInvalidInsecureStorage = errors.New("TELEGRAM_SESSION_INSECURE must be a boolean (1/0/true/false)")
 
+// ErrFileRootNotAbsolute is returned when a TELEGRAM_FILE_ROOTS entry is not an
+// absolute path. A daemon's working directory is an accident of how it was
+// launched (launchd starts at /), so a relative allowlist entry would silently
+// mean something other than what the operator wrote.
+var ErrFileRootNotAbsolute = errors.New("every TELEGRAM_FILE_ROOTS entry must be an absolute path")
+
+// ErrFileRootsEmpty is returned when TELEGRAM_FILE_ROOTS is set but parses to
+// no directories (for example, unexpanded shell templating leaving only
+// separators). The operator asked for a boundary; silently running without
+// one would fail open.
+var ErrFileRootsEmpty = errors.New("TELEGRAM_FILE_ROOTS is set but contains no directories")
+
 // Config holds the application configuration loaded from environment variables.
 type Config struct {
 	AppID       int
@@ -68,6 +80,10 @@ type Config struct {
 	// InsecureStorage, when true, keeps the session in a plaintext file instead
 	// of the OS keychain. It must be requested explicitly (env or --insecure-storage).
 	InsecureStorage bool
+
+	// FileRoots is the directory allowlist for tools that read or write local
+	// files. Empty means no restriction.
+	FileRoots []string
 }
 
 // Load reads the full configuration from environment variables, including the
@@ -92,11 +108,48 @@ func Load() (*Config, error) {
 		return nil, ErrHTTPOnlyRequiresPort
 	}
 
+	fileRoots, err := loadFileRoots()
+	if err != nil {
+		return nil, err
+	}
+
 	cfg.HTTPPort = httpPort
 	cfg.HTTPHost = loadHTTPHost()
 	cfg.HTTPOnly = httpOnly
+	cfg.FileRoots = fileRoots
 
 	return cfg, nil
+}
+
+// loadFileRoots parses TELEGRAM_FILE_ROOTS as an os.PathListSeparator-joined
+// list of absolute directories (the PATH convention: ':' on Unix, ';' on
+// Windows). Empty entries are dropped; a relative entry is an error, not a
+// guess — see ErrFileRootNotAbsolute.
+func loadFileRoots() ([]string, error) {
+	raw := os.Getenv("TELEGRAM_FILE_ROOTS")
+	if raw == "" {
+		return nil, nil
+	}
+
+	var roots []string
+
+	for _, entry := range filepath.SplitList(raw) {
+		if entry == "" {
+			continue
+		}
+
+		if !filepath.IsAbs(entry) {
+			return nil, errors.Wrapf(ErrFileRootNotAbsolute, "entry %q", entry)
+		}
+
+		roots = append(roots, filepath.Clean(entry))
+	}
+
+	if len(roots) == 0 {
+		return nil, ErrFileRootsEmpty
+	}
+
+	return roots, nil
 }
 
 // LoadForLogin reads only what `mcp-tg login` needs — Telegram credentials and

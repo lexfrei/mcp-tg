@@ -60,7 +60,7 @@ func requestWithToken(token any) *mcp.CallToolRequest {
 
 func TestSendFileHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 	mock := &mockClient{message: &telegram.Message{ID: 1}}
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), requestWithToken("tok"),
 		MessagesSendFileParams{ParseMode: "plain", Peer: "@x", Path: "/tmp/x"})
@@ -75,7 +75,7 @@ func TestSendFileHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 
 func TestSendFileHandler_NoProgressWithoutToken(t *testing.T) {
 	mock := &mockClient{message: &telegram.Message{ID: 1}}
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), requestWithToken(nil),
 		MessagesSendFileParams{ParseMode: "plain", Peer: "@x", Path: "/tmp/x"})
@@ -90,7 +90,7 @@ func TestSendFileHandler_NoProgressWithoutToken(t *testing.T) {
 
 func TestMediaSendAlbumHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 	mock := &mockClient{messages: []telegram.Message{{ID: 1}}}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), requestWithToken("tok"),
 		MediaSendAlbumParams{ParseMode: "plain", Peer: "@x", Paths: []string{"/tmp/x"}})
@@ -105,7 +105,7 @@ func TestMediaSendAlbumHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 
 func TestMediaSendAlbumHandler_NoProgressWithoutToken(t *testing.T) {
 	mock := &mockClient{messages: []telegram.Message{{ID: 1}}}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), requestWithToken(nil),
 		MediaSendAlbumParams{ParseMode: "plain", Peer: "@x", Paths: []string{"/tmp/x"}})
@@ -120,7 +120,7 @@ func TestMediaSendAlbumHandler_NoProgressWithoutToken(t *testing.T) {
 
 func TestMediaUploadHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 	mock := &mockClient{uploaded: &telegram.UploadedFile{Name: "x", Size: 1}}
-	handler := NewMediaUploadHandler(mock)
+	handler := NewMediaUploadHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), requestWithToken("tok"),
 		MediaUploadParams{Path: "/tmp/x"})
@@ -135,7 +135,7 @@ func TestMediaUploadHandler_WiresProgressWhenTokenPresent(t *testing.T) {
 
 func TestMediaUploadHandler_NoProgressWithoutToken(t *testing.T) {
 	mock := &mockClient{uploaded: &telegram.UploadedFile{Name: "x", Size: 1}}
-	handler := NewMediaUploadHandler(mock)
+	handler := NewMediaUploadHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), requestWithToken(nil),
 		MediaUploadParams{Path: "/tmp/x"})

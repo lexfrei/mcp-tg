@@ -85,7 +85,7 @@ func TestMessagesSendHandler_OmitsSendAsWhenAbsent(t *testing.T) {
 
 func TestMessagesSendFileHandler_PassesSendAs(t *testing.T) {
 	mock := sendAsMock()
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
 		ParseMode: "plain",
@@ -101,7 +101,7 @@ func TestMessagesSendFileHandler_PassesSendAs(t *testing.T) {
 
 func TestMediaSendAlbumHandler_PassesSendAs(t *testing.T) {
 	mock := sendAsMock()
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
 		ParseMode: "plain",

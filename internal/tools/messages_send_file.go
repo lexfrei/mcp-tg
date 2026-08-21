@@ -34,7 +34,7 @@ type MessagesSendFileResult struct {
 
 // NewMessagesSendFileHandler creates a handler for the tg_messages_send_file tool.
 func NewMessagesSendFileHandler(
-	client telegram.Client,
+	client telegram.Client, fileRoots []string,
 ) mcp.ToolHandlerFor[MessagesSendFileParams, MessagesSendFileResult] {
 	return func(
 		ctx context.Context,
@@ -64,7 +64,7 @@ func NewMessagesSendFileHandler(
 				validationErr(lintErr)
 		}
 
-		msg, err := uploadAndSendFile(ctx, client, req, &params)
+		msg, err := uploadAndSendFile(ctx, client, req, &params, fileRoots)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesSendFileResult{}, err
 		}
@@ -83,9 +83,10 @@ func NewMessagesSendFileHandler(
 }
 
 func uploadAndSendFile(
-	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest, params *MessagesSendFileParams,
+	ctx context.Context, client telegram.Client, req *mcp.CallToolRequest,
+	params *MessagesSendFileParams, fileRoots []string,
 ) (*telegram.Message, error) {
-	rootErr := validatePathAgainstRoots(ctx, req.Session, params.Path)
+	rootErr := validatePathAgainstRoots(fileRoots, params.Path)
 	if rootErr != nil {
 		return nil, validationErr(rootErr)
 	}

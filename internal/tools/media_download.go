@@ -22,11 +22,11 @@ type MediaDownloadResult struct {
 
 // NewMediaDownloadHandler creates a handler for the tg_media_download tool.
 func NewMediaDownloadHandler(
-	client telegram.Client, defaultDownloadDir string,
+	client telegram.Client, defaultDownloadDir string, fileRoots []string,
 ) mcp.ToolHandlerFor[MediaDownloadParams, MediaDownloadResult] {
 	return func(
 		ctx context.Context,
-		req *mcp.CallToolRequest,
+		_ *mcp.CallToolRequest,
 		params MediaDownloadParams,
 	) (*mcp.CallToolResult, MediaDownloadResult, error) {
 		if params.Peer == "" {
@@ -44,7 +44,7 @@ func NewMediaDownloadHandler(
 			outDir = defaultDownloadDir
 		}
 
-		rootErr := validatePathAgainstRoots(ctx, req.Session, outDir)
+		rootErr := validatePathAgainstRoots(fileRoots, outDir)
 		if rootErr != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaDownloadResult{},
 				validationErr(rootErr)

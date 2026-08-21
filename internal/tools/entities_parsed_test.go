@@ -95,7 +95,7 @@ func TestMediaSendAlbumHandler_EntitiesParsedSumsAllMessages(t *testing.T) {
 			{ID: 2, Entities: []telegram.Entity{{Type: "bold"}, {Type: "italic"}, {Type: "code"}}},
 		},
 	}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, res, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
 		Peer: "@chat", Paths: []string{"/tmp/a", "/tmp/b"}, ParseMode: "plain",
@@ -114,7 +114,7 @@ func TestMessagesSendFileHandler_EntitiesParsedFromEcho(t *testing.T) {
 		peer:    telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
 		message: twoEntityMessage(),
 	}
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	_, res, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
 		Peer: "@chat", Path: "/tmp/f", ParseMode: "plain",
@@ -221,7 +221,7 @@ func TestMediaSendAlbumHandler_ScheduledAlbumIsNotEmpty(t *testing.T) {
 			{ID: 2},
 		},
 	}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, res, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
 		Peer: "@chat", Paths: []string{"/tmp/a", "/tmp/b"},
@@ -246,7 +246,7 @@ func TestMediaSendAlbumHandler_UnreadableEchoReportsNothing(t *testing.T) {
 		peer:     telegram.InputPeer{Type: telegram.PeerUser, ID: 1},
 		messages: nil, // the wrapper could not read the envelope
 	}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, res, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
 		Peer: "@chat", Paths: []string{"/tmp/a"}, ParseMode: "commonmark",

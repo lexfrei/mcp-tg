@@ -151,7 +151,7 @@ func startStdio(
 	authDone := make(chan struct{})
 
 	server := buildServer(
-		wrapper, cfg.DownloadDir, subscriptionBroker, authDone, health, func() { close(initDone) }, logger,
+		wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, func() { close(initDone) }, logger,
 	)
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
@@ -193,7 +193,7 @@ func startHeadless(
 	logger *slog.Logger,
 ) error {
 	authDone := make(chan struct{})
-	server := newHeadlessServer(wrapper, cfg.DownloadDir, subscriptionBroker, authDone, health, logger)
+	server := newHeadlessServer(wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, logger)
 
 	authErr := authenticate(ctx, tgClient, cfg, nil)
 	if authErr != nil {
@@ -224,17 +224,17 @@ func startHeadless(
 // closes a shared channel would panic on the second client's initialize (close
 // of a closed channel). Wiring such a hook here trips the multi-client test.
 func newHeadlessServer(
-	client tgclient.Client, downloadDir string, broker *tgclient.SubscriptionBroker,
+	client tgclient.Client, downloadDir string, fileRoots []string, broker *tgclient.SubscriptionBroker,
 	authDone chan struct{}, health *mcpmw.SessionHealth, logger *slog.Logger,
 ) *mcp.Server {
-	return buildServer(client, downloadDir, broker, authDone, health, nil, logger)
+	return buildServer(client, downloadDir, fileRoots, broker, authDone, health, nil, logger)
 }
 
 // buildServer constructs the MCP server with all tools, resources, prompts, and
 // middleware. onInit, when non-nil, runs after a client completes the MCP
 // initialize handshake; pass nil when no single client owns the lifecycle.
 func buildServer(
-	client tgclient.Client, downloadDir string, broker *tgclient.SubscriptionBroker,
+	client tgclient.Client, downloadDir string, fileRoots []string, broker *tgclient.SubscriptionBroker,
 	authDone chan struct{}, health *mcpmw.SessionHealth, onInit func(), logger *slog.Logger,
 ) *mcp.Server {
 	opts := newServerOptions(client, broker, logger)
@@ -257,7 +257,7 @@ func buildServer(
 	broker.SetNotifier(newResourceUpdater(server))
 
 	boolFields := tools.BoolFieldRegistry{}
-	registerTools(server, client, boolFields, downloadDir)
+	registerTools(server, client, boolFields, downloadDir, fileRoots)
 	resources.Register(server, client)
 	prompts.Register(server, client)
 	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone, health)...)
@@ -525,14 +525,13 @@ func newServerOptions(
 		CompletionHandler:  completions.NewHandler(client),
 		SubscribeHandler:   newSubscribeHandler(client, broker),
 		UnsubscribeHandler: newUnsubscribeHandler(broker),
-		//nolint:staticcheck // SEP-2577 deprecates roots but it works through the window; removal is a feature change.
-		RootsListChangedHandler: func(_ context.Context, _ *mcp.RootsListChangedRequest) {
-			logger.Info("client roots list changed")
-		},
 	}
 }
 
-func registerTools(server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry, downloadDir string) {
+func registerTools(
+	server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry,
+	downloadDir string, fileRoots []string,
+) {
 	tools.AddTool(server, registry, tools.ServerVersionTool(),
 		tools.NewServerVersionHandler(version, revision, runtime.Version()))
 	tools.AddTool(server, registry, tools.ProfileGetTool(), tools.NewProfileGetHandler(client))
@@ -572,21 +571,21 @@ func registerTools(server *mcp.Server, client tgclient.Client, registry tools.Bo
 	tools.AddTool(server, registry, tools.ChatsPermissionsTool(), tools.NewChatsPermissionsHandler(client))
 
 	// Phase 3: Media, Files, Chat Management, Profile tools.
-	tools.AddTool(server, registry, tools.MessagesSendFileTool(), tools.NewMessagesSendFileHandler(client))
-	tools.AddTool(server, registry, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client, downloadDir))
-	tools.AddTool(server, registry, tools.MediaUploadTool(), tools.NewMediaUploadHandler(client))
-	tools.AddTool(server, registry, tools.MediaSendAlbumTool(), tools.NewMediaSendAlbumHandler(client))
+	tools.AddTool(server, registry, tools.MessagesSendFileTool(), tools.NewMessagesSendFileHandler(client, fileRoots))
+	tools.AddTool(server, registry, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client, downloadDir, fileRoots))
+	tools.AddTool(server, registry, tools.MediaUploadTool(), tools.NewMediaUploadHandler(client, fileRoots))
+	tools.AddTool(server, registry, tools.MediaSendAlbumTool(), tools.NewMediaSendAlbumHandler(client, fileRoots))
 	tools.AddTool(server, registry, tools.ChatsCreateTool(), tools.NewChatsCreateHandler(client))
 	tools.AddTool(server, registry, tools.ChatsArchiveTool(), tools.NewChatsArchiveHandler(client))
 	tools.AddTool(server, registry, tools.ChatsMuteTool(), tools.NewChatsMuteHandler(client))
 	tools.AddTool(server, registry, tools.ChatsDeleteTool(), tools.NewChatsDeleteHandler(client))
-	tools.AddTool(server, registry, tools.ChatsSetPhotoTool(), tools.NewChatsSetPhotoHandler(client))
+	tools.AddTool(server, registry, tools.ChatsSetPhotoTool(), tools.NewChatsSetPhotoHandler(client, fileRoots))
 	tools.AddTool(server, registry, tools.ChatsSetDescriptionTool(), tools.NewChatsSetDescriptionHandler(client))
 	tools.AddTool(server, registry, tools.ChatsGetSendAsTool(), tools.NewChatsGetSendAsHandler(client))
 	tools.AddTool(server, registry, tools.ChatsSetSendAsTool(), tools.NewChatsSetSendAsHandler(client))
 	tools.AddTool(server, registry, tools.ProfileSetNameTool(), tools.NewProfileSetNameHandler(client))
 	tools.AddTool(server, registry, tools.ProfileSetBioTool(), tools.NewProfileSetBioHandler(client))
-	tools.AddTool(server, registry, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client))
+	tools.AddTool(server, registry, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client, fileRoots))
 
 	// Phase 4: Topics, Stickers, Drafts, Folders, Status tools.
 	tools.AddTool(server, registry, tools.TopicsListTool(), tools.NewTopicsListHandler(client))

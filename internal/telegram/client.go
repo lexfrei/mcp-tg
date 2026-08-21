@@ -40,6 +40,7 @@ type MessageClient interface {
 	SendMessage(ctx context.Context, peer InputPeer, text string, opts SendOpts) (*Message, error)
 	EditMessage(ctx context.Context, peer InputPeer, msgID int, text string, parseMode string) (*Message, error)
 	DeleteMessages(ctx context.Context, peer InputPeer, ids []int, revoke bool) error
+	DeleteScheduledMessages(ctx context.Context, peer InputPeer, ids []int) error
 	DeleteHistory(ctx context.Context, peer InputPeer, revoke bool) error
 	ForwardMessages(ctx context.Context, from, dest InputPeer, ids []int, sendAs *InputPeer) ([]Message, error)
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error

@@ -686,6 +686,20 @@ func (w *Wrapper) DeleteMessages(ctx context.Context, peer InputPeer, ids []int,
 	return errors.Wrap(err, "deleting messages")
 }
 
+// DeleteScheduledMessages deletes messages queued for later delivery.
+// Scheduled messages have their own ID namespace that overlaps with the
+// published history, so messages.deleteScheduledMessages is the only RPC
+// that reaches them; messages.deleteMessages with the same IDs would
+// delete whatever is published under those numbers.
+func (w *Wrapper) DeleteScheduledMessages(ctx context.Context, peer InputPeer, ids []int) error {
+	_, err := w.api.MessagesDeleteScheduledMessages(ctx, &tg.MessagesDeleteScheduledMessagesRequest{
+		Peer: InputPeerToTG(peer),
+		ID:   ids,
+	})
+
+	return errors.Wrap(err, "deleting scheduled messages")
+}
+
 // ForwardMessages forwards messages from one chat to another.
 func (w *Wrapper) ForwardMessages(
 	ctx context.Context, from, dest InputPeer, ids []int, sendAs *InputPeer,

@@ -87,6 +87,12 @@ The resolver is best-effort. When the parent fetch fails, or the parent is unrea
 
 Two consequences follow. Combining `resolveReplies: true` with `format: "text"` does nothing at all: that shape drops the `messages` array the enrichment writes into, so the extra request is skipped rather than wasted — it is not an error, it simply has no effect. And because `tg_messages_search_global`'s `output` is only a `Found N of M` summary line, every reply detail from a global search must be read from the JSON `replyTo`.
 
+## Scheduled Messages
+
+`tg_messages_send` with `scheduleDate` queues a message for later delivery instead of sending it, and `tg_messages_get_scheduled` lists what a chat has queued. The queue carries its own ID sequence, and that sequence overlaps with the published history: a chat can hold a scheduled message 22 and a published message 22 at the same time, so the number alone does not say which of the two a caller means.
+
+`tg_messages_delete` therefore takes `scheduled` (default `false`). With the flag, the IDs are read as queue entries and dropped from the queue; without it, they are read as history and the published messages are deleted. Passing a queued ID without the flag deletes whatever is published under that number: the call succeeds, reports the usual `Deleted N message(s)`, and the queued message stays where it was. `tg_messages_edit` reaches the published history only — a queued message is changed by deleting it and sending a replacement with `scheduleDate`.
+
 ## Parse Mode
 
 **Breaking change in v1.2.0.** `parseMode` is now REQUIRED on the four text tools, and the `'markdown'` alias is gone. It shipped in a v1 release by deliberate choice: this repository is consumed as an MCP server (container or built binary), nothing imports its packages, and Go's major-version rule would force a `/v2` module path for no benefit to any consumer. The break is loud where it matters — a call without `parseMode` fails schema validation with a message naming the parameter. The enum is strictly lowercase: `'Commonmark'` is rejected by the schema, not silently normalised as it used to be. Migration: a call that omitted `parseMode` (which meant plain text) must now pass `parseMode: "plain"`; a call passing `'markdown'` must pass `'commonmark'`. Both are rejected by schema validation before the request reaches Telegram, so the failure is loud rather than silent. Plain-mode text that looks like markdown is also rejected now — see the lint below.

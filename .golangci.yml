@@ -5,6 +5,8 @@ linters:
   disable:
     - depguard
     - exhaustruct
+    - exhaustruct_v5
+    - gomodguard
     - ireturn
     - wsl
   settings:

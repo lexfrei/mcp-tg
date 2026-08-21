@@ -334,7 +334,8 @@ Strict config in `.golangci.yml`:
 - gocyclo/cyclop: 10
 - dupl: 100
 - lll: 140 characters
-- All linters enabled except: depguard, exhaustruct, ireturn
+- All linters enabled except: depguard, exhaustruct (both the deprecated name and its `exhaustruct_v5` successor — golangci-lint renames a linter on upstream major bumps, and under `default: all` the new name starts enabled unless disabled explicitly), gomodguard (the deprecated name only; `gomodguard_v2` stays active), ireturn, wsl
+- Requires golangci-lint 2.13+: older builds reject `exhaustruct_v5` in the disable list with a hard `unknown linters` error before linting anything
 
 ## Dependencies
 

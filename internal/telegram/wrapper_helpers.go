@@ -1250,12 +1250,10 @@ func convertStickerSetFull(result *tg.MessagesStickerSet) *StickerSetFull {
 	}
 
 	full := &StickerSetFull{
-		StickerSet: StickerSet{
-			ID:    result.Set.ID,
-			Title: result.Set.Title,
-			Name:  result.Set.ShortName,
-			Count: result.Set.Count,
-		},
+		ID:    result.Set.ID,
+		Title: result.Set.Title,
+		Name:  result.Set.ShortName,
+		Count: result.Set.Count,
 	}
 
 	for _, doc := range result.Documents {

@@ -525,6 +525,7 @@ func newServerOptions(
 		CompletionHandler:  completions.NewHandler(client),
 		SubscribeHandler:   newSubscribeHandler(client, broker),
 		UnsubscribeHandler: newUnsubscribeHandler(broker),
+		//nolint:staticcheck // SEP-2577 deprecates roots but it works through the window; removal is a feature change.
 		RootsListChangedHandler: func(_ context.Context, _ *mcp.RootsListChangedRequest) {
 			logger.Info("client roots list changed")
 		},

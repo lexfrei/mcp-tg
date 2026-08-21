@@ -1,7 +1,10 @@
 package config_test
 
 import (
+	"os"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/lexfrei/mcp-tg/internal/config"
 )
@@ -265,5 +268,78 @@ func TestLoad_InsecureStorageInvalidFails(t *testing.T) {
 	_, err := config.Load()
 	if err == nil {
 		t.Fatal("expected error for invalid TELEGRAM_SESSION_INSECURE value")
+	}
+}
+
+func TestLoad_FileRootsUnsetMeansNoRestriction(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "123")
+	t.Setenv("TELEGRAM_APP_HASH", "test")
+	t.Setenv("TELEGRAM_FILE_ROOTS", "")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.FileRoots) != 0 {
+		t.Errorf("FileRoots = %v, want empty for an unset variable", cfg.FileRoots)
+	}
+}
+
+func TestLoad_FileRootsSplitsOnThePathListSeparator(t *testing.T) {
+	first := t.TempDir()
+	second := t.TempDir()
+
+	t.Setenv("TELEGRAM_APP_ID", "123")
+	t.Setenv("TELEGRAM_APP_HASH", "test")
+	t.Setenv("TELEGRAM_FILE_ROOTS", first+string(os.PathListSeparator)+second)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.FileRoots) != 2 || cfg.FileRoots[0] != first || cfg.FileRoots[1] != second {
+		t.Errorf("FileRoots = %v, want [%s %s]", cfg.FileRoots, first, second)
+	}
+}
+
+func TestLoad_FileRootsIgnoresEmptyEntries(t *testing.T) {
+	root := t.TempDir()
+	sep := string(os.PathListSeparator)
+
+	t.Setenv("TELEGRAM_APP_ID", "123")
+	t.Setenv("TELEGRAM_APP_HASH", "test")
+	t.Setenv("TELEGRAM_FILE_ROOTS", sep+root+sep)
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(cfg.FileRoots) != 1 || cfg.FileRoots[0] != root {
+		t.Errorf("FileRoots = %v, want just [%s]", cfg.FileRoots, root)
+	}
+}
+
+func TestLoad_FileRootsRejectsARelativeEntry(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "123")
+	t.Setenv("TELEGRAM_APP_HASH", "test")
+	t.Setenv("TELEGRAM_FILE_ROOTS", "relative/dir")
+
+	_, err := config.Load()
+	if !errors.Is(err, config.ErrFileRootNotAbsolute) {
+		t.Fatalf("err = %v, want ErrFileRootNotAbsolute", err)
+	}
+}
+
+func TestLoad_FileRootsRejectsAValueWithNoEntries(t *testing.T) {
+	t.Setenv("TELEGRAM_APP_ID", "123")
+	t.Setenv("TELEGRAM_APP_HASH", "test")
+	t.Setenv("TELEGRAM_FILE_ROOTS", string(os.PathListSeparator))
+
+	_, err := config.Load()
+	if !errors.Is(err, config.ErrFileRootsEmpty) {
+		t.Fatalf("err = %v, want ErrFileRootsEmpty for a set variable with no entries", err)
 	}
 }

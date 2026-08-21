@@ -273,7 +273,7 @@ func TestMessagesSendHandler_EmptyPeer(t *testing.T) {
 
 func TestMessagesSendFileHandler_EmptyPeer(t *testing.T) {
 	mock := &mockClient{}
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	result, _, err := handler(
 		context.Background(), nil,
@@ -294,7 +294,7 @@ func TestMessagesSendFileHandler_EmptyPeer(t *testing.T) {
 
 func TestMessagesSendFileHandler_EmptyPath(t *testing.T) {
 	mock := &mockClient{}
-	handler := NewMessagesSendFileHandler(mock)
+	handler := NewMessagesSendFileHandler(mock, nil)
 
 	result, _, err := handler(
 		context.Background(), nil,
@@ -315,7 +315,7 @@ func TestMessagesSendFileHandler_EmptyPath(t *testing.T) {
 
 func TestMediaSendAlbumHandler_EmptyPeer(t *testing.T) {
 	mock := &mockClient{}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	result, _, err := handler(
 		context.Background(), nil,
@@ -336,7 +336,7 @@ func TestMediaSendAlbumHandler_EmptyPeer(t *testing.T) {
 
 func TestMediaSendAlbumHandler_EmptyPaths(t *testing.T) {
 	mock := &mockClient{}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	result, _, err := handler(
 		context.Background(), nil,

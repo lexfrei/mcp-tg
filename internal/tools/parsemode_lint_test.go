@@ -63,7 +63,7 @@ func TestMessagesEditHandler_PlainLintCatchesMarkdown(t *testing.T) {
 
 func TestMessagesSendFileHandler_PlainLintOnCaption(t *testing.T) {
 	caption := "run ```go build``` first"
-	handler := NewMessagesSendFileHandler(&mockClient{})
+	handler := NewMessagesSendFileHandler(&mockClient{}, nil)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MessagesSendFileParams{
 		Peer: "@chat", Path: "/tmp/f", Caption: &caption, ParseMode: "plain",
@@ -75,7 +75,7 @@ func TestMessagesSendFileHandler_PlainLintOnCaption(t *testing.T) {
 
 func TestMediaSendAlbumHandler_PlainLintOnCaption(t *testing.T) {
 	caption := "the ||spoiler|| inside"
-	handler := NewMediaSendAlbumHandler(&mockClient{})
+	handler := NewMediaSendAlbumHandler(&mockClient{}, nil)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
 		Peer: "@chat", Paths: []string{"/tmp/a"}, Caption: &caption, ParseMode: "plain",
@@ -89,7 +89,7 @@ func TestMediaSendAlbumHandler_EmptyCaptionSkipsLint(t *testing.T) {
 	// No caption means nothing to lint — plain mode must not error on
 	// the empty string.
 	mock := &mockClient{peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 1}}
-	handler := NewMediaSendAlbumHandler(mock)
+	handler := NewMediaSendAlbumHandler(mock, nil)
 
 	_, _, err := handler(context.Background(), emptyToolRequest(), MediaSendAlbumParams{
 		Peer: "@chat", Paths: []string{"/tmp/a", "/tmp/b"}, ParseMode: "plain",

@@ -48,7 +48,7 @@ func censusSession(t *testing.T) (*mcp.ClientSession, context.Context) {
 	close(authDone)
 
 	server := newHeadlessServer(
-		testutil.NoopClient{}, "/tmp/mcp-tg/downloads",
+		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
 		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
 	)
 

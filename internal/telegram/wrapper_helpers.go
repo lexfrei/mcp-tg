@@ -1454,11 +1454,30 @@ func extractPhotoLocation(media *tg.MessageMediaPhoto) (tg.InputFileLocationClas
 func documentFileName(doc *tg.Document) string {
 	for _, attr := range doc.Attributes {
 		if fname, ok := attr.(*tg.DocumentAttributeFilename); ok {
-			return fname.FileName
+			if sanitized := sanitizeFileName(fname.FileName); sanitized != "" {
+				return sanitized
+			}
+
+			break
 		}
 	}
 
 	return fmt.Sprintf("document_%d", doc.ID)
+}
+
+// sanitizeFileName reduces a server-supplied filename to a bare base name.
+// The name is attacker-controlled input that gets joined onto the download
+// directory, so any path component in it would let a document named
+// "../escape" write outside the directory the caller validated. Backslashes
+// are treated as separators on every OS: a Unix daemon must not write a file
+// whose name smuggles Windows traversal either.
+func sanitizeFileName(name string) string {
+	name = filepath.Base(strings.ReplaceAll(name, `\`, "/"))
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return ""
+	}
+
+	return name
 }
 
 func largestPhotoSize(sizes []tg.PhotoSizeClass) string {

@@ -82,7 +82,7 @@ internal/tools/              MCP tool handlers (78 tools)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
   format.go                  Output formatting (timestamps, messages, dialogs)
-  roots.go                   File path validation against client roots
+  file_roots.go              File path validation against the TELEGRAM_FILE_ROOTS allowlist
   progress.go                Progress notification helper
   result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
   register.go                tools.AddTool wrapper (records bool fields into the coercer registry) + inputSchemaWithEnum for enum-constrained input schemas

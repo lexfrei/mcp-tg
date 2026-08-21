@@ -986,12 +986,35 @@ func (w *Wrapper) DownloadMedia(ctx context.Context, peer InputPeer, msgID int, 
 
 	outPath := filepath.Join(outputDir, fileName)
 
+	symlinkErr := ensureNotSymlink(outPath)
+	if symlinkErr != nil {
+		return "", errors.Wrap(symlinkErr, "validating download target")
+	}
+
 	_, err = w.down.Download(w.api, location).ToPath(ctx, outPath)
 	if err != nil {
 		return "", errors.Wrap(err, "downloading media")
 	}
 
 	return outPath, nil
+}
+
+// ensureNotSymlink refuses a download target that already exists as a symlink:
+// ToPath would follow it and write wherever it points, outside any directory
+// the caller validated. The sender controls the filename, so a pre-planted
+// link with a matching name must not become a write primitive. Overwriting a
+// regular file stays allowed, as before.
+func ensureNotSymlink(path string) error {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil //nolint:nilerr // absent or unreadable target: let the download attempt surface the real error
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		return errors.Errorf("download target %q is a symlink; refusing to follow it", path)
+	}
+
+	return nil
 }
 
 // UploadFile uploads a file and returns its metadata.

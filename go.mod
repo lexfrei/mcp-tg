@@ -1,13 +1,13 @@
 module github.com/lexfrei/mcp-tg
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/cockroachdb/errors v1.14.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/gotd/log/logzap v0.1.1
 	github.com/gotd/td v0.161.0
-	github.com/lexfrei/keychain v1.1.1
+	github.com/lexfrei/keychain v1.2.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.22.0
@@ -24,7 +24,7 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
-	github.com/ebitengine/purego v0.10.1 // indirect
+	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect

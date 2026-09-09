@@ -107,10 +107,13 @@ func run() error {
 		Logger:         logzap.New(newGotdLogger(level)),
 		Device:         device,
 		UpdateHandler:  dispatcher,
-		// Order is outermost first. The server-error retry sits INSIDE the
-		// FLOOD_WAIT one so a rate-limit met while resending a failed query is
-		// honoured by the outer middleware at the delay the server asked for,
-		// instead of being counted as one more fast internal-error attempt.
+		// Order is outermost first, and the nesting decides whose budget
+		// multiplies whose. With FLOOD_WAIT outermost a server-named delay is
+		// slept once per flood attempt, with the fast 500 cycle nested inside
+		// it; reversed, that delay would be slept inside every server-error
+		// attempt instead. A 420 passes straight through the server-error
+		// middleware either way, so the order is about the sleeping, not about
+		// honouring the delay the server asked for.
 		Middlewares: []telegram.Middleware{
 			newFloodWaitMiddleware(logger),
 			newServerErrorMiddleware(logger, serverErrorBaseDelay),

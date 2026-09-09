@@ -31,6 +31,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 - **Peer cache** — resolved peers with access hashes are cached in memory, so numeric ID lookups reuse valid hashes instead of failing
 - **Invite links** — `t.me/+hash` and `t.me/joinchat/hash` are resolved via `messages.checkChatInvite`
 - **FLOOD_WAIT retry** — when Telegram rate-limits the client, the call sleeps for the server-specified delay and is retried, up to 3 attempts in total (so two retries); each retry logs one WARN carrying `retryAfter`
+- **Server-error retry** — a 500-class internal failure on Telegram's side (`INTERDC_X_CALL_ERROR`, `RPC_CALL_FAIL`, `WORKER_BUSY_TOO_LONG_RETRY`) is resent with an exponential backoff, up to 4 attempts in total; each retry logs one WARN carrying the raw error. A failure that survives all four surfaces as a readable "retry it in a few seconds" rather than a bare rpc code
 - **Connection re-init** — when the server forgets a long-lived connection's `initConnection` state and answers `CONNECTION_LAYER_INVALID` / `CONNECTION_NOT_INITED`, the request is retried once wrapped in `initConnection`, recovering the connection in place
 - **Auth guard** — tool calls are blocked with a clear error until Telegram authentication completes
 - **Pagination** — `offsetDate` for dialog listing, `offsetId` for message search and history; `tg_messages_list` can additionally filter by message `type`; `tg_messages_search_global` pages through a compound cursor (`offsetRate` + `offsetId` + `offsetPeer`)

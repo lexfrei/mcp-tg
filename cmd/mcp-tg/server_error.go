@@ -77,11 +77,6 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 					return err //nolint:wrapcheck // pass-through: middleware must return the original API error.
 				}
 
-				// Ahead of the attempt check on purpose. Both orders behave the
-				// same while maxServerErrorAttempts is above one, so putting the
-				// marker second would make it depend on the constant's VALUE
-				// rather than on the structure, and a drop to one would lose it
-				// with nothing turning red.
 				if !resendable {
 					// Marked, not just returned: the tools layer otherwise reads
 					// this as a 500 that survived the schedule and tells the
@@ -125,8 +120,8 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // updateDialogFilter is the one entry that is not creation-only: the same
 // request edits and deletes a folder too, and those carry an explicit id, so
 // they are idempotent and lose the resend for nothing. Held back anyway,
-// because the type is what a switch can see and the cost of the extra caution
-// is one lost retry on a call that states a final value.
+// because the type is what a switch can see, and what it costs them is a
+// resend on a call that states a final value.
 //
 // This is a DENY-LIST of what has been found, not a proof that nothing else
 // qualifies: MTProto marks no request as non-idempotent, so nothing here can be

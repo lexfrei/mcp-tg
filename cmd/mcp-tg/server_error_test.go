@@ -237,6 +237,14 @@ func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 		"folder": &tg.MessagesUpdateDialogFilterRequest{
 			Filter: &tg.DialogFilter{Title: tg.TextWithEntities{Text: "example"}},
 		},
+		// The same request with an ID is a folder edit, which IS idempotent.
+		// Held back all the same: safeToResend switches on the request type, and
+		// this pins that the id-bearing form takes the same branch rather than
+		// the deny-list quietly narrowing to the create shape.
+		"folder edit": &tg.MessagesUpdateDialogFilterRequest{
+			ID:     7,
+			Filter: &tg.DialogFilter{ID: 7, Title: tg.TextWithEntities{Text: "example"}},
+		},
 		"profile photo": &tg.PhotosUploadProfilePhotoRequest{},
 		"invite link":   &tg.MessagesExportChatInviteRequest{Peer: &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1}},
 	} {

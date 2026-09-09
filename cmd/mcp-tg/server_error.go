@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
@@ -72,8 +73,15 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 				}
 
 				rpcErr, isServerErr := tgclient.AsServerError(err)
-				if !isServerErr || !resendable || attempt == maxServerErrorAttempts-1 {
+				if !isServerErr || attempt == maxServerErrorAttempts-1 {
 					return err //nolint:wrapcheck // pass-through: middleware must return the original API error.
+				}
+
+				if !resendable {
+					// Marked, not just returned: the tools layer otherwise reads
+					// this as a 500 that survived the schedule and tells the
+					// caller to repeat a call that was never retried at all.
+					return errors.Mark(err, tgclient.ErrNotResent)
 				}
 
 				logServerErrorRetry(logger, rpcErr, delay, attempt)

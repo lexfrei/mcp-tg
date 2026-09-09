@@ -357,6 +357,17 @@ func wrapTelegramError(err error) error {
 	// request is wrong" from "Telegram is broken right now"; the two want
 	// opposite responses, and the raw code distinguishes them for nobody.
 	//
+	// A query the middleware refused to resend was sent ONCE, so the message
+	// below would report retries that never ran and invite a repeat of the very
+	// call the refusal exists to protect.
+	if errors.Is(err, telegram.ErrNotResent) {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+		return errors.Mark(errors.Wrap(err,
+			"telegram reported an internal server error; this call creates something and was "+
+				"not sent again automatically, so check whether it took effect before "+
+				"repeating it"), ErrServerError)
+	}
+
 	// RANDOM_ID_DUPLICATE does not reach here: the classifier excludes it, so it
 	// falls through to explainMTProtoCode below.
 	if telegram.IsServerError(err) {

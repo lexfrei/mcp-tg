@@ -6,6 +6,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tgerr"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
 // A FLOOD_WAIT that survives the retry middleware reaches the tools layer as a
@@ -144,5 +145,29 @@ func TestWrapTelegramError_ServerErrorVouchesForNothing(t *testing.T) {
 
 	if strings.Contains(got, "nothing is wrong with the request") {
 		t.Errorf("the marker must not vouch for the request, got: %q", got)
+	}
+}
+
+// A query the middleware refused to resend reaches here having had no automatic
+// retry at all, so the generic message is wrong twice: it reports retries that
+// never ran, and it invites the caller to repeat a call that creates something.
+// A caller-level repeat is worse than the resend the middleware declined —
+// the middleware would have put the SAME request back on the wire, while a new
+// tool call builds one the server has nothing to match it against.
+func TestWrapTelegramError_UnresentQueryDoesNotInviteABlindRepeat(t *testing.T) {
+	unresent := errors.Mark(tgerr.New(500, "RPC_CALL_FAIL"), telegram.ErrNotResent)
+
+	got := wrapTelegramError(unresent).Error()
+
+	if strings.Contains(got, "automatic retries") {
+		t.Errorf("no automatic retry ran for this query, got: %q", got)
+	}
+
+	if strings.Contains(got, "retry the same call") {
+		t.Errorf("a creating call must not be advertised as safe to repeat, got: %q", got)
+	}
+
+	if !strings.Contains(got, "took effect") {
+		t.Errorf("the caller must be told to check whether it applied, got: %q", got)
 	}
 }

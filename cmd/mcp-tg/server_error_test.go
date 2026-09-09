@@ -12,6 +12,7 @@ import (
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
+	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
 // testServerErrorDelay keeps the exhaustion path off the real 1s/2s/4s
@@ -260,5 +261,42 @@ func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 				t.Errorf("a request that is not resent must not log a retry, got: %s", buf.String())
 			}
 		})
+	}
+}
+
+// Refusing to resend is only half the protection. The error still travels to
+// the tools layer, which reads a bare 500 as one that survived the schedule and
+// tells the caller to repeat the call. Marking it is what keeps that message
+// away from a query that creates something and was sent exactly once.
+func TestServerError_UnresentCreatingRequestIsMarked(t *testing.T) {
+	next := &recordingInvoker{errs: []error{interdcError()}}
+	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+
+	mw := newServerErrorMiddleware(logger, testServerErrorDelay)
+	err := mw(next)(context.Background(), &tg.ChannelsCreateChannelRequest{Title: "example"}, bin.Decoder(nil))
+
+	if !errors.Is(err, telegram.ErrNotResent) {
+		t.Fatalf("a query held back from the resend must be marked, got: %v", err)
+	}
+
+	if !tgerr.Is(err, "INTERDC_CALL_ERROR") {
+		t.Errorf("the original rpc error must survive the marking, got: %v", err)
+	}
+}
+
+// A query that IS resent must not pick up the marker, or every exhausted 500
+// would tell the caller to go check whether it took effect.
+func TestServerError_ResentQueryIsNotMarkedUnresent(t *testing.T) {
+	errs := make([]error, maxServerErrorAttempts)
+	for i := range errs {
+		errs[i] = interdcError()
+	}
+
+	next := &recordingInvoker{errs: errs}
+	logger := slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
+
+	err := invokeWithServerErrorRetry(t, context.Background(), next, logger)
+	if errors.Is(err, telegram.ErrNotResent) {
+		t.Errorf("a query that was resent must not be marked as held back, got: %v", err)
 	}
 }

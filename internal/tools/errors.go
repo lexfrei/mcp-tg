@@ -22,6 +22,15 @@ var ErrTelegram = errors.New("telegram request error")
 // crash.
 var ErrFloodWait = errors.New("flood wait")
 
+// ErrServerError indicates Telegram answered with a 500-class internal error
+// (INTERDC_X_CALL_ERROR, RPC_CALL_FAIL, WORKER_BUSY_TOO_LONG_RETRY and
+// friends) and the auto-retry middleware exhausted its attempts. Nothing about
+// the request was wrong and nothing about it needs changing — Telegram's own
+// backend failed — so the wrapped message says so and invites a later retry,
+// rather than handing the caller a bare "rpc error code 500" it will read as a
+// dead end.
+var ErrServerError = errors.New("telegram server error")
+
 // ErrPeerRequired is returned when a peer parameter is missing.
 var ErrPeerRequired = errors.New("peer is required")
 
@@ -331,6 +340,17 @@ func wrapTelegramError(err error) error {
 	if wait, ok := tgerr.AsFloodWait(err); ok {
 		//nolint:wrapcheck // Mark adds the sentinel category; Wrapf supplies the readable retry hint.
 		return errors.Mark(errors.Wrapf(err, "flood wait: retry after %ds", int(wait.Seconds())), ErrFloodWait)
+	}
+
+	// A 500 reaches here only after the server-error middleware has resent the
+	// query and been refused every time. Mark it so the caller can tell "your
+	// request is wrong" from "Telegram is broken right now"; the two want
+	// opposite responses, and the raw code distinguishes them for nobody.
+	if telegram.IsServerError(err) {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+		return errors.Mark(errors.Wrap(err,
+			"telegram's own servers failed to handle this request; nothing is wrong with the "+
+				"request itself, retry it in a few seconds"), ErrServerError)
 	}
 
 	if explanation := explainMTProtoCode(err.Error()); explanation != "" {

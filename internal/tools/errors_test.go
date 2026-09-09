@@ -75,9 +75,13 @@ func TestWrapTelegramError_ServerErrorSurfacesAsTransient(t *testing.T) {
 	}
 }
 
-// The whole 500 class carries the same meaning and the same remedy, so the
-// marker is driven by the code rather than a table of error names.
-func TestWrapTelegramError_ServerErrorCoversTheWholeClass(t *testing.T) {
+// These three are the members a resend actually fixes: Telegram reporting an
+// internal failure, with nothing about the request to change. The marker is
+// driven by the code because the class has no list to enumerate — Telegram can
+// answer 500 with a name this table never heard of. The one name it does check,
+// RANDOM_ID_DUPLICATE, is SUBTRACTED in telegram.AsServerError rather than
+// added here.
+func TestWrapTelegramError_ServerErrorMarksTheBackendFailures(t *testing.T) {
 	for _, name := range []string{"RPC_CALL_FAIL", "WORKER_BUSY_TOO_LONG_RETRY", "INTERDC_4_CALL_RICH_ERROR"} {
 		wrapped := wrapTelegramError(tgerr.New(500, name))
 		if !errors.Is(wrapped, ErrServerError) {

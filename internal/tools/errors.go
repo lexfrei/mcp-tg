@@ -33,7 +33,8 @@ var ErrFloodWait = errors.New("flood wait")
 // RANDOM_ID_DUPLICATE, AUTH_RESTART and CHAT_INVALID under the same code.
 // RANDOM_ID_DUPLICATE is carved out in telegram.AsServerError. The others are
 // not a group to reason about at once: CHAT_INVALID collects the same refusal
-// on every resend, while AUTH_RESTART asks for exactly the resend it gets. A
+// on every resend, while AUTH_RESTART on auth.sendCode asks for exactly the
+// resend it gets (on auth.signIn the same name means go back to sendCode). A
 // carve-out needs its own reason per error, not a rule about the remainder.
 var ErrServerError = errors.New("telegram server error")
 

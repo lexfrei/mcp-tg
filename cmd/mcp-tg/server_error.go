@@ -21,7 +21,8 @@ const (
 	// four attempts span 1s + 2s + 4s = 7s of waiting at most.
 	//
 	// TDLib's NetQueryDelayer uses the same doubling schedule from the same 1s
-	// start but keeps resending until a 60s budget is spent. The shorter budget
+	// start but keeps resending until the accumulated sleep would pass its own
+	// limit, ~31s over five resends at the default. The shorter budget
 	// here is deliberate: every RPC this middleware guards is a synchronous MCP
 	// tool call with an agent blocked on it, and an exhausted retry does not
 	// dead-end — it surfaces as tools.ErrServerError, which tells the caller the
@@ -36,11 +37,14 @@ const (
 // query — INTERDC_X_CALL_ERROR ("an error occurred while communicating with DC
 // X"), RPC_CALL_FAIL, WORKER_BUSY_TOO_LONG_RETRY. Resending is what every
 // reference client does with it, and only mcp-tg gave up on the first one:
-// TDLib routes every code-500 query to NetQueryDelayer, which doubles a 1s
-// timeout and resends until a 60s budget is spent; Telethon retries
-// InterdcCallError, InterdcCallRichError and ServerError after a 2s sleep;
-// Pyrogram retries InternalServerError after 0.5s. None of them re-route the
-// query — that is the 303 *_MIGRATE_X path, which gotd already handles.
+// TDLib routes every code-500 query to NetQueryDelayer, which resends on a
+// timeout doubling from 1s until the ACCUMULATED sleep would pass
+// total_timeout_limit_ — 60s only where the caller leaves the default, and
+// several of them do not; WORKER_BUSY_TOO_LONG_RETRY is pinned flat at 1s
+// instead of doubling. Telethon retries six error types after a 2s sleep,
+// ServerError and both InterdcCall kinds among them; Pyrogram retries
+// InternalServerError after 0.5s. None of them re-route the query — that is
+// the 303 *_MIGRATE_X path, which gotd already handles.
 //
 // Resending is safe for SENDS, which is the write this exists for. Every send
 // operation carries a crypto-random random_id which Telegram deduplicates
@@ -62,6 +66,7 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 	return func(next tg.Invoker) telegram.InvokeFunc {
 		return func(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
 			delay := baseDelay
+			resendable := carriesDedupToken(input)
 
 			for attempt := range maxServerErrorAttempts {
 				err := next.Invoke(ctx, input, output)
@@ -70,7 +75,7 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 				}
 
 				rpcErr, isServerErr := tgclient.AsServerError(err)
-				if !isServerErr || attempt == maxServerErrorAttempts-1 {
+				if !isServerErr || !resendable || attempt == maxServerErrorAttempts-1 {
 					return err //nolint:wrapcheck // pass-through: middleware must return the original API error.
 				}
 
@@ -89,6 +94,28 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 
 			return nil
 		}
+	}
+}
+
+// carriesDedupToken reports whether resending this request is safe from the
+// server's side — that is, whether Telegram can recognise the resend as the
+// same operation and refuse to apply it twice.
+//
+// Almost everything qualifies: sends carry a random_id, and the rest of the
+// surface is either a read or a write that states a final value (set the title,
+// set the permissions) and lands on the same result however often it arrives.
+// The exceptions are the two requests that CREATE an entity without any token
+// at all — a resend that reaches the server after the first attempt was already
+// applied leaves the account with a second, identical chat, and nothing in the
+// protocol lets the client notice or undo it. gotd's own invokeConn resends
+// those on a dead connection regardless, so this closes the trigger this
+// middleware adds, not the whole exposure.
+func carriesDedupToken(input bin.Encoder) bool {
+	switch input.(type) {
+	case *tg.ChannelsCreateChannelRequest, *tg.MessagesCreateChatRequest:
+		return false
+	default:
+		return true
 	}
 }
 

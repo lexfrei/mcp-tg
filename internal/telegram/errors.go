@@ -17,15 +17,28 @@ import "github.com/gotd/td/tgerr"
 // there is nothing to migrate to and re-routing is not the answer.
 const serverErrorCode = 500
 
+// randomIDDuplicate is Telegram refusing a send it has ALREADY accepted — the
+// deduplication that makes resending a send safe, arriving as an error. It
+// carries code 500 like a backend failure does and is the one member of the
+// class that must not be treated as one: resending only collects the same
+// refusal, and telling the caller to retry makes it send the message twice,
+// because every tool call mints a fresh random_id.
+const randomIDDuplicate = "RANDOM_ID_DUPLICATE"
+
 // AsServerError returns the underlying RPC error when err is a Telegram
 // 500-class internal error, unwrapping as far as needed to find it. Callers
 // that go on to log or explain the failure want the parsed error rather than
 // the raw string: gotd's Error() renders INTERDC_102_CALL_ERROR as
 // "INTERDC_CALL_ERROR (102)", splitting the argument out of the type, so the
 // hop the server failed to reach survives only in rpcErr.Message.
+//
+// randomIDDuplicate is excluded here rather than at each call site, so the
+// retry middleware and the tools layer inherit one answer instead of guarding
+// separately — a guard only one of them had is what let the middleware spend
+// its whole schedule on an error that cannot clear.
 func AsServerError(err error) (*tgerr.Error, bool) {
 	rpcErr, ok := tgerr.As(err)
-	if !ok || rpcErr.Code != serverErrorCode {
+	if !ok || rpcErr.Code != serverErrorCode || rpcErr.Type == randomIDDuplicate {
 		return nil, false
 	}
 

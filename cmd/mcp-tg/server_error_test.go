@@ -195,3 +195,58 @@ func TestServerError_CancelledBackoffReturnsCtxErr(t *testing.T) {
 		t.Errorf("a cancelled backoff must log the cancellation, got: %s", buf.String())
 	}
 }
+
+// The refusal of an already-accepted send carries code 500 like a backend
+// failure does, but it cannot clear: the resend puts the same random_id back on
+// the wire and collects the same answer. Retrying it would spend the schedule
+// an agent is blocked on, and log two WARN lines naming an internal failure
+// that never happened.
+func TestServerError_DoesNotRetryAnAlreadyAcceptedSend(t *testing.T) {
+	var buf bytes.Buffer
+
+	duplicateErr := tgerr.New(500, "RANDOM_ID_DUPLICATE")
+	next := &recordingInvoker{errs: []error{duplicateErr}}
+
+	err := invokeWithServerErrorRetry(t, context.Background(), next, slog.New(slog.NewTextHandler(&buf, nil)))
+	if !errors.Is(err, duplicateErr) {
+		t.Fatalf("expected the duplicate-send refusal to pass through, got: %v", err)
+	}
+
+	if len(next.inputs) != 1 {
+		t.Errorf("a refused duplicate send must not be retried, got %d attempts", len(next.inputs))
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("a refused duplicate send must not log an internal-error retry, got: %s", buf.String())
+	}
+}
+
+// Creating a chat carries no random_id and no other token Telegram could
+// deduplicate against, so a resend landing after the server applied the first
+// attempt leaves the account with a second chat. There is nothing to make the
+// call idempotent, so the only guard available is not resending it.
+func TestServerError_DoesNotResendChatCreation(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	for name, request := range map[string]bin.Encoder{
+		"channel": &tg.ChannelsCreateChannelRequest{Title: "example"},
+		"chat":    &tg.MessagesCreateChatRequest{Title: "example"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			interdcErr := interdcError()
+			next := &recordingInvoker{errs: []error{interdcErr}}
+
+			mw := newServerErrorMiddleware(logger, testServerErrorDelay)
+			err := mw(next)(context.Background(), request, bin.Decoder(nil))
+
+			if !errors.Is(err, interdcErr) {
+				t.Fatalf("expected the original error, got: %v", err)
+			}
+
+			if len(next.inputs) != 1 {
+				t.Errorf("chat creation must not be resent, got %d attempts", len(next.inputs))
+			}
+		})
+	}
+}

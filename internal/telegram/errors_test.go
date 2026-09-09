@@ -35,6 +35,11 @@ func TestIsServerError_RejectsEverythingElse(t *testing.T) {
 		// act, and gotd acts on it; misreading it as an internal failure would
 		// spend the retry schedule on a query that needs another datacenter.
 		tgerr.New(303, "FILE_MIGRATE_4"),
+		// Carries code 500 but describes the request: the server is refusing a
+		// send it already accepted. Resending collects the same refusal for the
+		// rest of the schedule, and calling it an internal failure invites a
+		// retry that duplicates the message.
+		tgerr.New(serverErrorCode, "RANDOM_ID_DUPLICATE"),
 	}
 
 	for _, err := range cases {

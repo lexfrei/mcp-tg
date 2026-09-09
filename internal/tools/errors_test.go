@@ -108,3 +108,37 @@ func TestWrapTelegramError_ClientErrorNotMarkedServerError(t *testing.T) {
 		t.Errorf("a 400 must not be marked ErrServerError, got: %v", wrapped)
 	}
 }
+
+// RANDOM_ID_DUPLICATE is a 500 that describes the request rather than the
+// backend: Telegram is refusing a send it has ALREADY accepted. The generic
+// "retry it" advice is exactly wrong here, because every tool call mints a
+// fresh random_id — a caller that follows it defeats the deduplication that
+// produced this error and sends the message twice.
+func TestWrapTelegramError_DuplicateSendIsNotAdvertisedAsRetryable(t *testing.T) {
+	wrapped := wrapTelegramError(tgerr.New(500, "RANDOM_ID_DUPLICATE"))
+
+	if errors.Is(wrapped, ErrServerError) {
+		t.Fatalf("a refused duplicate send must not be marked ErrServerError, got: %v", wrapped)
+	}
+
+	got := wrapped.Error()
+	if strings.Contains(got, "retry") {
+		t.Errorf("a refused duplicate send must not invite a retry, got: %q", got)
+	}
+
+	if !strings.Contains(got, "already") {
+		t.Errorf("the explanation must say the send was already accepted, got: %q", got)
+	}
+}
+
+// The 500 class is not uniformly transient — gotd's generated docs put
+// RANDOM_ID_DUPLICATE, AUTH_RESTART and CHAT_INVALID under the same code as
+// INTERDC_X_CALL_ERROR — so the marker classifies on the code alone and must
+// not promise anything about a request it never inspected.
+func TestWrapTelegramError_ServerErrorVouchesForNothing(t *testing.T) {
+	got := wrapTelegramError(tgerr.New(500, "INTERDC_102_CALL_ERROR")).Error()
+
+	if strings.Contains(got, "nothing is wrong with the request") {
+		t.Errorf("the marker must not vouch for the request, got: %q", got)
+	}
+}

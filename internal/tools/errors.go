@@ -24,11 +24,15 @@ var ErrFloodWait = errors.New("flood wait")
 
 // ErrServerError indicates Telegram answered with a 500-class internal error
 // (INTERDC_X_CALL_ERROR, RPC_CALL_FAIL, WORKER_BUSY_TOO_LONG_RETRY and
-// friends) and the auto-retry middleware exhausted its attempts. Nothing about
-// the request was wrong and nothing about it needs changing — Telegram's own
-// backend failed — so the wrapped message says so and invites a later retry,
-// rather than handing the caller a bare "rpc error code 500" it will read as a
-// dead end.
+// friends) and the auto-retry middleware exhausted its attempts. The wrapped
+// message invites a later retry, rather than handing the caller a bare "rpc
+// error code 500" it will read as a dead end.
+//
+// The marker classifies on the code alone, so it cannot vouch for the request:
+// the 500 class is not uniformly transient, and gotd's generated docs put
+// RANDOM_ID_DUPLICATE, AUTH_RESTART and CHAT_INVALID under the same code. Only
+// the one whose retry has a SIDE EFFECT is carved out (see
+// randomIDDuplicate) — the rest merely fail again.
 var ErrServerError = errors.New("telegram server error")
 
 // ErrPeerRequired is returned when a peer parameter is missing.
@@ -285,6 +289,12 @@ func rejectsIdentity(err error) bool {
 		strings.Contains(raw, "SEND_AS_PEER_INVALID")
 }
 
+// randomIDDuplicate is Telegram's refusal of a send it has already accepted —
+// the deduplication that makes resending a write safe, surfacing as an error.
+// It carries code 500 like a backend failure does, so wrapTelegramError has to
+// name it to keep it out of the retry-me marker.
+const randomIDDuplicate = "RANDOM_ID_DUPLICATE"
+
 // explainMTProtoCode returns a short human-readable explanation for a
 // well-known MTProto error code, or empty string if the code is not in
 // our translation table. Match is on substring of err.Error() because
@@ -293,6 +303,9 @@ func rejectsIdentity(err error) bool {
 //nolint:cyclop,gocyclo // long flat switch is the clearest way to express the lookup table
 func explainMTProtoCode(raw string) string {
 	switch {
+	case strings.Contains(raw, randomIDDuplicate):
+		return "telegram already accepted a send with this random ID; the message was most " +
+			"likely delivered — check the chat before sending it again"
 	case strings.Contains(raw, "REPLY_MESSAGE_ID_INVALID"):
 		return "the reply target message does not exist in this chat"
 	case strings.Contains(raw, "MESSAGE_ID_INVALID"):
@@ -346,11 +359,16 @@ func wrapTelegramError(err error) error {
 	// query and been refused every time. Mark it so the caller can tell "your
 	// request is wrong" from "Telegram is broken right now"; the two want
 	// opposite responses, and the raw code distinguishes them for nobody.
-	if telegram.IsServerError(err) {
+	//
+	// randomIDDuplicate is excluded because it is the one 500 whose retry is not
+	// merely wasted: it says the send was already accepted, every tool call
+	// mints a fresh random_id, and a caller acting on "retry it" would send the
+	// message a second time. It falls through to explainMTProtoCode instead.
+	if telegram.IsServerError(err) && !strings.Contains(err.Error(), randomIDDuplicate) {
 		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
 		return errors.Mark(errors.Wrap(err,
-			"telegram's own servers failed to handle this request; nothing is wrong with the "+
-				"request itself, retry it in a few seconds"), ErrServerError)
+			"telegram reported an internal server error and the automatic retries did not "+
+				"clear it; retry the same call in a few seconds"), ErrServerError)
 	}
 
 	if explanation := explainMTProtoCode(err.Error()); explanation != "" {

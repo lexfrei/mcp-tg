@@ -221,23 +221,31 @@ func TestServerError_DoesNotRetryAnAlreadyAcceptedSend(t *testing.T) {
 	}
 }
 
-// Creating a chat carries no random_id and no other token Telegram could
-// deduplicate against, so a resend landing after the server applied the first
-// attempt leaves the account with a second chat. There is nothing to make the
-// call idempotent, so the only guard available is not resending it.
-func TestServerError_DoesNotResendChatCreation(t *testing.T) {
-	var buf bytes.Buffer
-	logger := slog.New(slog.NewTextHandler(&buf, nil))
-
+// These requests carry no random_id and no other token Telegram could
+// deduplicate against, and each creates something the account keeps: a resend
+// landing after the server applied the first attempt leaves a second chat, a
+// second profile photo in the history, or a second working invite link the
+// caller never receives and so can never revoke. Nothing makes the calls
+// idempotent, so the only guard available is not resending them.
+func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 	for name, request := range map[string]bin.Encoder{
 		"channel": &tg.ChannelsCreateChannelRequest{Title: "example"},
 		"chat":    &tg.MessagesCreateChatRequest{Title: "example"},
+		// CreateFolder sends the filter with no ID, then looks the result up by
+		// title, so a resend has nothing to collide with server-side either.
+		"folder": &tg.MessagesUpdateDialogFilterRequest{
+			Filter: &tg.DialogFilter{Title: tg.TextWithEntities{Text: "example"}},
+		},
+		"profile photo": &tg.PhotosUploadProfilePhotoRequest{},
+		"invite link":   &tg.MessagesExportChatInviteRequest{Peer: &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1}},
 	} {
 		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+
 			interdcErr := interdcError()
 			next := &recordingInvoker{errs: []error{interdcErr}}
 
-			mw := newServerErrorMiddleware(logger, testServerErrorDelay)
+			mw := newServerErrorMiddleware(slog.New(slog.NewTextHandler(&buf, nil)), testServerErrorDelay)
 			err := mw(next)(context.Background(), request, bin.Decoder(nil))
 
 			if !errors.Is(err, interdcErr) {
@@ -245,7 +253,11 @@ func TestServerError_DoesNotResendChatCreation(t *testing.T) {
 			}
 
 			if len(next.inputs) != 1 {
-				t.Errorf("chat creation must not be resent, got %d attempts", len(next.inputs))
+				t.Errorf("a creating request must not be resent, got %d attempts", len(next.inputs))
+			}
+
+			if buf.Len() != 0 {
+				t.Errorf("a request that is not resent must not log a retry, got: %s", buf.String())
 			}
 		})
 	}

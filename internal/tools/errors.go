@@ -30,9 +30,11 @@ var ErrFloodWait = errors.New("flood wait")
 //
 // The marker classifies on the code alone, so it cannot vouch for the request:
 // the 500 class is not uniformly transient, and gotd's generated docs put
-// RANDOM_ID_DUPLICATE, AUTH_RESTART and CHAT_INVALID under the same code. Only
-// the one whose retry has a SIDE EFFECT is carved out, and telegram.AsServerError
-// is where — the rest merely fail again.
+// RANDOM_ID_DUPLICATE, AUTH_RESTART and CHAT_INVALID under the same code.
+// RANDOM_ID_DUPLICATE is carved out in telegram.AsServerError. The others are
+// not a group to reason about at once: CHAT_INVALID collects the same refusal
+// on every resend, while AUTH_RESTART asks for exactly the resend it gets. A
+// carve-out needs its own reason per error, not a rule about the remainder.
 var ErrServerError = errors.New("telegram server error")
 
 // ErrPeerRequired is returned when a peer parameter is missing.

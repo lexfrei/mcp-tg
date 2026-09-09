@@ -52,12 +52,9 @@ const (
 // goes back on the wire and a message the server had in fact created before
 // failing is not duplicated.
 //
-// That covers sends, not writes in general. channels.createChannel and
-// messages.createChat carry no such token, so a resend landing after the server
-// applied the first attempt can create a second chat. The exposure is accepted
-// rather than solved, and it predates this middleware: gotd's own invokeConn
-// already re-sends any query whose connection died, and TDLib delays every 500
-// the same way regardless of method.
+// That covers sends, not writes in general: some requests create something the
+// account keeps and carry no token at all. Those are held back by safeToResend
+// below rather than argued about here.
 //
 // baseDelay is a parameter rather than a bare constant so tests can drive the
 // exhaustion path without sleeping for the real schedule; production passes
@@ -66,7 +63,7 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 	return func(next tg.Invoker) telegram.InvokeFunc {
 		return func(ctx context.Context, input bin.Encoder, output bin.Decoder) error {
 			delay := baseDelay
-			resendable := carriesDedupToken(input)
+			resendable := safeToResend(input)
 
 			for attempt := range maxServerErrorAttempts {
 				err := next.Invoke(ctx, input, output)
@@ -97,22 +94,46 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 	}
 }
 
-// carriesDedupToken reports whether resending this request is safe from the
-// server's side — that is, whether Telegram can recognise the resend as the
-// same operation and refuse to apply it twice.
+// safeToResend reports whether putting this request back on the wire can be
+// undone by the server. Sends carry a random_id Telegram deduplicates against,
+// and most of the remaining surface either reads or states a final value (set
+// the title, set the permissions) and lands on the same result however often it
+// arrives. What is listed below does neither: it CREATES something the account
+// keeps, with no token the server could match a resend against, so a resend
+// landing after the first attempt was already applied leaves a duplicate
+// nothing in the protocol lets the client notice or undo — a second identical
+// chat or folder, a second entry in the profile-photo history, a second working
+// invite link that is never returned to the caller and so can never be revoked.
 //
-// Almost everything qualifies: sends carry a random_id, and the rest of the
-// surface is either a read or a write that states a final value (set the title,
-// set the permissions) and lands on the same result however often it arrives.
-// The exceptions are the two requests that CREATE an entity without any token
-// at all — a resend that reaches the server after the first attempt was already
-// applied leaves the account with a second, identical chat, and nothing in the
-// protocol lets the client notice or undo it. gotd's own invokeConn resends
-// those on a dead connection regardless, so this closes the trigger this
-// middleware adds, not the whole exposure.
-func carriesDedupToken(input bin.Encoder) bool {
+// updateDialogFilter is the one entry that is not creation-only: the same
+// request edits and deletes a folder too, and those carry an explicit id, so
+// they are idempotent and lose the resend for nothing. Held back anyway,
+// because the type is what a switch can see and the cost of the extra caution
+// is one lost retry on a call that states a final value.
+//
+// This is a DENY-LIST of what has been found, not a proof that nothing else
+// qualifies: MTProto marks no request as non-idempotent, so nothing here can be
+// derived, and a new tool wrapping another creating method has to be added by
+// hand. Cross-checking it against the tools carrying writeAnnotations (the
+// repository's own "creates a new entity, not idempotent" category) is the
+// cheapest way to look for a gap, but not a sufficient one: an annotation can
+// itself be wrong, which is how the invite-link request below arrived here from
+// a tool marked read-only.
+//
+// Two things it deliberately leaves out. The value-setting writes above are
+// idempotent in their value but not in the chat history: editChatTitle,
+// editPhoto and addChatUser each post a service message per call, so a resend
+// leaves a second one. That is visible and deletable, unlike the entries here.
+// And this closes only the trigger this middleware adds — gotd's invokeConn
+// resends any method on a dead connection, which is not this middleware's to
+// fix.
+func safeToResend(input bin.Encoder) bool {
 	switch input.(type) {
-	case *tg.ChannelsCreateChannelRequest, *tg.MessagesCreateChatRequest:
+	case *tg.ChannelsCreateChannelRequest,
+		*tg.MessagesCreateChatRequest,
+		*tg.MessagesUpdateDialogFilterRequest,
+		*tg.PhotosUploadProfilePhotoRequest,
+		*tg.MessagesExportChatInviteRequest:
 		return false
 	default:
 		return true

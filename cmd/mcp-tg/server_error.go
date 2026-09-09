@@ -42,12 +42,18 @@ const (
 // Pyrogram retries InternalServerError after 0.5s. None of them re-route the
 // query — that is the 303 *_MIGRATE_X path, which gotd already handles.
 //
-// Resending is safe for writes as well as reads. Every send operation carries a
-// crypto-random random_id which Telegram deduplicates against, and a retry
-// re-encodes the SAME request value, so the same random_id goes back on the
-// wire and a message the server had in fact created before failing is not
-// duplicated. gotd's own invokeConn already re-sends a query whose connection
-// died, so a resent RPC is not a new property of this client.
+// Resending is safe for SENDS, which is the write this exists for. Every send
+// operation carries a crypto-random random_id which Telegram deduplicates
+// against, and a retry re-encodes the SAME request value, so the same random_id
+// goes back on the wire and a message the server had in fact created before
+// failing is not duplicated.
+//
+// That covers sends, not writes in general. channels.createChannel and
+// messages.createChat carry no such token, so a resend landing after the server
+// applied the first attempt can create a second chat. The exposure is accepted
+// rather than solved, and it predates this middleware: gotd's own invokeConn
+// already re-sends any query whose connection died, and TDLib delays every 500
+// the same way regardless of method.
 //
 // baseDelay is a parameter rather than a bare constant so tests can drive the
 // exhaustion path without sleeping for the real schedule; production passes

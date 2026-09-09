@@ -73,15 +73,24 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 				}
 
 				rpcErr, isServerErr := tgclient.AsServerError(err)
-				if !isServerErr || attempt == maxServerErrorAttempts-1 {
+				if !isServerErr {
 					return err //nolint:wrapcheck // pass-through: middleware must return the original API error.
 				}
 
+				// Ahead of the attempt check on purpose. Both orders behave the
+				// same while maxServerErrorAttempts is above one, so putting the
+				// marker second would make it depend on the constant's VALUE
+				// rather than on the structure, and a drop to one would lose it
+				// with nothing turning red.
 				if !resendable {
 					// Marked, not just returned: the tools layer otherwise reads
 					// this as a 500 that survived the schedule and tells the
 					// caller to repeat a call that was never retried at all.
 					return errors.Mark(err, tgclient.ErrNotResent)
+				}
+
+				if attempt == maxServerErrorAttempts-1 {
+					return err //nolint:wrapcheck // pass-through: middleware must return the original API error.
 				}
 
 				logServerErrorRetry(logger, rpcErr, delay, attempt)

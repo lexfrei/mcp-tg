@@ -352,20 +352,23 @@ func wrapTelegramError(err error) error {
 		return errors.Mark(errors.Wrapf(err, "flood wait: retry after %ds", int(wait.Seconds())), ErrFloodWait)
 	}
 
-	// A 500 reaches here only after the server-error middleware has resent the
-	// query and been refused every time. Mark it so the caller can tell "your
+	// An unmarked 500 reaches here after the server-error middleware resent the
+	// query and was refused every time. Mark it so the caller can tell "your
 	// request is wrong" from "Telegram is broken right now"; the two want
 	// opposite responses, and the raw code distinguishes them for nobody.
 	//
 	// A query the middleware refused to resend was sent ONCE, so the message
 	// below would report retries that never ran and invite a repeat of the very
-	// call the refusal exists to protect.
+	// call the refusal exists to protect. The reason for the refusal stays in
+	// safeToResend: it holds back a request TYPE, and one of those types also
+	// serves the idempotent folder edit and delete, so any sentence here about
+	// what the call does would be false for some of its callers.
 	if errors.Is(err, telegram.ErrNotResent) {
 		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
 		return errors.Mark(errors.Wrap(err,
-			"telegram reported an internal server error; this call creates something and was "+
-				"not sent again automatically, so check whether it took effect before "+
-				"repeating it"), ErrServerError)
+			"telegram reported an internal server error; this call was not sent again "+
+				"automatically, so check whether it took effect before repeating it"),
+			ErrServerError)
 	}
 
 	// RANDOM_ID_DUPLICATE does not reach here: the classifier excludes it, so it

@@ -150,10 +150,13 @@ func TestWrapTelegramError_ServerErrorVouchesForNothing(t *testing.T) {
 
 // A query the middleware refused to resend reaches here having had no automatic
 // retry at all, so the generic message is wrong twice: it reports retries that
-// never ran, and it invites the caller to repeat a call that creates something.
-// A caller-level repeat is worse than the resend the middleware declined —
-// the middleware would have put the SAME request back on the wire, while a new
-// tool call builds one the server has nothing to match it against.
+// never ran, and it invites the blind repeat the refusal exists to prevent. A
+// caller-level repeat is worse than the resend the middleware declined — the
+// middleware would have put the SAME request back on the wire, while a new tool
+// call builds one the server has nothing to match it against. The message must
+// also claim nothing about WHAT the call does: the deny-list holds back a
+// request type, and one of those types serves the idempotent folder edit and
+// delete as well as folder creation.
 func TestWrapTelegramError_UnresentQueryDoesNotInviteABlindRepeat(t *testing.T) {
 	unresent := errors.Mark(tgerr.New(500, "RPC_CALL_FAIL"), telegram.ErrNotResent)
 
@@ -164,10 +167,17 @@ func TestWrapTelegramError_UnresentQueryDoesNotInviteABlindRepeat(t *testing.T) 
 	}
 
 	if strings.Contains(got, "retry the same call") {
-		t.Errorf("a creating call must not be advertised as safe to repeat, got: %q", got)
+		t.Errorf("a held-back call must not be advertised as safe to repeat, got: %q", got)
 	}
 
 	if !strings.Contains(got, "took effect") {
 		t.Errorf("the caller must be told to check whether it applied, got: %q", got)
+	}
+
+	// "this call creates something" shipped here once and was false for
+	// tg_folders_edit and tg_folders_delete, which share a request type with
+	// tg_folders_create and are idempotent.
+	if strings.Contains(got, "creates") {
+		t.Errorf("the message must not claim what the call does, got: %q", got)
 	}
 }

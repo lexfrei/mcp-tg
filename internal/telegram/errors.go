@@ -6,16 +6,16 @@ import (
 )
 
 // ErrNotResent marks a 500 on a query the client declined to put back on the
-// wire, because the query creates something the account keeps and carries no
-// token the server could match a resend against.
+// wire. The reason belongs to whoever declined (safeToResend); the marker
+// carries only the fact, which is what the tools layer needs.
 //
-// It exists so the tools layer can tell the two shapes of an exhausted 500
-// apart. The ordinary one has been resent and refused every time, and repeating
-// it is the remedy. This one was sent ONCE, so a message about spent retries
-// would be false, and inviting a repeat would be worse than the resend the
-// middleware just refused: the middleware would have put the SAME request back
-// on the wire, while a fresh tool call builds one the server has nothing to
-// match against.
+// It exists so that layer can tell the two shapes of an exhausted 500 apart.
+// The ordinary one has been resent and refused every time, and repeating it is
+// the remedy. This one was sent ONCE, so a message about spent retries would be
+// false, and inviting a repeat would be worse than the resend the middleware
+// just refused: the middleware would have put the SAME request back on the
+// wire, while a fresh tool call builds one the server has nothing to match
+// against.
 var ErrNotResent = errors.New("telegram query not resent")
 
 // serverErrorCode is the MTProto error code Telegram answers with when its own

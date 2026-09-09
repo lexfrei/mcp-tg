@@ -107,8 +107,13 @@ func run() error {
 		Logger:         logzap.New(newGotdLogger(level)),
 		Device:         device,
 		UpdateHandler:  dispatcher,
+		// Order is outermost first. The server-error retry sits INSIDE the
+		// FLOOD_WAIT one so a rate-limit met while resending a failed query is
+		// honoured by the outer middleware at the delay the server asked for,
+		// instead of being counted as one more fast internal-error attempt.
 		Middlewares: []telegram.Middleware{
 			newFloodWaitMiddleware(logger),
+			newServerErrorMiddleware(logger, serverErrorBaseDelay),
 			newConnReinitMiddleware(cfg.AppID, &device),
 			newAuthRevokedMiddleware(health, logger),
 		},

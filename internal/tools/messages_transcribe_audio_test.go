@@ -2,11 +2,12 @@ package tools
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
 	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
@@ -202,5 +203,35 @@ func TestMessagesTranscribeAudioHandler_MapsTelegramStatuses(t *testing.T) {
 				t.Errorf("Status = %q, want %q", res.Status, tt.want)
 			}
 		})
+	}
+}
+
+// The reported failure, end to end: a voice message whose transcription
+// Telegram could not generate answers INTERDC_102_CALL_ERROR. It is not one of
+// the statuses the tool reports structurally — nothing is known about the
+// message — so it stays a tool error, and it must arrive marked ErrServerError
+// so the caller reads "Telegram is broken right now, try again" rather than a
+// bare rpc code it will treat as a permanent refusal.
+func TestMessagesTranscribeAudioHandler_ServerErrorStaysARetryableToolError(t *testing.T) {
+	mock := &mockClient{
+		peer:          telegram.InputPeer{Type: telegram.PeerChannel, ID: 4405002039},
+		transcribeErr: fmt.Errorf("transcribing audio: %w", tgerr.New(500, "INTERDC_102_CALL_ERROR")),
+	}
+	handler := NewMessagesTranscribeAudioHandler(mock)
+
+	result, _, err := handler(context.Background(), nil, MessagesTranscribeAudioParams{
+		Peer:      "@chat",
+		MessageID: 320,
+	})
+	if err == nil {
+		t.Fatal("a Telegram server error must stay a tool error, not a transcription status")
+	}
+
+	if !errors.Is(err, ErrServerError) {
+		t.Errorf("expected the error marked ErrServerError, got: %v", err)
+	}
+
+	if result == nil || !result.IsError {
+		t.Error("result.IsError should be true")
 	}
 }

@@ -22,6 +22,22 @@ var ErrTelegram = errors.New("telegram request error")
 // crash.
 var ErrFloodWait = errors.New("flood wait")
 
+// ErrServerError indicates Telegram answered with a 500-class internal error
+// (INTERDC_X_CALL_ERROR, RPC_CALL_FAIL, WORKER_BUSY_TOO_LONG_RETRY and
+// friends) and the auto-retry middleware exhausted its attempts. The wrapped
+// message invites a later retry, rather than handing the caller a bare "rpc
+// error code 500" it will read as a dead end.
+//
+// The marker classifies on the code alone, so it cannot vouch for the request:
+// the 500 class is not uniformly transient, and gotd's generated docs put
+// RANDOM_ID_DUPLICATE, AUTH_RESTART and CHAT_INVALID under the same code.
+// RANDOM_ID_DUPLICATE is carved out in telegram.AsServerError. The others are
+// not a group to reason about at once: CHAT_INVALID collects the same refusal
+// on every resend, while AUTH_RESTART on auth.sendCode asks for exactly the
+// resend it gets (on auth.signIn the same name means go back to sendCode). A
+// carve-out needs its own reason per error, not a rule about the remainder.
+var ErrServerError = errors.New("telegram server error")
+
 // ErrPeerRequired is returned when a peer parameter is missing.
 var ErrPeerRequired = errors.New("peer is required")
 
@@ -284,6 +300,9 @@ func rejectsIdentity(err error) bool {
 //nolint:cyclop,gocyclo // long flat switch is the clearest way to express the lookup table
 func explainMTProtoCode(raw string) string {
 	switch {
+	case strings.Contains(raw, "RANDOM_ID_DUPLICATE"):
+		return "telegram already accepted a send with this random ID; the message was most " +
+			"likely delivered — check the chat before sending it again"
 	case strings.Contains(raw, "REPLY_MESSAGE_ID_INVALID"):
 		return "the reply target message does not exist in this chat"
 	case strings.Contains(raw, "MESSAGE_ID_INVALID"):
@@ -331,6 +350,34 @@ func wrapTelegramError(err error) error {
 	if wait, ok := tgerr.AsFloodWait(err); ok {
 		//nolint:wrapcheck // Mark adds the sentinel category; Wrapf supplies the readable retry hint.
 		return errors.Mark(errors.Wrapf(err, "flood wait: retry after %ds", int(wait.Seconds())), ErrFloodWait)
+	}
+
+	// An unmarked 500 reaches here after the server-error middleware resent the
+	// query and was refused every time. Mark it so the caller can tell "your
+	// request is wrong" from "Telegram is broken right now"; the two want
+	// opposite responses, and the raw code distinguishes them for nobody.
+	//
+	// A query the middleware refused to resend was sent ONCE, so the message
+	// below would report retries that never ran and invite a repeat of the very
+	// call the refusal exists to protect. The reason for the refusal stays in
+	// safeToResend: it holds back a request TYPE, and one of those types also
+	// serves the idempotent folder edit and delete, so any sentence here about
+	// what the call does would be false for some of its callers.
+	if errors.Is(err, telegram.ErrNotResent) {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+		return errors.Mark(errors.Wrap(err,
+			"telegram reported an internal server error; this call was not sent again "+
+				"automatically, so check whether it took effect before repeating it"),
+			ErrServerError)
+	}
+
+	// RANDOM_ID_DUPLICATE does not reach here: the classifier excludes it, so it
+	// falls through to explainMTProtoCode below.
+	if telegram.IsServerError(err) {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+		return errors.Mark(errors.Wrap(err,
+			"telegram reported an internal server error and the automatic retries did not "+
+				"clear it; retry the same call in a few seconds"), ErrServerError)
 	}
 
 	if explanation := explainMTProtoCode(err.Error()); explanation != "" {

@@ -63,11 +63,12 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 					return nil
 				}
 
-				if !tgclient.IsServerError(err) || attempt == maxServerErrorAttempts-1 {
+				rpcErr, isServerErr := tgclient.AsServerError(err)
+				if !isServerErr || attempt == maxServerErrorAttempts-1 {
 					return err //nolint:wrapcheck // pass-through: middleware must return the original API error.
 				}
 
-				logServerErrorRetry(logger, err, delay, attempt)
+				logServerErrorRetry(logger, rpcErr, delay, attempt)
 
 				select {
 				case <-time.After(delay):
@@ -89,13 +90,8 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // error string so a post-mortem names the DC the server failed to reach —
 // gotd's Error() renders INTERDC_102_CALL_ERROR as "INTERDC_CALL_ERROR (102)",
 // splitting the argument out of the type.
-func logServerErrorRetry(logger *slog.Logger, err error, delay time.Duration, attempt int) {
-	rpcError := err.Error()
-	if rpcErr, ok := tgerr.As(err); ok {
-		rpcError = rpcErr.Message
-	}
-
+func logServerErrorRetry(logger *slog.Logger, rpcErr *tgerr.Error, delay time.Duration, attempt int) {
 	logger.Warn("Telegram internal server error — backing off before retry",
-		"rpcError", rpcError, "retryAfter", delay,
+		"rpcError", rpcErr.Message, "retryAfter", delay,
 		"attempt", attempt+1, "maxAttempts", maxServerErrorAttempts)
 }

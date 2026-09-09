@@ -72,7 +72,7 @@ internal/telegram/           Telegram abstraction layer
   auth.go                    Auth flow with MCP elicitation support
   resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs, invite links)
   peer_cache.go              Thread-safe cache for peer access hashes
-  errors.go                  ServerErrorCode / IsServerError — the 500 class Telegram answers with when its own backend failed
+  errors.go                  AsServerError / IsServerError — the 500 class Telegram answers with when its own backend failed
   markdown.go                Markdown → Telegram entities parser (entry point)
   markdown_inline.go         Inline marker parsing (bold, italic, code, links, etc.)
   markdown_convert.go        rawEntity → tg.MessageEntityClass conversion + escape removal

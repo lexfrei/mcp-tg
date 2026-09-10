@@ -17,7 +17,6 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/log/logzap"
 	"github.com/gotd/td/telegram"
-	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -148,18 +147,19 @@ func startServer(
 
 // startStdio runs the server with stdio as the primary transport (the default
 // one-process-per-client mode) plus an optional additional HTTP transport.
-// Auth elicitation is routed through the stdio session, so this mode can
-// complete an interactive login.
+// The login prompts through the stdio session, so this mode can complete an
+// interactive login: by elicitation on clients before 2026-07-28, and by input
+// requests returned from the tool call on later ones.
 func startStdio(
 	ctx context.Context, cancel context.CancelFunc, tgClient *telegram.Client,
 	wrapper tgclient.Client, subscriptionBroker *tgclient.SubscriptionBroker,
 	cfg *config.Config, health *mcpmw.SessionHealth, logger *slog.Logger,
 ) error {
-	initDone := make(chan struct{})
 	authDone := make(chan struct{})
+	login := newLogin(tgClient, cfg, health, authDone, logger)
 
 	server := buildServer(
-		wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, func() { close(initDone) }, logger,
+		wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, login, logger,
 	)
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
@@ -167,22 +167,14 @@ func startStdio(
 		return errors.Wrap(err, "connecting stdio transport")
 	}
 
-	select {
-	case <-initDone:
-	case <-ctx.Done():
-		return errors.Wrap(ctx.Err(), "waiting for client initialization")
+	// Only now: a saved session needs no client, but reaching Telegram can take
+	// a while — auth.sendCode is a favourite of FLOOD_WAIT, and the retry
+	// middleware sleeps whatever delay the server names. Connecting first keeps
+	// the client answered and the tool list readable throughout, instead of
+	// leaving its initialize unanswered with nothing to report.
+	if err := settleLogin(ctx, login, logger); err != nil {
+		return err
 	}
-
-	authErr := authenticate(ctx, tgClient, cfg, stdioSession)
-	if authErr != nil {
-		return authErr
-	}
-
-	// Arm revocation tracking only now: the IfNecessary probe above answers
-	// AUTH_KEY_UNREGISTERED for a fresh or revoked session, and that expected
-	// pre-login 401 must not be mistaken for a revocation of this new session.
-	health.Arm()
-	close(authDone)
 
 	return waitForTransports(ctx, cancel, server, stdioSession, cfg, logger)
 }
@@ -201,9 +193,14 @@ func startHeadless(
 	logger *slog.Logger,
 ) error {
 	authDone := make(chan struct{})
+	login := newLogin(tgClient, cfg, health, authDone, logger)
 	server := newHeadlessServer(wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, logger)
 
-	authErr := authenticate(ctx, tgClient, cfg, nil)
+	authErr := login.Probe(ctx)
+	if authErr == nil && !login.Done() {
+		authErr = login.RunUnattended(ctx)
+	}
+
 	if authErr != nil {
 		if loginWouldFix(authErr) {
 			return headlessLoginRequired(authErr)
@@ -211,13 +208,8 @@ func startHeadless(
 
 		// A transient failure (network, 5xx, DC migration) that re-login cannot
 		// fix — surface it as-is instead of the misleading login-required message.
-		return authErr
+		return errors.Wrap(authErr, "logging in to Telegram")
 	}
-
-	// See startStdio: arm only after the initial auth succeeds so the startup
-	// probe's expected AUTH_KEY_UNREGISTERED does not trip the revocation guard.
-	health.Arm()
-	close(authDone)
 
 	logger.Info("starting in HTTP-only headless mode (shared daemon)")
 
@@ -225,12 +217,7 @@ func startHeadless(
 }
 
 // newHeadlessServer builds the MCP server for headless HTTP-only mode. It is a
-// named seam so the daemon and its tests construct the server identically — in
-// particular the nil init hook is owned here, not duplicated per call site.
-//
-// onInit must stay nil: headless HTTP serves many clients, and a hook that
-// closes a shared channel would panic on the second client's initialize (close
-// of a closed channel). Wiring such a hook here trips the multi-client test.
+// named seam so the daemon and its tests construct the server identically.
 func newHeadlessServer(
 	client tgclient.Client, downloadDir string, fileRoots []string, broker *tgclient.SubscriptionBroker,
 	authDone chan struct{}, health *mcpmw.SessionHealth, logger *slog.Logger,
@@ -239,18 +226,14 @@ func newHeadlessServer(
 }
 
 // buildServer constructs the MCP server with all tools, resources, prompts, and
-// middleware. onInit, when non-nil, runs after a client completes the MCP
-// initialize handshake; pass nil when no single client owns the lifecycle.
+// middleware. login, when non-nil, is offered to every Telegram tool so the
+// first call that needs an account can log in; pass nil when there is no
+// Telegram client to log into.
 func buildServer(
 	client tgclient.Client, downloadDir string, fileRoots []string, broker *tgclient.SubscriptionBroker,
-	authDone chan struct{}, health *mcpmw.SessionHealth, onInit func(), logger *slog.Logger,
+	authDone chan struct{}, health *mcpmw.SessionHealth, login *tgclient.Login, logger *slog.Logger,
 ) *mcp.Server {
 	opts := newServerOptions(client, broker, logger)
-	if onInit != nil {
-		opts.InitializedHandler = func(_ context.Context, _ *mcp.InitializedRequest) {
-			onInit()
-		}
-	}
 
 	server := mcp.NewServer(
 		&mcp.Implementation{
@@ -265,7 +248,7 @@ func buildServer(
 	broker.SetNotifier(newResourceUpdater(server))
 
 	boolFields := tools.BoolFieldRegistry{}
-	registerTools(server, client, boolFields, downloadDir, fileRoots)
+	registerTools(server, client, boolFields, tools.NewLoginGate(login), downloadDir, fileRoots)
 	resources.Register(server, client)
 	prompts.Register(server, client)
 	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone, health)...)
@@ -284,31 +267,55 @@ func receivingMiddlewares(
 	return []mcp.Middleware{
 		mcpmw.NewLogging(logger),
 		mcpmw.NewBoolCoercer(boolFields),
-		mcpmw.NewAuthGuard(authDone, []string{tools.ServerVersionToolName}),
+		mcpmw.NewAuthGuard(authDone),
 		mcpmw.NewSessionGuard(health, []string{tools.ServerVersionToolName}),
 	}
 }
 
-// authenticate runs the Telegram auth flow. When session is non-nil the
-// authenticator may elicit missing credentials through it; otherwise it is
-// limited to env vars and the persisted session file.
-func authenticate(
-	ctx context.Context, tgClient *telegram.Client, cfg *config.Config, clientSession *mcp.ServerSession,
-) error {
-	authenticator := tgclient.NewAuthenticator(cfg.Phone, cfg.Password, cfg.AuthCode)
-	if clientSession != nil {
-		authenticator.SetSession(clientSession)
-	}
+// newLogin builds the login flow. Arming revocation tracking is deferred to
+// the moment the account is authorized: the session probe answers
+// AUTH_KEY_UNREGISTERED for a fresh or revoked session, and that expected
+// pre-login 401 must not be mistaken for a revocation.
+func newLogin(
+	tgClient *telegram.Client, cfg *config.Config, health *mcpmw.SessionHealth,
+	authDone chan struct{}, logger *slog.Logger,
+) *tgclient.Login {
+	credentials := tgclient.Credentials{Phone: cfg.Phone, Code: cfg.AuthCode, Password: cfg.Password}
 
-	flow := auth.NewFlow(authenticator, auth.SendCodeOptions{})
-
-	return errors.Wrap(tgClient.Auth().IfNecessary(ctx, flow), "authentication failed")
+	return tgclient.NewLogin(tgClient.Auth(), credentials, logger, func() {
+		health.Arm()
+		close(authDone)
+	})
 }
 
-// headlessLoginRequired turns a headless startup auth failure into an
-// actionable message. The underlying gotd error is typically "TELEGRAM_PHONE is
-// required", which misleads toward setting an env var; the real fix is an
-// interactive login the headless daemon cannot perform itself.
+// settleLogin takes the login as far as it goes without a human. Missing
+// input is not a failure here — a client can supply it on the first tool call
+// — but anything else is, since it says nothing about whether a login would
+// help.
+func settleLogin(ctx context.Context, login *tgclient.Login, logger *slog.Logger) error {
+	err := login.Probe(ctx)
+	if err == nil && !login.Done() {
+		err = login.RunUnattended(ctx)
+	}
+
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, tgclient.ErrLoginInputRequired):
+		logger.Info("no Telegram session — the first tool call will prompt for the login, " +
+			"or run `mcp-tg login` in a terminal")
+
+		return nil
+	default:
+		return errors.Wrap(err, "logging in to Telegram")
+	}
+}
+
+// headlessLoginRequired turns a headless startup login failure into an
+// actionable message. The cause names the credential that is missing, which
+// reads like an invitation to set one more environment variable; for a daemon
+// with no session the real fix is the interactive login it cannot perform
+// itself.
 func headlessLoginRequired(cause error) error {
 	return errors.Wrap(cause,
 		"no valid Telegram session and the headless daemon cannot log in by itself — "+
@@ -316,8 +323,8 @@ func headlessLoginRequired(cause error) error {
 }
 
 // loginWouldFix reports whether a headless startup auth failure is one that
-// `mcp-tg login` can actually resolve — a missing session (the authenticator
-// asks for credentials none of which are configured) or a revoked auth key from
+// `mcp-tg login` can actually resolve — a missing session (the login reached a
+// step nothing configured could answer) or a revoked auth key from
 // the known-fixable set. It deliberately does not treat every 401 as fixable:
 // terminal account states (USER_DEACTIVATED / _BAN) are also 401 but re-login
 // cannot fix them, so — like authRevokedCodes — they must surface unchanged
@@ -328,10 +335,7 @@ func loginWouldFix(err error) bool {
 		return true
 	}
 
-	return errors.Is(err, tgclient.ErrPhoneRequired) ||
-		errors.Is(err, tgclient.ErrPasswordRequired) ||
-		errors.Is(err, tgclient.ErrNoAuthCode) ||
-		errors.Is(err, tgclient.ErrElicitDeclined)
+	return errors.Is(err, tgclient.ErrLoginInputRequired)
 }
 
 // revokedExitError wraps the error tgClient.Run returns when the connection ends.
@@ -537,96 +541,96 @@ func newServerOptions(
 }
 
 func registerTools(
-	server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry,
+	server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry, gate *tools.LoginGate,
 	downloadDir string, fileRoots []string,
 ) {
-	tools.AddTool(server, registry, tools.ServerVersionTool(),
+	tools.AddTool(server, registry, gate, tools.ServerVersionTool(),
 		tools.NewServerVersionHandler(version, revision, runtime.Version()))
-	tools.AddTool(server, registry, tools.ProfileGetTool(), tools.NewProfileGetHandler(client))
-	tools.AddTool(server, registry, tools.DialogsListTool(), tools.NewDialogsListHandler(client))
-	tools.AddTool(server, registry, tools.DialogsSearchTool(), tools.NewDialogsSearchHandler(client))
-	tools.AddTool(server, registry, tools.DialogsGetInfoTool(), tools.NewDialogsGetInfoHandler(client))
-	tools.AddTool(server, registry, tools.MessagesListTool(), tools.NewMessagesListHandler(client))
-	tools.AddTool(server, registry, tools.MessagesGetTool(), tools.NewMessagesGetHandler(client))
-	tools.AddTool(server, registry, tools.MessagesContextTool(), tools.NewMessagesContextHandler(client))
-	tools.AddTool(server, registry, tools.MessagesSearchTool(), tools.NewMessagesSearchHandler(client))
-	tools.AddTool(server, registry, tools.MessagesSendTool(), tools.NewMessagesSendHandler(client))
-	tools.AddTool(server, registry, tools.MessagesEditTool(), tools.NewMessagesEditHandler(client))
-	tools.AddTool(server, registry, tools.MessagesDeleteTool(), tools.NewMessagesDeleteHandler(client))
-	tools.AddTool(server, registry, tools.MessagesForwardTool(), tools.NewMessagesForwardHandler(client))
-	tools.AddTool(server, registry, tools.MessagesPinTool(), tools.NewMessagesPinHandler(client))
-	tools.AddTool(server, registry, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
-	tools.AddTool(server, registry, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
-	tools.AddTool(server, registry, tools.MessagesTranscribeAudioTool(), tools.NewMessagesTranscribeAudioHandler(client))
+	tools.AddTool(server, registry, gate, tools.ProfileGetTool(), tools.NewProfileGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.DialogsListTool(), tools.NewDialogsListHandler(client))
+	tools.AddTool(server, registry, gate, tools.DialogsSearchTool(), tools.NewDialogsSearchHandler(client))
+	tools.AddTool(server, registry, gate, tools.DialogsGetInfoTool(), tools.NewDialogsGetInfoHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesListTool(), tools.NewMessagesListHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesGetTool(), tools.NewMessagesGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesContextTool(), tools.NewMessagesContextHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesSearchTool(), tools.NewMessagesSearchHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesSendTool(), tools.NewMessagesSendHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesEditTool(), tools.NewMessagesEditHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesDeleteTool(), tools.NewMessagesDeleteHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesForwardTool(), tools.NewMessagesForwardHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesPinTool(), tools.NewMessagesPinHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesTranscribeAudioTool(), tools.NewMessagesTranscribeAudioHandler(client))
 
 	// Phase 2: Contacts, Users, Groups, Chat management tools.
-	tools.AddTool(server, registry, tools.ContactsGetTool(), tools.NewContactsGetHandler(client))
-	tools.AddTool(server, registry, tools.ContactsSearchTool(), tools.NewContactsSearchHandler(client))
-	tools.AddTool(server, registry, tools.UsersGetTool(), tools.NewUsersGetHandler(client))
-	tools.AddTool(server, registry, tools.UsersPhotosTool(), tools.NewUsersPhotosHandler(client))
-	tools.AddTool(server, registry, tools.UsersBlockTool(), tools.NewUsersBlockHandler(client))
-	tools.AddTool(server, registry, tools.UsersCommonChatsTool(), tools.NewUsersCommonChatsHandler(client))
-	tools.AddTool(server, registry, tools.GroupsListTool(), tools.NewGroupsListHandler(client))
-	tools.AddTool(server, registry, tools.GroupsInfoTool(), tools.NewGroupsInfoHandler(client))
-	tools.AddTool(server, registry, tools.GroupsJoinTool(), tools.NewGroupsJoinHandler(client))
-	tools.AddTool(server, registry, tools.GroupsLeaveTool(), tools.NewGroupsLeaveHandler(client))
-	tools.AddTool(server, registry, tools.GroupsRenameTool(), tools.NewGroupsRenameHandler(client))
-	tools.AddTool(server, registry, tools.GroupsMembersAddTool(), tools.NewGroupsMembersAddHandler(client))
-	tools.AddTool(server, registry, tools.GroupsMembersRemoveTool(), tools.NewGroupsMembersRemoveHandler(client))
-	tools.AddTool(server, registry, tools.GroupsInviteLinkGetTool(), tools.NewGroupsInviteLinkGetHandler(client))
-	tools.AddTool(server, registry, tools.GroupsInviteLinkRevokeTool(), tools.NewGroupsInviteLinkRevokeHandler(client))
-	tools.AddTool(server, registry, tools.ChatsAdminsTool(), tools.NewChatsAdminsHandler(client))
-	tools.AddTool(server, registry, tools.ChatsPermissionsTool(), tools.NewChatsPermissionsHandler(client))
+	tools.AddTool(server, registry, gate, tools.ContactsGetTool(), tools.NewContactsGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.ContactsSearchTool(), tools.NewContactsSearchHandler(client))
+	tools.AddTool(server, registry, gate, tools.UsersGetTool(), tools.NewUsersGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.UsersPhotosTool(), tools.NewUsersPhotosHandler(client))
+	tools.AddTool(server, registry, gate, tools.UsersBlockTool(), tools.NewUsersBlockHandler(client))
+	tools.AddTool(server, registry, gate, tools.UsersCommonChatsTool(), tools.NewUsersCommonChatsHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsListTool(), tools.NewGroupsListHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsInfoTool(), tools.NewGroupsInfoHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsJoinTool(), tools.NewGroupsJoinHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsLeaveTool(), tools.NewGroupsLeaveHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsRenameTool(), tools.NewGroupsRenameHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsMembersAddTool(), tools.NewGroupsMembersAddHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsMembersRemoveTool(), tools.NewGroupsMembersRemoveHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsInviteLinkGetTool(), tools.NewGroupsInviteLinkGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsInviteLinkRevokeTool(), tools.NewGroupsInviteLinkRevokeHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsAdminsTool(), tools.NewChatsAdminsHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsPermissionsTool(), tools.NewChatsPermissionsHandler(client))
 
 	// Phase 3: Media, Files, Chat Management, Profile tools.
-	tools.AddTool(server, registry, tools.MessagesSendFileTool(), tools.NewMessagesSendFileHandler(client, fileRoots))
-	tools.AddTool(server, registry, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client, downloadDir, fileRoots))
-	tools.AddTool(server, registry, tools.MediaUploadTool(), tools.NewMediaUploadHandler(client, fileRoots))
-	tools.AddTool(server, registry, tools.MediaSendAlbumTool(), tools.NewMediaSendAlbumHandler(client, fileRoots))
-	tools.AddTool(server, registry, tools.ChatsCreateTool(), tools.NewChatsCreateHandler(client))
-	tools.AddTool(server, registry, tools.ChatsArchiveTool(), tools.NewChatsArchiveHandler(client))
-	tools.AddTool(server, registry, tools.ChatsMuteTool(), tools.NewChatsMuteHandler(client))
-	tools.AddTool(server, registry, tools.ChatsDeleteTool(), tools.NewChatsDeleteHandler(client))
-	tools.AddTool(server, registry, tools.ChatsSetPhotoTool(), tools.NewChatsSetPhotoHandler(client, fileRoots))
-	tools.AddTool(server, registry, tools.ChatsSetDescriptionTool(), tools.NewChatsSetDescriptionHandler(client))
-	tools.AddTool(server, registry, tools.ChatsGetSendAsTool(), tools.NewChatsGetSendAsHandler(client))
-	tools.AddTool(server, registry, tools.ChatsSetSendAsTool(), tools.NewChatsSetSendAsHandler(client))
-	tools.AddTool(server, registry, tools.ProfileSetNameTool(), tools.NewProfileSetNameHandler(client))
-	tools.AddTool(server, registry, tools.ProfileSetBioTool(), tools.NewProfileSetBioHandler(client))
-	tools.AddTool(server, registry, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.MessagesSendFileTool(), tools.NewMessagesSendFileHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.MediaDownloadTool(), tools.NewMediaDownloadHandler(client, downloadDir, fileRoots))
+	tools.AddTool(server, registry, gate, tools.MediaUploadTool(), tools.NewMediaUploadHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.MediaSendAlbumTool(), tools.NewMediaSendAlbumHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.ChatsCreateTool(), tools.NewChatsCreateHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsArchiveTool(), tools.NewChatsArchiveHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsMuteTool(), tools.NewChatsMuteHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsDeleteTool(), tools.NewChatsDeleteHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsSetPhotoTool(), tools.NewChatsSetPhotoHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.ChatsSetDescriptionTool(), tools.NewChatsSetDescriptionHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsGetSendAsTool(), tools.NewChatsGetSendAsHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsSetSendAsTool(), tools.NewChatsSetSendAsHandler(client))
+	tools.AddTool(server, registry, gate, tools.ProfileSetNameTool(), tools.NewProfileSetNameHandler(client))
+	tools.AddTool(server, registry, gate, tools.ProfileSetBioTool(), tools.NewProfileSetBioHandler(client))
+	tools.AddTool(server, registry, gate, tools.ProfileSetPhotoTool(), tools.NewProfileSetPhotoHandler(client, fileRoots))
 
 	// Phase 4: Topics, Stickers, Drafts, Folders, Status tools.
-	tools.AddTool(server, registry, tools.TopicsListTool(), tools.NewTopicsListHandler(client))
-	tools.AddTool(server, registry, tools.TopicsSearchTool(), tools.NewTopicsSearchHandler(client))
-	tools.AddTool(server, registry, tools.StickersSearchTool(), tools.NewStickersSearchHandler(client))
-	tools.AddTool(server, registry, tools.StickersGetSetTool(), tools.NewStickersGetSetHandler(client))
-	tools.AddTool(server, registry, tools.StickersSendTool(), tools.NewStickersSendHandler(client))
-	tools.AddTool(server, registry, tools.DraftsSetTool(), tools.NewDraftsSetHandler(client))
-	tools.AddTool(server, registry, tools.DraftsClearTool(), tools.NewDraftsClearHandler(client))
-	tools.AddTool(server, registry, tools.FoldersListTool(), tools.NewFoldersListHandler(client))
-	tools.AddTool(server, registry, tools.FoldersCreateTool(), tools.NewFoldersCreateHandler(client))
-	tools.AddTool(server, registry, tools.FoldersEditTool(), tools.NewFoldersEditHandler(client))
-	tools.AddTool(server, registry, tools.FoldersDeleteTool(), tools.NewFoldersDeleteHandler(client))
-	tools.AddTool(server, registry, tools.TypingSendTool(), tools.NewTypingSendHandler(client))
-	tools.AddTool(server, registry, tools.OnlineStatusSetTool(), tools.NewOnlineStatusSetHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsListTool(), tools.NewTopicsListHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsSearchTool(), tools.NewTopicsSearchHandler(client))
+	tools.AddTool(server, registry, gate, tools.StickersSearchTool(), tools.NewStickersSearchHandler(client))
+	tools.AddTool(server, registry, gate, tools.StickersGetSetTool(), tools.NewStickersGetSetHandler(client))
+	tools.AddTool(server, registry, gate, tools.StickersSendTool(), tools.NewStickersSendHandler(client))
+	tools.AddTool(server, registry, gate, tools.DraftsSetTool(), tools.NewDraftsSetHandler(client))
+	tools.AddTool(server, registry, gate, tools.DraftsClearTool(), tools.NewDraftsClearHandler(client))
+	tools.AddTool(server, registry, gate, tools.FoldersListTool(), tools.NewFoldersListHandler(client))
+	tools.AddTool(server, registry, gate, tools.FoldersCreateTool(), tools.NewFoldersCreateHandler(client))
+	tools.AddTool(server, registry, gate, tools.FoldersEditTool(), tools.NewFoldersEditHandler(client))
+	tools.AddTool(server, registry, gate, tools.FoldersDeleteTool(), tools.NewFoldersDeleteHandler(client))
+	tools.AddTool(server, registry, gate, tools.TypingSendTool(), tools.NewTypingSendHandler(client))
+	tools.AddTool(server, registry, gate, tools.OnlineStatusSetTool(), tools.NewOnlineStatusSetHandler(client))
 
 	// Phase 5: Extended coverage tools.
-	tools.AddTool(server, registry, tools.MessagesGetScheduledTool(), tools.NewMessagesGetScheduledHandler(client))
-	tools.AddTool(server, registry, tools.MessagesSearchGlobalTool(), tools.NewMessagesSearchGlobalHandler(client))
-	tools.AddTool(server, registry, tools.ContactsListBlockedTool(), tools.NewContactsListBlockedHandler(client))
-	tools.AddTool(server, registry, tools.MessagesGetReactionsTool(), tools.NewMessagesGetReactionsHandler(client))
-	tools.AddTool(server, registry, tools.GroupsMembersListTool(), tools.NewGroupsMembersListHandler(client))
-	tools.AddTool(server, registry, tools.ContactsGetStatusesTool(), tools.NewContactsGetStatusesHandler(client))
-	tools.AddTool(server, registry, tools.DialogsPinTool(), tools.NewDialogsPinHandler(client))
-	tools.AddTool(server, registry, tools.DialogsMarkUnreadTool(), tools.NewDialogsMarkUnreadHandler(client))
-	tools.AddTool(server, registry, tools.GroupsSlowmodeTool(), tools.NewGroupsSlowmodeHandler(client))
-	tools.AddTool(server, registry, tools.TopicsCreateTool(), tools.NewTopicsCreateHandler(client))
-	tools.AddTool(server, registry, tools.TopicsEditTool(), tools.NewTopicsEditHandler(client))
-	tools.AddTool(server, registry, tools.ContactsAddTool(), tools.NewContactsAddHandler(client))
-	tools.AddTool(server, registry, tools.GroupsAdminSetTool(), tools.NewGroupsAdminSetHandler(client))
-	tools.AddTool(server, registry, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
-	tools.AddTool(server, registry, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
-	tools.AddTool(server, registry, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesGetScheduledTool(), tools.NewMessagesGetScheduledHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesSearchGlobalTool(), tools.NewMessagesSearchGlobalHandler(client))
+	tools.AddTool(server, registry, gate, tools.ContactsListBlockedTool(), tools.NewContactsListBlockedHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesGetReactionsTool(), tools.NewMessagesGetReactionsHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsMembersListTool(), tools.NewGroupsMembersListHandler(client))
+	tools.AddTool(server, registry, gate, tools.ContactsGetStatusesTool(), tools.NewContactsGetStatusesHandler(client))
+	tools.AddTool(server, registry, gate, tools.DialogsPinTool(), tools.NewDialogsPinHandler(client))
+	tools.AddTool(server, registry, gate, tools.DialogsMarkUnreadTool(), tools.NewDialogsMarkUnreadHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsSlowmodeTool(), tools.NewGroupsSlowmodeHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsCreateTool(), tools.NewTopicsCreateHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsEditTool(), tools.NewTopicsEditHandler(client))
+	tools.AddTool(server, registry, gate, tools.ContactsAddTool(), tools.NewContactsAddHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsAdminSetTool(), tools.NewGroupsAdminSetHandler(client))
+	tools.AddTool(server, registry, gate, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

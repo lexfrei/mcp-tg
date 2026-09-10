@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"reflect"
 	"strings"
 
@@ -46,9 +47,15 @@ type BoolFieldRegistry = map[string]map[string]struct{}
 // registry is later used by the bool-coercion middleware to rewrite
 // string-encoded booleans (e.g. "true") into real JSON booleans before the
 // SDK validator runs.
+//
+// gate, when non-nil, runs the Telegram login before the handler on any tool
+// that needs an account. It is applied here rather than in a middleware
+// because only a result returned from the tool dispatch can carry a login
+// prompt back to the client.
 func AddTool[In, Out any](
 	server *mcp.Server,
 	registry BoolFieldRegistry,
+	gate *LoginGate,
 	tool *mcp.Tool,
 	handler mcp.ToolHandlerFor[In, Out],
 ) {
@@ -57,7 +64,27 @@ func AddTool[In, Out any](
 		registry[tool.Name] = fields
 	}
 
+	if gate != nil && tool.Name != ServerVersionToolName {
+		handler = gated(gate, handler)
+	}
+
 	mcp.AddTool(server, tool, handler)
+}
+
+// gated runs the login gate ahead of the handler. The zero Out is safe: the
+// SDK skips marshalling it when the result carries input requests, and an
+// error result never reaches it.
+func gated[In, Out any](gate *LoginGate, next mcp.ToolHandlerFor[In, Out]) mcp.ToolHandlerFor[In, Out] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, input In) (*mcp.CallToolResult, Out, error) {
+		var zero Out
+
+		result, err := gate.Admit(ctx, req)
+		if err != nil || result != nil {
+			return result, zero, err
+		}
+
+		return next(ctx, req, input)
+	}
 }
 
 // boolJSONFields returns the JSON field names of every bool/*bool member of

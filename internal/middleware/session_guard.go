@@ -23,10 +23,11 @@ var ErrSessionRevoked = errors.New(
 // NewSessionGuard returns a middleware that fast-fails tool/resource/prompt
 // calls with ErrSessionRevoked once health reports the session revoked, instead
 // of forwarding to a handler that would emit a raw AUTH_KEY_UNREGISTERED per
-// call. It shares requiresAuth/isBypassed with NewAuthGuard: protocol methods
-// and the `*/list` MCP methods always pass through, and bypassTools (server-meta tools that
-// never touch Telegram, e.g. build version) stay reachable so an operator can
-// still probe the daemon while it is locked out.
+// call. Protocol methods and the `*/list` MCP methods always pass through, and
+// bypassTools (server-meta tools that never touch Telegram, e.g. build
+// version) stay reachable so an operator can still probe the daemon while it
+// is locked out. Unlike the auth guard this one does gate tool calls, because
+// a revoked session cannot be repaired by logging in from here.
 func NewSessionGuard(health *SessionHealth, bypassTools []string) mcp.Middleware {
 	bypass := make(map[string]struct{}, len(bypassTools))
 	for _, name := range bypassTools {
@@ -42,4 +43,22 @@ func NewSessionGuard(health *SessionHealth, bypassTools []string) mcp.Middleware
 			return next(ctx, method, req)
 		}
 	}
+}
+
+// isBypassed reports whether a tools/call request targets a tool in the
+// allowlist. Returns false for any non-tools/call method, malformed
+// requests, or tools not in the allowlist.
+func isBypassed(method string, req mcp.Request, bypass map[string]struct{}) bool {
+	if method != methodCallTool || len(bypass) == 0 || req == nil {
+		return false
+	}
+
+	call, ok := req.(*mcp.CallToolRequest)
+	if !ok || call == nil || call.Params == nil {
+		return false
+	}
+
+	_, exempt := bypass[call.Params.Name]
+
+	return exempt
 }

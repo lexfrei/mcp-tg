@@ -39,7 +39,7 @@ func TestRegisterTools(t *testing.T) {
 
 	client := testutil.NoopClient{}
 	registry := tools.BoolFieldRegistry{}
-	registerTools(server, client, registry, "/tmp/mcp-tg/downloads", nil)
+	registerTools(server, client, registry, nil, "/tmp/mcp-tg/downloads", nil)
 
 	// Sample several tools spread across registration phases. If any of
 	// these is missing, someone registered the tool via mcp.AddTool instead
@@ -176,11 +176,14 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 	ss.Wait()
 }
 
-// TestHeadlessLoginRequired_ActionableMessage pins that a headless startup auth
-// failure is reported with the interactive-login fix, not the misleading raw
-// "TELEGRAM_PHONE is required" that gotd surfaces.
+// TestHeadlessLoginRequired_ActionableMessage pins that a headless startup
+// login failure is reported with the interactive-login fix rather than the
+// bare "needs the phone", which reads like a request for one more environment
+// variable on a daemon that cannot be prompted at all.
 func TestHeadlessLoginRequired_ActionableMessage(t *testing.T) {
-	cause := errors.New("auth flow: get phone: TELEGRAM_PHONE is required for authentication")
+	cause := errors.Mark(
+		errors.New("telegram login needs the phone and nothing configured supplies it"),
+		tgclient.ErrLoginInputRequired)
 
 	err := headlessLoginRequired(cause)
 
@@ -219,10 +222,7 @@ func TestMCPDevice_IdentifiesAsMCPTG(t *testing.T) {
 // surface unchanged (transient network / server errors re-login cannot fix).
 func TestLoginWouldFix(t *testing.T) {
 	fixable := []error{
-		tgclient.ErrPhoneRequired,
-		tgclient.ErrPasswordRequired,
-		tgclient.ErrNoAuthCode,
-		tgclient.ErrElicitDeclined,
+		tgclient.ErrLoginInputRequired,
 		errors.Wrap(tgerr.New(401, codeAuthKeyUnregistered), "authentication failed"),
 	}
 	for _, err := range fixable {

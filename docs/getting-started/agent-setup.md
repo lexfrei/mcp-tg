@@ -43,7 +43,7 @@ If the user's usage is unclear, ask how many MCP clients or parallel sessions th
 claude mcp add mcp-tg --env TELEGRAM_APP_ID=<api_id> --env TELEGRAM_APP_HASH=<api_hash> -- mcp-tg
 ```
 
-Done. On the first tool call the server asks for the phone number and login code through the client (MCP elicitation) and stores the session in the OS keychain. Tell the user to expect that prompt; the code arrives in their Telegram app. If the user prefers the 2FA password never to pass through the MCP client, have them run `mcp-tg login` in a terminal first — see [Authentication](authentication.md).
+Done. On the first tool call that needs the account, the server asks for the phone number and login code through the client and stores the session in the OS keychain. Tell the user to expect that prompt; the code arrives in their Telegram app. If the user prefers the 2FA password never to pass through the MCP client, have them run `mcp-tg login` in a terminal first — see [Authentication](authentication.md).
 
 ### 4b. Shared daemon setup
 
@@ -75,6 +75,6 @@ Never suggest `sudo brew services start`: a root LaunchDaemon reads the System k
 claude mcp list
 ```
 
-`mcp-tg` should report connected. Then call the `tg_server_version` tool — it answers with the build version. On the stdio path the very first tool call is also what triggers the login prompt, so run the verification while the user is present.
+`mcp-tg` should report connected. Then call the `tg_server_version` tool — it answers with the build version, and it answers whether or not anyone is logged in, which is what makes it a server check rather than an account one. To reach the account, call `tg_profile_get`: on the stdio path a tool that needs the account is what triggers the login prompt, so run that one while the user is present.
 
 If something fails, [Configuration](configuration.md) lists every environment variable and [Authentication](authentication.md) covers session storage and revoked-session recovery.

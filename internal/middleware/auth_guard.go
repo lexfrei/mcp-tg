@@ -8,25 +8,25 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// ErrNotAuthenticated is returned when a tool is called before authentication completes.
-var ErrNotAuthenticated = errors.New("server is still authenticating with Telegram, please retry shortly")
+// ErrNotAuthenticated is returned for a resource or prompt requested before
+// the Telegram login completes. It names the way out, because nothing else
+// will: a tool call logs in, and a terminal login always works.
+var ErrNotAuthenticated = errors.New(
+	"not logged in to Telegram yet — call any Telegram tool to log in " +
+		"(the client will prompt for the phone and code), or run `mcp-tg login` in a terminal")
 
-// NewAuthGuard returns a middleware that blocks tool/resource calls until
-// the provided channel is closed (signaling authentication is complete).
-// Protocol methods (initialize, ping, etc.) are always allowed through.
+// NewAuthGuard returns a middleware that holds back resource reads and prompt
+// expansions until the provided channel is closed, signalling that the
+// Telegram login finished. Protocol methods (initialize, ping, etc.) are
+// always allowed through.
 //
-// bypassTools is an allowlist of tool names that may be invoked even before
-// authentication completes — for tools that read only server-internal state
-// (build metadata, etc.) and never touch the Telegram API.
-func NewAuthGuard(authDone <-chan struct{}, bypassTools []string) mcp.Middleware {
-	bypass := make(map[string]struct{}, len(bypassTools))
-	for _, name := range bypassTools {
-		bypass[name] = struct{}{}
-	}
-
+// Tool calls are NOT held back: the login itself runs inside a tool call, so
+// blocking them here would leave no way to log in. Tools that need an account
+// go through the login gate instead, which prompts and then runs them.
+func NewAuthGuard(authDone <-chan struct{}) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
-			if requiresAuth(method) && !isBypassed(method, req, bypass) {
+			if method != methodCallTool && requiresAuth(method) {
 				select {
 				case <-authDone:
 				default:
@@ -49,22 +49,4 @@ func requiresAuth(method string) bool {
 	return strings.HasPrefix(method, "tools/") ||
 		strings.HasPrefix(method, "resources/") ||
 		strings.HasPrefix(method, "prompts/")
-}
-
-// isBypassed reports whether a tools/call request targets a tool in the
-// allowlist. Returns false for any non-tools/call method, malformed
-// requests, or tools not in the allowlist.
-func isBypassed(method string, req mcp.Request, bypass map[string]struct{}) bool {
-	if method != methodCallTool || len(bypass) == 0 || req == nil {
-		return false
-	}
-
-	call, ok := req.(*mcp.CallToolRequest)
-	if !ok || call == nil || call.Params == nil {
-		return false
-	}
-
-	_, exempt := bypass[call.Params.Name]
-
-	return exempt
 }

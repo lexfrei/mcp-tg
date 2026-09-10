@@ -32,7 +32,7 @@ Get an app id and hash from [my.telegram.org](https://my.telegram.org) — the p
 claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
 ```
 
-On the first tool call the server asks for the phone and login code right in the client, and the session lands in the OS keychain. To keep the 2FA password out of the MCP client, run `mcp-tg login` in a terminal once instead — see [Authentication](https://mcp-tg.lexfrei.dev/getting-started/authentication/).
+On the first tool call that needs the account, the server asks for the phone and login code right in the client, and the session lands in the OS keychain. To keep the 2FA password out of the MCP client, run `mcp-tg login` in a terminal once instead — see [Authentication](https://mcp-tg.lexfrei.dev/getting-started/authentication/).
 
 Running many agent sessions or several MCP clients? A server process per session adds up — run one shared HTTP daemon instead: `brew services start mcp-tg`, then `claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user`. See [Transport modes](https://mcp-tg.lexfrei.dev/building/#transport-modes).
 

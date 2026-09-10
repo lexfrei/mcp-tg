@@ -19,11 +19,11 @@ func noopResult(_ context.Context, _ string, _ mcp.Request) (mcp.Result, error) 
 	return &mcp.CallToolResult{}, errNoop
 }
 
-func TestAuthGuard_BlocksBeforeAuth(t *testing.T) {
+func TestAuthGuard_BlocksResourcesBeforeAuth(t *testing.T) {
 	authDone := make(chan struct{})
-	handler := NewAuthGuard(authDone, nil)(noopResult)
+	handler := NewAuthGuard(authDone)(noopResult)
 
-	_, err := handler(context.Background(), "tools/call", nil)
+	_, err := handler(context.Background(), "resources/read", nil)
 	if !errors.Is(err, ErrNotAuthenticated) {
 		t.Errorf("got error %v, want ErrNotAuthenticated", err)
 	}
@@ -33,9 +33,9 @@ func TestAuthGuard_AllowsAfterAuth(t *testing.T) {
 	authDone := make(chan struct{})
 	close(authDone)
 
-	handler := NewAuthGuard(authDone, nil)(noopResult)
+	handler := NewAuthGuard(authDone)(noopResult)
 
-	_, err := handler(context.Background(), "tools/call", nil)
+	_, err := handler(context.Background(), "resources/read", nil)
 	if !errors.Is(err, errNoop) {
 		t.Errorf("got error %v, want errNoop (handler invoked)", err)
 	}
@@ -44,7 +44,7 @@ func TestAuthGuard_AllowsAfterAuth(t *testing.T) {
 func TestAuthGuard_AllowsProtocolMethods(t *testing.T) {
 	authDone := make(chan struct{}) // never closed
 
-	handler := NewAuthGuard(authDone, nil)(noopResult)
+	handler := NewAuthGuard(authDone)(noopResult)
 
 	_, err := handler(context.Background(), "initialize", nil)
 	if !errors.Is(err, errNoop) {
@@ -52,38 +52,24 @@ func TestAuthGuard_AllowsProtocolMethods(t *testing.T) {
 	}
 }
 
-// Tools listed in the bypass slice must reach the handler before auth.
-// This lets read-only server-meta tools (build version, etc.) work during
-// auth troubleshooting, when blocking them is exactly the wrong UX.
-func TestAuthGuard_BypassedToolReachesHandlerBeforeAuth(t *testing.T) {
+// Every tool call reaches the handler while the login is pending, including
+// one that needs an account. Blocking here would be blocking the only path
+// that can log in: the login runs inside a tool call, and the login gate is
+// what decides whether the tool itself gets to run.
+func TestAuthGuard_ToolCallsPassWhilePending(t *testing.T) {
 	authDone := make(chan struct{}) // never closed
 
-	handler := NewAuthGuard(authDone, []string{bypassToolName})(noopResult)
+	handler := NewAuthGuard(authDone)(noopResult)
 
-	req := &mcp.CallToolRequest{
-		Params: &mcp.CallToolParamsRaw{Name: bypassToolName},
-	}
+	for _, name := range []string{bypassToolName, nonBypassToolName} {
+		req := &mcp.CallToolRequest{
+			Params: &mcp.CallToolParamsRaw{Name: name},
+		}
 
-	_, err := handler(context.Background(), "tools/call", req)
-	if !errors.Is(err, errNoop) {
-		t.Errorf("got error %v, want errNoop (bypassed tool must reach handler)", err)
-	}
-}
-
-// Non-bypassed tools are still blocked before auth even when other tools
-// are bypassed.
-func TestAuthGuard_NonBypassedToolStillBlocked(t *testing.T) {
-	authDone := make(chan struct{})
-
-	handler := NewAuthGuard(authDone, []string{bypassToolName})(noopResult)
-
-	req := &mcp.CallToolRequest{
-		Params: &mcp.CallToolParamsRaw{Name: nonBypassToolName},
-	}
-
-	_, err := handler(context.Background(), "tools/call", req)
-	if !errors.Is(err, ErrNotAuthenticated) {
-		t.Errorf("got error %v, want ErrNotAuthenticated", err)
+		_, err := handler(context.Background(), "tools/call", req)
+		if !errors.Is(err, errNoop) {
+			t.Errorf("%s: got error %v, want errNoop (the call must reach the handler)", name, err)
+		}
 	}
 }
 

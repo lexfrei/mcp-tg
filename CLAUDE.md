@@ -69,7 +69,7 @@ internal/telegram/           Telegram abstraction layer
   wrapper.go                 gotd/td implementation of Client
   wrapper_helpers.go         Helper functions for wrapper (extractors, converters)
   convert.go                 tg types → domain types conversion
-  auth.go                    Auth flow with MCP elicitation support
+  login.go                   Login: a step-wise Telegram login driven one answer at a time
   resolve.go                 Peer resolution (@username, numeric ID, t.me/ URLs, invite links)
   peer_cache.go              Thread-safe cache for peer access hashes
   errors.go                  AsServerError / IsServerError — the 500 class Telegram answers with when its own backend failed
@@ -87,7 +87,8 @@ internal/tools/              MCP tool handlers (78 tools)
   file_roots.go              File path validation against the TELEGRAM_FILE_ROOTS allowlist
   progress.go                Progress notification helper
   result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
-  register.go                tools.AddTool wrapper (records bool fields into the coercer registry) + inputSchemaWithEnum for enum-constrained input schemas
+  register.go                tools.AddTool wrapper (records bool fields into the coercer registry, applies the LoginGate) + inputSchemaWithEnum for enum-constrained input schemas
+  login_gate.go              LoginGate: runs the login on the first tool call that needs an account, by elicitation or input requests
   mock_test.go               Mock telegram.Client for tests
 internal/resources/          MCP resources (4 resources)
 internal/prompts/            MCP prompts (3 prompts)
@@ -106,7 +107,7 @@ internal/testutil/           NoopClient for registration tests
    - `NewXxxHandler(client telegram.Client) mcp.ToolHandlerFor[XxxParams, XxxResult]`
    - `XxxTool() *mcp.Tool` with appropriate `Annotations`
 2. Create `internal/tools/xxx_test.go` (TDD: tests first)
-3. Register in `cmd/mcp-tg/main.go` `registerTools()` via `tools.AddTool(server, registry, ...)` — NOT `mcp.AddTool`. The wrapper reflects over the Params struct, records every `bool`/`*bool` field into the registry consumed by the bool-coercion middleware, and then delegates to the SDK. Bypassing it silently disables coercion for the new tool's bool params.
+3. Register in `cmd/mcp-tg/main.go` `registerTools()` via `tools.AddTool(server, registry, gate, ...)` — NOT `mcp.AddTool`. The wrapper reflects over the Params struct, records every `bool`/`*bool` field into the registry consumed by the bool-coercion middleware, wraps the handler in the login gate, and then delegates to the SDK. Bypassing it silently disables coercion for the new tool's bool params AND leaves it unable to log in.
 4. Add mock method in `internal/tools/mock_test.go`
 5. Add noop method in `internal/testutil/noop_client.go`
 
@@ -152,9 +153,23 @@ Both are handled transparently. Wrapper checks `peer.Type == PeerChannel` and us
 
 ### Auth flow
 
-Two entry points. The server auth uses a cascade: env var → MCP elicitation → error (no stdin fallback — stdin is the MCP protocol). The `mcp-tg login` subcommand (`login.go`) is a separate interactive TTY login (phone/code/2FA read from the terminal, no MCP surface) — the only way to log in a headless daemon, which cannot elicit. On a headless startup with no valid session the auth error is rewritten (`headlessLoginRequired`) to point at `mcp-tg login` instead of gotd's misleading "TELEGRAM_PHONE is required".
+Two entry points. `mcp-tg login` (`login.go`) is an interactive TTY login (phone/code/2FA read from the terminal, no MCP surface) with its own staged session storage. The server logs in lazily, from the first tool call that needs an account.
 
-Auth guard middleware blocks tool/resource/prompt calls until auth completes. After auth, a revoked session (`AUTH_KEY_UNREGISTERED` and friends, detected by `auth_revoked.go`) trips `SessionHealth`, and `NewSessionGuard` fast-fails tool calls with `ErrSessionRevoked` (explicit: logged out, run `mcp-tg login`, not fixable from the MCP client).
+**Why lazy, and why not from a handshake.** The server used to wait for `notifications/initialized` and authenticate at startup. MCP `2026-07-28` (SEP-2575) removed that handshake — a client on that revision connects with `server/discover` alone — so the wait never ended, `authenticate` never ran, and every Telegram tool answered "still authenticating" forever, saved session or not. `InitializedHandler` still exists in the SDK and still compiles; it simply never fires on the new revision. Do not reintroduce a startup path that depends on any client event.
+
+What replaced it: `startStdio` connects the stdio transport FIRST and settles the login after — `auth.sendCode` draws FLOOD_WAIT and the retry middleware sleeps the server's delay uncapped, so settling first could leave a client's `initialize` unanswered and the server looking dead. Both paths then call `login.Probe` (`Auth().Status`, one `users.getUsers(self)` RPC), then `RunUnattended` to spend whatever the environment supplies. A saved session — every start after the first — finishes there with no client involved. `settleLogin` treats only `ErrLoginInputRequired` as "keep serving"; anything else fails startup. Headless additionally exits with `headlessLoginRequired` when `loginWouldFix` says a login is the remedy, unchanged from before.
+
+**Only `authorized` is latched.** `Auth().Status` answers `(nil, err)` for a non-401; reading that as unauthorized would turn a network blip at startup into a phone prompt for a perfectly valid session. `Login.probeLocked` latches `probed` only on a definitive answer, so the next attempt probes again.
+
+**The machine** (`internal/telegram/login.go`) reproduces gotd's `Flow.Run` step-wise: `SendCode` → `SignIn` → `Password`, with `*tg.AuthSentCodeSuccess` short-circuiting only when its `Authorization` is a `*tg.AuthAuthorization` (the other shape, `*tg.AuthAuthorizationSignUpRequired`, is a phone with no account and is refused — latching it would arm the revocation guard and misreport the next 401 as a revoked session), `auth.ErrPasswordAuthNeeded` latching the password step, `*auth.SignUpRequired` refused as `ErrSignUpNotSupported`, `PHONE_CODE_EXPIRED` resending against the stored hash, and `PHONE_CODE_INVALID`/`ErrPasswordInvalid` re-asking their own step. Three rejections on a step reset the flow (`ErrTooManyLoginAttempts`) so a caller retrying in a loop stops short of `FLOOD_WAIT`/`PHONE_PASSWORD_FLOOD`. `LoginAPI` is the seam `*auth.Client` satisfies and tests script; gotd's own `auth.FlowClient` lacks `Status`, hence a local interface. Env credentials are each tried ONCE, the phone included: a login code is single-use, and retrying a stale `TELEGRAM_AUTH_CODE` would loop on `PHONE_CODE_INVALID` without ever asking a human. `reset()` does not un-use them either — it runs precisely because that phone led nowhere, so re-sending to it would repeat the dead end.
+
+**The gate** (`internal/tools/login_gate.go`) is applied by `tools.AddTool` around every handler except `ServerVersionToolName`. It lives in the tool handler, NOT in a middleware, because only a result returned from the tool dispatch can carry an input request: `handleMultiRoundTripResult` stamps `resultType` inside `Server.callTool`, deeper than every receiving middleware, and both the field and its setter are unexported. A middleware returning `InputRequests` would put them on the wire without `resultType`.
+
+**Two ways of asking, chosen by `req.ProtocolVersion()`.** Below `2026-07-28`, `ServerSession.Elicit` inside the one call, looping until the login is done. From `2026-07-28`, one `InputRequests` entry per call with `RequestState` naming the step; the client answers and retries the whole `tools/call`. Both are needed: `assertServerInitiatedRequestAllowed` refuses `Elicit` on the new revision, and the SDK's `serverMultiRoundTripMiddleware` covers exactly ONE round for old clients, which is short of the three a Telegram login needs — a second `InputRequests` reaches a legacy client as `{"content":[], "inputRequests":{…}}`, a successful EMPTY result, silently truncating the login. `supportsMultiRoundTrip` mirrors the SDK's unexported test including its default (an absent version means the newest): guessing "legacy" for a new client turns the prompt into a hard error, while the reverse merely falls into the shim.
+
+Everything that is not an accepted, non-empty string — decline, cancel, an `accept` with nil `Content` (the SDK skips validation there), a bad type — is `ErrLoginDeclined`, a tool error. Re-asking on empty would loop against a client that answers instantly. Phone and code are trimmed; the password is passed verbatim, as `mcp-tg login` and gotd do.
+
+**Guards.** The auth guard holds back `resources/*` and `prompts/*` until `authDone` closes and lets `tools/call` through — blocking it would block the only path that can log in. `SessionHealth` is armed only when the login completes, so the expected pre-login 401 is not read as a revocation; after a runtime revocation the session guard fast-fails tool calls with `ErrSessionRevoked` and the login machine is unreachable by design. Re-arming in-process (a `SessionHealth` reset plus a machine reset) is separate work: restart is the only recovery today.
 
 ### Session storage (`storage.go`)
 
@@ -168,10 +183,10 @@ Secure by default: the session lives in the OS keychain via `github.com/lexfrei/
 
 `startServer` (`cmd/mcp-tg/main.go`) dispatches on `cfg.HTTPOnly` (`MCP_HTTP_ONLY`):
 
-- Default (`startStdio`): stdio is the primary transport, one process per client, plus an optional additional HTTP transport when `MCP_HTTP_PORT` is set. Auth elicitation runs through the stdio session, so this mode can do an interactive login.
-- Headless (`startHeadless`, requires `MCP_HTTP_ONLY=true` + `MCP_HTTP_PORT`): HTTP is the only transport, no stdio peer. One process and one Telegram connection serve many clients — the shared-daemon mode. Auth cannot elicit (no client session to prompt), so it depends on a valid persisted session file or env-var credentials.
+- Default (`startStdio`): stdio is the primary transport, one process per client, plus an optional additional HTTP transport when `MCP_HTTP_PORT` is set. The login prompts through the connected client, so this mode can log in interactively.
+- Headless (`startHeadless`, requires `MCP_HTTP_ONLY=true` + `MCP_HTTP_PORT`): HTTP is the only transport, no stdio peer. One process and one Telegram connection serve many clients — the shared-daemon mode. It prompts nobody (there is no one client to ask), so it depends on a persisted session or env-var credentials and exits with `headlessLoginRequired` otherwise.
 
-Both paths build the server through `buildServer`. The headless path passes `onInit=nil` deliberately: the stdio path's `InitializedHandler` closes a shared channel, which would panic on the second HTTP client's `initialize` (close of a closed channel) since headless HTTP serves many clients.
+Both paths build the server through `buildServer`, which takes the `*tgclient.Login` and hands it to every tool via `tools.NewLoginGate`. Tests pass `nil` there and get unwrapped handlers.
 
 ### Resource subscriptions
 

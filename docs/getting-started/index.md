@@ -51,6 +51,6 @@ brew install lexfrei/tap/mcp-tg
 claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
 ```
 
-On the first tool call the server asks for the phone and login code right in the client, and the session lands in the OS keychain (see [Authentication](authentication.md)).
+On the first tool call that needs the account, the server asks for the phone and login code right in the client, and the session lands in the OS keychain (see [Authentication](authentication.md)).
 
 Running many agent sessions or several MCP clients? Run one shared HTTP daemon instead of a process each — see [Installation](installation.md#shared-daemon-many-sessions).

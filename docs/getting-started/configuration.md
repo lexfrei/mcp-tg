@@ -6,11 +6,11 @@
 | --- | --- | --- | --- |
 | `TELEGRAM_APP_ID` | API app_id from my.telegram.org | — | Yes |
 | `TELEGRAM_APP_HASH` | API app_hash from my.telegram.org | — | Yes |
-| `TELEGRAM_PHONE` | Phone number (E.164 format) | — | No (prompted via elicitation) |
-| `TELEGRAM_PASSWORD` | 2FA password | — | No (prompted via elicitation) |
+| `TELEGRAM_PHONE` | Phone number (E.164 format) | — | No (prompted in the client on the first tool call) |
+| `TELEGRAM_PASSWORD` | 2FA password | — | No (prompted in the client on the first tool call) |
 | `TELEGRAM_SESSION_FILE` | Session location: keychain account key by default, file path with insecure storage | `~/.mcp-tg/session.json` | No |
 | `TELEGRAM_SESSION_INSECURE` | Store the session in a plaintext file instead of the OS keychain | `false` | No |
-| `TELEGRAM_AUTH_CODE` | One-time auth code | — | No (prompted via elicitation) |
+| `TELEGRAM_AUTH_CODE` | One-time auth code | — | No (prompted in the client on the first tool call) |
 | `TELEGRAM_DOWNLOAD_DIR` | Media download directory | `mcp-tg/downloads` under the OS temp dir (see below) | No |
 | `TELEGRAM_FILE_ROOTS` | Directory allowlist for tools that read or write local files | unset (no restriction) | No |
 | `MCP_HTTP_PORT` | Streamable HTTP transport port | disabled | No |

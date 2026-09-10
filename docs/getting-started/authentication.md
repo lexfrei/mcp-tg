@@ -1,17 +1,21 @@
 # Authentication
 
-Authentication uses a cascade: environment variable, then MCP elicitation (the client prompts you), then error.
+The server logs in on the first tool call that needs an account. Each credential comes from its environment variable when you set one, and is asked for in your MCP client when you did not.
 
 **First run:**
 
 1. Set `TELEGRAM_APP_ID` and `TELEGRAM_APP_HASH` (always required)
-2. Optionally set `TELEGRAM_PHONE` — if not set, the server asks via elicitation
+2. Call any Telegram tool. Set `TELEGRAM_PHONE` beforehand, or answer the prompt
 3. Telegram sends a code to your device
-4. Optionally set `TELEGRAM_AUTH_CODE` — if not set, the server asks via elicitation
-5. If 2FA is enabled, optionally set `TELEGRAM_PASSWORD` — or the server asks
+4. Set `TELEGRAM_AUTH_CODE` beforehand, or answer the prompt
+5. If 2FA is enabled, set `TELEGRAM_PASSWORD` beforehand, or answer the prompt
 6. The session is saved to the OS keychain (or a file with insecure storage — see below)
 
-**Subsequent runs:** the stored session is loaded automatically, no auth needed.
+**Subsequent runs:** the stored session is loaded automatically, no login needed. The server checks it as soon as it starts, so nothing is asked and no client has to be connected.
+
+A one-time code is worth setting only when you can start the server within its lifetime. Each of `TELEGRAM_PHONE`, `TELEGRAM_AUTH_CODE` and `TELEGRAM_PASSWORD` is tried once, and a rejected value falls through to the prompt rather than being retried — so after three wrong codes you are asked for the phone again, even when the environment holds one.
+
+How the prompt reaches you depends on your client's MCP protocol revision, and the server picks the way that revision allows. Before `2026-07-28` it asks mid-call, the way it always has. From `2026-07-28` the call returns asking for one value, your client supplies it and repeats the call, until the login is done. Either way you answer in the client and the tool then runs.
 
 ## Logging in
 
@@ -35,7 +39,7 @@ docker run --rm -it \
   ghcr.io/lexfrei/mcp-tg:latest login
 ```
 
-The login code is delivered by Telegram at runtime, so login is inherently interactive: it needs a real terminal and refuses to run on piped stdin (`docker run` without `-t`). The server's own env → MCP-elicitation cascade still works for a stdio server that prompts through its connected client, but `mcp-tg login` is the only path that works for the headless HTTP daemon.
+The login code is delivered by Telegram at runtime, so login is inherently interactive: it needs a real terminal and refuses to run on piped stdin (`docker run` without `-t`). A stdio server prompts through its connected client, so it needs none of this. `mcp-tg login` is for the headless HTTP daemon, which prompts nobody.
 
 ## Session storage
 

@@ -217,6 +217,12 @@ jobs:
     name: Notify PR
     runs-on: ubuntu-latest
     needs: merge-manifests
+    # A pull_request event from a fork gets a read-only GITHUB_TOKEN whatever
+    # this file declares, so the two write steps below are skipped there. They
+    # are guarded per STEP rather than on the job: a skipped job reports no
+    # check at all, and a required check that never reports leaves the merge
+    # button blocked forever. This job is not required today, and guarding it
+    # this way keeps making it required a safe choice rather than a trap.
     steps:
       - name: Check if first build
         id: first_build
@@ -234,7 +240,7 @@ jobs:
             return hasLabel ? 'false' : 'true';
 
       - name: Add label
-        if: steps.first_build.outputs.result == 'true'
+        if: steps.first_build.outputs.result == 'true' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
@@ -246,7 +252,7 @@ jobs:
             })
 
       - name: Comment on PR
-        if: steps.first_build.outputs.result == 'true'
+        if: steps.first_build.outputs.result == 'true' && github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |

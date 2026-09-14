@@ -8,7 +8,7 @@ require (
 	github.com/gotd/log/logzap v0.1.1
 	github.com/gotd/td v0.161.0
 	github.com/lexfrei/keychain v1.2.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0

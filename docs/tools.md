@@ -56,7 +56,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_groups_invite_link_get` — Get the chat's primary invite link, without creating one
 - `tg_groups_invite_link_create` — Create an additional invite link, leaving the primary one alone
 - `tg_groups_invite_link_list` — List the invite links this account created in a chat
-- `tg_groups_invite_link_revoke` — Revoke invite link
+- `tg_groups_invite_link_revoke` — Revoke an invite link, reporting the replacement if Telegram mints one
 - `tg_groups_members_list` — List group members
 - `tg_groups_admin_set` — Promote or demote an admin with specific rights
 - `tg_groups_slowmode` — Set the slowmode delay

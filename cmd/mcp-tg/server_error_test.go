@@ -308,3 +308,30 @@ func TestServerError_ResentQueryIsNotMarkedUnresent(t *testing.T) {
 		t.Errorf("a query that was resent must not be marked as held back, got: %v", err)
 	}
 }
+
+// The revoke is the one held-back request that leaves no duplicate behind. It
+// is held back because a resend destroys the answer instead: Telegram reports
+// the replacement it minted for a revoked primary link only to the attempt that
+// caused it, so a second attempt would come back empty and the revoke tool
+// would report no replacement for a chat that just got one.
+func TestServerError_DoesNotResendTheInviteRevoke(t *testing.T) {
+	var buf bytes.Buffer
+
+	interdcErr := interdcError()
+	next := &recordingInvoker{errs: []error{interdcErr}}
+
+	mw := newServerErrorMiddleware(slog.New(slog.NewTextHandler(&buf, nil)), testServerErrorDelay)
+	err := mw(next)(context.Background(), &tg.MessagesEditExportedChatInviteRequest{
+		Peer:    &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1},
+		Link:    "https://t.me/+example",
+		Revoked: true,
+	}, bin.Decoder(nil))
+
+	if len(next.inputs) != 1 {
+		t.Errorf("the revoke must be sent once, got %d attempts", len(next.inputs))
+	}
+
+	if !errors.Is(err, telegram.ErrNotResent) {
+		t.Fatalf("a query held back from the resend must be marked, got: %v", err)
+	}
+}

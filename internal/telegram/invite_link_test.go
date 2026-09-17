@@ -388,3 +388,87 @@ func TestListInviteLinks_RefusesAUserPeer(t *testing.T) {
 		t.Error("a user peer must be refused before the round trip")
 	}
 }
+
+// revokeInviteInvoker captures the edit request and answers with a canned
+// reply, so a test can drive both shapes of messages.ExportedChatInvite.
+type revokeInviteInvoker struct {
+	req      *tg.MessagesEditExportedChatInviteRequest
+	response tg.MessagesExportedChatInviteClass
+}
+
+func (r *revokeInviteInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	req, ok := input.(*tg.MessagesEditExportedChatInviteRequest)
+	if !ok {
+		return errors.Wrapf(errUnexpectedRequest, "%T", input)
+	}
+
+	r.req = req
+
+	return encodeResp(r.response, output)
+}
+
+func newRevokeInviteWrapper(response tg.MessagesExportedChatInviteClass) (*Wrapper, *revokeInviteInvoker) {
+	invoker := &revokeInviteInvoker{response: response}
+
+	return NewWrapper(tg.NewClient(invoker)), invoker
+}
+
+// Revoking the chat's primary link makes Telegram mint a new one on the spot.
+// Discarding that reply leaves the caller believing the chat has no link.
+func TestRevokeInviteLink_ReportsTheReplacement(t *testing.T) {
+	const replacement = "https://t.me/+replacement"
+
+	wrap, invoker := newRevokeInviteWrapper(&tg.MessagesExportedChatInviteReplaced{
+		Invite:    &tg.ChatInviteExported{Link: invitePrimaryLink, Revoked: true},
+		NewInvite: &tg.ChatInviteExported{Link: replacement, Permanent: true},
+	})
+
+	got, err := wrap.RevokeInviteLink(t.Context(), inviteChannelPeer(), invitePrimaryLink)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got != replacement {
+		t.Errorf("replacement = %q, want %q", got, replacement)
+	}
+
+	if !invoker.req.Revoked {
+		t.Error("the request must ask for a revoke")
+	}
+
+	if invoker.req.Link != invitePrimaryLink {
+		t.Errorf("link = %q, want %q", invoker.req.Link, invitePrimaryLink)
+	}
+}
+
+// A non-primary link is revoked without a replacement, and reporting the
+// revoked link itself would read as a live one.
+func TestRevokeInviteLink_PlainRevokeReportsNoReplacement(t *testing.T) {
+	wrap, _ := newRevokeInviteWrapper(&tg.MessagesExportedChatInvite{
+		Invite: &tg.ChatInviteExported{Link: invitePrimaryLink, Revoked: true},
+	})
+
+	got, err := wrap.RevokeInviteLink(t.Context(), inviteChannelPeer(), invitePrimaryLink)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got != "" {
+		t.Errorf("replacement = %q, want none", got)
+	}
+}
+
+func TestRevokeInviteLink_RefusesAUserPeer(t *testing.T) {
+	wrap, invoker := newRevokeInviteWrapper(&tg.MessagesExportedChatInvite{
+		Invite: &tg.ChatInviteExported{Link: invitePrimaryLink},
+	})
+
+	_, err := wrap.RevokeInviteLink(t.Context(), InputPeer{Type: PeerUser, ID: 42}, invitePrimaryLink)
+	if !errors.Is(err, ErrNotAGroupPeer) {
+		t.Fatalf("error = %v, want ErrNotAGroupPeer", err)
+	}
+
+	if invoker.req != nil {
+		t.Error("a user peer must be refused before the round trip")
+	}
+}

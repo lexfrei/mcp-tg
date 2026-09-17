@@ -66,10 +66,19 @@ type GroupsInviteLinkRevokeParams struct {
 	Link string `json:"link" jsonschema:"Invite link to revoke"`
 }
 
-// GroupsInviteLinkRevokeResult is the output of the tg_groups_invite_link_revoke tool.
+// GroupsInviteLinkRevokeResult is the output of the tg_groups_invite_link_revoke
+// tool. NewLink is set only when the revoked link was the chat's primary one:
+// Telegram mints a replacement on the spot, and its absence from the reply
+// would leave the caller believing the chat has no link at all.
+//
+// Only the call that performed the replacement is told about it, so a caller
+// that retries a revoke whose answer it lost gets an empty NewLink for a chat
+// that does have a new primary link. tg_groups_invite_link_get is the
+// authoritative read for that.
 type GroupsInviteLinkRevokeResult struct {
-	Peer   string `json:"peer"`
-	Output string `json:"output"`
+	Peer    string `json:"peer"`
+	NewLink string `json:"newLink,omitempty"`
+	Output  string `json:"output"`
 }
 
 // NewGroupsInviteLinkRevokeHandler creates a handler for the tg_groups_invite_link_revoke tool.
@@ -97,15 +106,21 @@ func NewGroupsInviteLinkRevokeHandler(
 				telegramErr("failed to resolve peer", err)
 		}
 
-		err = client.RevokeInviteLink(ctx, peer, params.Link)
+		replacement, err := client.RevokeInviteLink(ctx, peer, params.Link)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsInviteLinkRevokeResult{},
 				telegramErr("failed to revoke invite link", err)
 		}
 
+		output := "Revoked invite link for " + params.Peer
+		if replacement != "" {
+			output += "; Telegram replaced the chat's primary link with " + replacement
+		}
+
 		return nil, GroupsInviteLinkRevokeResult{
-			Peer:   params.Peer,
-			Output: "Revoked invite link for " + params.Peer,
+			Peer:    params.Peer,
+			NewLink: replacement,
+			Output:  output,
 		}, nil
 	}
 }

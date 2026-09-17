@@ -67,15 +67,40 @@ func (w *Wrapper) GetInviteLink(ctx context.Context, peer InputPeer) (string, er
 	return exported.Link, nil
 }
 
-// RevokeInviteLink revokes an invite link.
-func (w *Wrapper) RevokeInviteLink(ctx context.Context, peer InputPeer, link string) error {
-	_, err := w.api.MessagesEditExportedChatInvite(ctx, &tg.MessagesEditExportedChatInviteRequest{
+// RevokeInviteLink revokes an invite link and returns the REPLACEMENT Telegram
+// minted, or an empty string when it minted none.
+//
+// Revoking a chat's PRIMARY link makes the server create a new one on the spot
+// and answer messages.exportedChatInviteReplaced. A caller told nothing about
+// that is left believing the chat now has no link, while GetInviteLink would
+// report one they have never seen.
+func (w *Wrapper) RevokeInviteLink(
+	ctx context.Context, peer InputPeer, link string,
+) (string, error) {
+	if peer.Type == PeerUser {
+		return "", ErrNotAGroupPeer
+	}
+
+	result, err := w.api.MessagesEditExportedChatInvite(ctx, &tg.MessagesEditExportedChatInviteRequest{
 		Peer:    InputPeerToTG(peer),
 		Link:    link,
 		Revoked: true,
 	})
+	if err != nil {
+		return "", errors.Wrap(err, "revoking invite link")
+	}
 
-	return errors.Wrap(err, "revoking invite link")
+	replaced, ok := result.(*tg.MessagesExportedChatInviteReplaced)
+	if !ok {
+		return "", nil
+	}
+
+	replacement, ok := inviteLinkFrom(replaced.NewInvite)
+	if !ok {
+		return "", nil
+	}
+
+	return replacement.Link, nil
 }
 
 // InviteLink is one exported chat invite. Date and ExpireDate are unix

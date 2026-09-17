@@ -118,11 +118,20 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // invite link beyond the one the caller was handed, which they never see and so
 // can never revoke.
 //
-// updateDialogFilter is the one entry that is not creation-only: the same
+// updateDialogFilter is not creation-only either: the same
 // request edits and deletes a folder too, and those carry an explicit id, so
 // they are idempotent and lose the resend for nothing. Held back anyway,
 // because the type is what a switch can see, and what it costs them is a
 // resend on a call that states a final value.
+//
+// editExportedChatInvite is held back for a different reason again: a resend
+// leaves no duplicate, since the second attempt revokes an already-revoked
+// link, but it DESTROYS the answer. Revoking a chat's primary link makes the
+// server mint a replacement and report it as exportedChatInviteReplaced, and
+// only the attempt that performed the replacement carries it. A resend answers
+// about a link that is already revoked, so tg_groups_invite_link_revoke would
+// report no replacement for a chat that just got one, which is precisely what
+// its newLink field promises cannot happen.
 //
 // This is a DENY-LIST of what has been found, not a proof that nothing else
 // qualifies: MTProto marks no request as non-idempotent, so nothing here can be
@@ -148,7 +157,8 @@ func safeToResend(input bin.Encoder) bool {
 		*tg.MessagesCreateChatRequest,
 		*tg.MessagesUpdateDialogFilterRequest,
 		*tg.PhotosUploadProfilePhotoRequest,
-		*tg.MessagesExportChatInviteRequest:
+		*tg.MessagesExportChatInviteRequest,
+		*tg.MessagesEditExportedChatInviteRequest:
 		return false
 	default:
 		return true

@@ -91,7 +91,7 @@ type GroupClient interface {
 	GetInviteLink(ctx context.Context, peer InputPeer) (string, error)
 	CreateInviteLink(ctx context.Context, peer InputPeer, opts InviteLinkOpts) (*InviteLink, error)
 	ListInviteLinks(ctx context.Context, peer InputPeer, revoked bool, limit int) ([]InviteLink, int, error)
-	RevokeInviteLink(ctx context.Context, peer InputPeer, link string) error
+	RevokeInviteLink(ctx context.Context, peer InputPeer, link string) (string, error)
 }
 
 // ChatClient handles chat management operations.

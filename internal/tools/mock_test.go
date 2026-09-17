@@ -41,6 +41,7 @@ type mockClient struct {
 	createdInvite     *telegram.InviteLink
 	inviteLinks       []telegram.InviteLink
 	inviteTotal       int
+	replacementLink   string
 	lastInviteOpts    telegram.InviteLinkOpts
 	lastInviteRevoked bool
 	lastInviteLimit   int
@@ -394,10 +395,12 @@ func (m *mockClient) ListInviteLinks(
 	return m.inviteLinks, m.inviteTotal, m.err
 }
 
-func (m *mockClient) RevokeInviteLink(_ context.Context, peer telegram.InputPeer, _ string) error {
+func (m *mockClient) RevokeInviteLink(
+	_ context.Context, peer telegram.InputPeer, _ string,
+) (string, error) {
 	m.lastPeer = peer
 
-	return m.err
+	return m.replacementLink, m.err
 }
 
 func (m *mockClient) CreateChat(_ context.Context, _ string, _ []telegram.InputPeer, _ bool) (*telegram.PeerInfo, error) {

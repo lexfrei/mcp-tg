@@ -240,3 +240,45 @@ func TestFormatInviteLinks_EmptySaysSo(t *testing.T) {
 		t.Errorf("output = %q", got)
 	}
 }
+
+func TestGroupsInviteLinkRevokeHandler_SurfacesTheNewPrimaryLink(t *testing.T) {
+	const replacement = "https://t.me/+replacement"
+
+	mock := &mockClient{peer: destPeer(), replacementLink: replacement}
+
+	_, structured, err := NewGroupsInviteLinkRevokeHandler(mock)(
+		context.Background(), nil,
+		GroupsInviteLinkRevokeParams{Peer: "@group", Link: testInviteLink},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.NewLink != replacement {
+		t.Errorf("NewLink = %q, want %q", structured.NewLink, replacement)
+	}
+
+	if !strings.Contains(structured.Output, replacement) {
+		t.Errorf("Output = %q, want it to name the replacement", structured.Output)
+	}
+}
+
+func TestGroupsInviteLinkRevokeHandler_NoReplacementLeavesTheFieldEmpty(t *testing.T) {
+	mock := &mockClient{peer: destPeer()}
+
+	_, structured, err := NewGroupsInviteLinkRevokeHandler(mock)(
+		context.Background(), nil,
+		GroupsInviteLinkRevokeParams{Peer: "@group", Link: testInviteLink},
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if structured.NewLink != "" {
+		t.Errorf("NewLink = %q, want empty", structured.NewLink)
+	}
+
+	if strings.Contains(structured.Output, "replaced") {
+		t.Errorf("Output = %q, must not claim a replacement", structured.Output)
+	}
+}

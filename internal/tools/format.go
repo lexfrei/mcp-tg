@@ -243,7 +243,10 @@ func formatDialog(dlg *telegram.Dialog) string {
 // formatInviteLinks renders an invite-link listing. Total is the server's count
 // across all pages, so it can exceed the number of rows shown.
 func formatInviteLinks(links []telegram.InviteLink, total int) string {
-	if len(links) == 0 {
+	// A page can come back empty while the server still counts links: every row
+	// was the linkless constructor. Saying "none" there would claim more than
+	// the reply supports.
+	if len(links) == 0 && total == 0 {
 		return "No invite links found"
 	}
 

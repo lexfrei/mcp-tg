@@ -241,6 +241,19 @@ func TestFormatInviteLinks_EmptySaysSo(t *testing.T) {
 	}
 }
 
+// Every row of the page was the linkless constructor, so nothing is rendered
+// while the server still counts links. Claiming none would overstate the reply.
+func TestFormatInviteLinks_EmptyPageWithATotalDoesNotClaimNone(t *testing.T) {
+	got := formatInviteLinks(nil, 7)
+	if strings.Contains(got, "No invite links found") {
+		t.Errorf("output = %q, must not claim there are none", got)
+	}
+
+	if !strings.Contains(got, "0 of 7") {
+		t.Errorf("output = %q, want it to state the server's total", got)
+	}
+}
+
 func TestGroupsInviteLinkRevokeHandler_SurfacesTheNewPrimaryLink(t *testing.T) {
 	const replacement = "https://t.me/+replacement"
 

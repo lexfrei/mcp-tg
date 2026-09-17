@@ -183,7 +183,7 @@ func NewGroupsInviteLinkCreateHandler(
 
 		return nil, GroupsInviteLinkCreateResult{
 			Invite: *invite,
-			Output: "Created invite link: " + invite.Link,
+			Output: "Created invite link: " + inviteLinkLine(invite),
 		}, nil
 	}
 }

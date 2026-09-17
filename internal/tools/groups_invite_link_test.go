@@ -103,8 +103,10 @@ func TestGroupsInviteLinkCreateHandler_PassesTheOptions(t *testing.T) {
 		t.Errorf("Invite.Link = %q, want %q", structured.Invite.Link, testInviteLink)
 	}
 
-	if structured.Output != "Created invite link: "+testInviteLink {
-		t.Errorf("Output = %q", structured.Output)
+	for _, want := range []string{testInviteLink, `"Conference"`, "0/50 used"} {
+		if !strings.Contains(structured.Output, want) {
+			t.Errorf("Output = %q, want it to carry %s", structured.Output, want)
+		}
 	}
 }
 

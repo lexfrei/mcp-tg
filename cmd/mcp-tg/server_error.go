@@ -115,7 +115,8 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // landing after the first attempt was already applied leaves a duplicate
 // nothing in the protocol lets the client notice or undo — a second identical
 // chat or folder, a second entry in the profile-photo history, a second working
-// invite link that is never returned to the caller and so can never be revoked.
+// invite link beyond the one the caller was handed, which they never see and so
+// can never revoke.
 //
 // updateDialogFilter is the one entry that is not creation-only: the same
 // request edits and deletes a folder too, and those carry an explicit id, so
@@ -129,8 +130,10 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // hand. Cross-checking it against the tools carrying writeAnnotations (the
 // repository's own "creates a new entity, not idempotent" category) is the
 // cheapest way to look for a gap, but not a sufficient one: an annotation can
-// itself be wrong, which is how the invite-link request below arrived here from
-// a tool marked read-only.
+// itself be wrong, and this list is where that was found. exportChatInvite
+// arrived here from a tool annotated read-only that minted a link on every
+// call; that tool reads the chat's existing link now, and the entry stayed,
+// because the method itself still creates one.
 //
 // Two things it deliberately leaves out. The value-setting writes above are
 // idempotent in their value but not in the chat history: editChatTitle,

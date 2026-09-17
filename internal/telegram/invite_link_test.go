@@ -95,3 +95,61 @@ func TestGetInviteLink_BasicGroupReadsChatFull(t *testing.T) {
 		t.Errorf("link = %q, want %q", got, invitePrimaryLink)
 	}
 }
+
+func TestGetInviteLink_AbsentInviteNamesTheRemedy(t *testing.T) {
+	invoker := &fullChatInviteInvoker{full: channelFullWithInvite(nil)}
+	wrap := NewWrapper(tg.NewClient(invoker))
+
+	peer := InputPeer{Type: PeerChannel, ID: inviteChannelID, AccessHash: inviteChannelHash}
+
+	_, err := wrap.GetInviteLink(t.Context(), peer)
+	if !errors.Is(err, ErrNoPrimaryInviteLink) {
+		t.Fatalf("error = %v, want ErrNoPrimaryInviteLink", err)
+	}
+}
+
+// The linkless constructor must not share the rights message: an admin who
+// already holds the invite-users right would be sent to check their rights.
+func TestGetInviteLink_PublicJoinRequestsIsItsOwnAnswer(t *testing.T) {
+	invoker := &fullChatInviteInvoker{
+		full: channelFullWithInvite(&tg.ChatInvitePublicJoinRequests{}),
+	}
+	wrap := NewWrapper(tg.NewClient(invoker))
+
+	peer := InputPeer{Type: PeerChannel, ID: inviteChannelID, AccessHash: inviteChannelHash}
+
+	_, err := wrap.GetInviteLink(t.Context(), peer)
+	if !errors.Is(err, ErrInviteLinkIsJoinRequestOnly) {
+		t.Fatalf("error = %v, want ErrInviteLinkIsJoinRequestOnly", err)
+	}
+}
+
+func TestGetInviteLink_RefusesAUserPeerBeforeAnyRequest(t *testing.T) {
+	invoker := &fullChatInviteInvoker{full: channelFullWithInvite(nil)}
+	wrap := NewWrapper(tg.NewClient(invoker))
+
+	_, err := wrap.GetInviteLink(t.Context(), InputPeer{Type: PeerUser, ID: 42, AccessHash: 43})
+	if !errors.Is(err, ErrNotAGroupPeer) {
+		t.Fatalf("error = %v, want ErrNotAGroupPeer", err)
+	}
+
+	if got := invoker.calls.Load(); got != 0 {
+		t.Errorf("requests sent = %d, want 0", got)
+	}
+}
+
+// The guard lives in fullChat, so it covers the group-info read too — which is
+// where the same user-peer hazard was worked around at a call site instead.
+func TestGetGroupInfo_RefusesAUserPeerBeforeAnyRequest(t *testing.T) {
+	invoker := &fullChatInviteInvoker{full: channelFullWithInvite(nil)}
+	wrap := NewWrapper(tg.NewClient(invoker))
+
+	_, err := wrap.GetGroupInfo(t.Context(), InputPeer{Type: PeerUser, ID: 42, AccessHash: 43})
+	if !errors.Is(err, ErrNotAGroupPeer) {
+		t.Fatalf("error = %v, want ErrNotAGroupPeer", err)
+	}
+
+	if got := invoker.calls.Load(); got != 0 {
+		t.Errorf("requests sent = %d, want 0", got)
+	}
+}

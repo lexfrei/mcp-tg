@@ -53,7 +53,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_groups_rename` — Rename a group
 - `tg_groups_members_add` — Add a member
 - `tg_groups_members_remove` — Remove a member
-- `tg_groups_invite_link_get` — Get invite link
+- `tg_groups_invite_link_get` — Get the chat's primary invite link, without creating one
 - `tg_groups_invite_link_revoke` — Revoke invite link
 - `tg_groups_members_list` — List group members
 - `tg_groups_admin_set` — Promote or demote an admin with specific rights

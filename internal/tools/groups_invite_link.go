@@ -52,8 +52,10 @@ func NewGroupsInviteLinkGetHandler(client telegram.Client) mcp.ToolHandlerFor[Gr
 // GroupsInviteLinkGetTool returns the MCP tool definition for tg_groups_invite_link_get.
 func GroupsInviteLinkGetTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_groups_invite_link_get",
-		Description: "Get the invite link for a Telegram group",
+		Name: "tg_groups_invite_link_get",
+		Description: "Get a chat's primary invite link. Reads the link Telegram already " +
+			"holds for the chat; it never creates one, and it is visible only to " +
+			"administrators with the right to invite users",
 		Annotations: readOnlyAnnotations(),
 	}
 }

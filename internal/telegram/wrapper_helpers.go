@@ -402,12 +402,30 @@ func channelType(ch *tg.Channel) string {
 	return "channel"
 }
 
-func (w *Wrapper) getChannelGroupInfo(ctx context.Context, peer InputPeer) (*GroupInfo, error) {
-	full, err := w.api.ChannelsGetFullChannel(ctx, InputChannelFromPeer(peer))
-	if err != nil {
-		return nil, errors.Wrap(err, "getting channel group info")
-	}
+// fullChat fetches a chat's full record. Telegram splits the read in two —
+// channels.getFullChannel for channels and supergroups, messages.getFullChat
+// for legacy basic groups — and both answer with the same messages.chatFull
+// envelope. A user is refused before the round trip: messages.getFullChat
+// would read the user id as a basic-group id and answer about a different
+// chat or about nothing, and neither answer names the parameter or the fix.
+func (w *Wrapper) fullChat(ctx context.Context, peer InputPeer) (*tg.MessagesChatFull, error) {
+	switch peer.Type {
+	case PeerChannel:
+		full, err := w.api.ChannelsGetFullChannel(ctx, InputChannelFromPeer(peer))
 
+		return full, errors.Wrap(err, "getting channel info")
+	case PeerChat:
+		full, err := w.api.MessagesGetFullChat(ctx, peer.ID)
+
+		return full, errors.Wrap(err, "getting chat info")
+	case PeerUser:
+		return nil, ErrNotAGroupPeer
+	default:
+		return nil, ErrNotAGroupPeer
+	}
+}
+
+func (w *Wrapper) channelGroupInfo(peer InputPeer, full *tg.MessagesChatFull) (*GroupInfo, error) {
 	for _, ch := range full.Chats {
 		if c, ok := ch.(*tg.Channel); ok && c.ID == peer.ID {
 			info := &GroupInfo{
@@ -438,12 +456,7 @@ func (w *Wrapper) getChannelGroupInfo(ctx context.Context, peer InputPeer) (*Gro
 	return nil, errors.New("channel not found")
 }
 
-func (w *Wrapper) getChatGroupInfo(ctx context.Context, peer InputPeer) (*GroupInfo, error) {
-	full, err := w.api.MessagesGetFullChat(ctx, peer.ID)
-	if err != nil {
-		return nil, errors.Wrap(err, "getting chat group info")
-	}
-
+func chatGroupInfo(peer InputPeer, full *tg.MessagesChatFull) (*GroupInfo, error) {
 	for _, ch := range full.Chats {
 		if c, ok := ch.(*tg.Chat); ok && c.ID == peer.ID {
 			info := &GroupInfo{

@@ -18,6 +18,16 @@ import (
 // against.
 var ErrNotResent = errors.New("telegram query not resent")
 
+// ErrNotAGroupPeer is returned when an operation that reads a chat's full
+// record is handed a user. Telegram has no full-chat read for a user, and
+// messages.getFullChat would take the user id for a basic-group id and answer
+// about a different chat or about nothing. Same shape and same reason as
+// ErrSendAsUnsupportedPeer: the server's answer names neither the parameter
+// nor the remedy.
+var ErrNotAGroupPeer = errors.New(
+	"this operation needs a group, supergroup or channel, not a user",
+)
+
 // serverErrorCode is the MTProto error code Telegram answers with when its own
 // backend failed to handle an otherwise valid query: INTERDC_X_CALL_ERROR ("an
 // error occurred while communicating with DC X"), INTERDC_X_CALL_RICH_ERROR,

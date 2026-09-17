@@ -19,9 +19,9 @@ import (
 // fails fast with a clear message before any send is attempted.
 //
 // PeerUser (DMs) and PeerChat (legacy basic groups) cannot be forums,
-// so we short-circuit without a round-trip. Calling GetGroupInfo on a
-// PeerUser would hit MessagesGetFullChat with a user ID and produce a
-// nonsense error that buries the actual constraint.
+// so we short-circuit without a round-trip. GetGroupInfo refuses a
+// PeerUser on its own now, but with an error about the peer kind, which
+// buries the constraint the caller actually tripped over.
 //
 // Existence of the topic itself is NOT verified here. ChannelsGetForumTopics
 // is more expensive and the failure mode (TOPIC_ID_INVALID) is already

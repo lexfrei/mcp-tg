@@ -1178,11 +1178,16 @@ func (w *Wrapper) GetCommonChats(ctx context.Context, peer InputPeer) ([]PeerInf
 
 // GetGroupInfo returns detailed info about a group or channel.
 func (w *Wrapper) GetGroupInfo(ctx context.Context, peer InputPeer) (*GroupInfo, error) {
-	if peer.Type == PeerChannel {
-		return w.getChannelGroupInfo(ctx, peer)
+	full, err := w.fullChat(ctx, peer)
+	if err != nil {
+		return nil, err
 	}
 
-	return w.getChatGroupInfo(ctx, peer)
+	if peer.Type == PeerChannel {
+		return w.channelGroupInfo(peer, full)
+	}
+
+	return chatGroupInfo(peer, full)
 }
 
 // JoinGroup joins a group or channel.
@@ -1273,33 +1278,6 @@ func (w *Wrapper) RemoveGroupMember(ctx context.Context, group, user InputPeer) 
 	})
 
 	return errors.Wrap(err, "removing chat member")
-}
-
-// GetInviteLink returns the invite link for a group or channel.
-func (w *Wrapper) GetInviteLink(ctx context.Context, peer InputPeer) (string, error) {
-	result, err := w.api.MessagesExportChatInvite(ctx, &tg.MessagesExportChatInviteRequest{
-		Peer: InputPeerToTG(peer),
-	})
-	if err != nil {
-		return "", errors.Wrap(err, "exporting invite link")
-	}
-
-	if link, ok := result.(*tg.ChatInviteExported); ok {
-		return link.Link, nil
-	}
-
-	return "", errors.New("unexpected invite link type")
-}
-
-// RevokeInviteLink revokes an invite link.
-func (w *Wrapper) RevokeInviteLink(ctx context.Context, peer InputPeer, link string) error {
-	_, err := w.api.MessagesEditExportedChatInvite(ctx, &tg.MessagesEditExportedChatInviteRequest{
-		Peer:    InputPeerToTG(peer),
-		Link:    link,
-		Revoked: true,
-	})
-
-	return errors.Wrap(err, "revoking invite link")
 }
 
 // CreateChat creates a new group or channel.

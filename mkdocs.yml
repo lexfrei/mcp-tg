@@ -6,7 +6,7 @@ site_url: https://mcp-tg.lexfrei.dev
 site_author: Aleksei Sviridkin
 site_description: >-
   MCP server for the Telegram Client API (MTProto).
-  79 tools, 4 resources and 3 prompts for managing a Telegram user account.
+  80 tools, 4 resources and 3 prompts for managing a Telegram user account.
 
 # Repository
 repo_name: lexfrei/mcp-tg

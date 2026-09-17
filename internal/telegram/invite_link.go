@@ -174,3 +174,49 @@ func (w *Wrapper) CreateInviteLink(
 
 	return &link, nil
 }
+
+// ListInviteLinks returns the invite links THIS ACCOUNT created in the chat,
+// newest first, together with the server's own total across all pages.
+//
+// admin_id is mandatory in messages.getExportedChatInvites — the schema
+// carries no flag for it and gotd generates no setter — so the method can only
+// ever answer for one administrator. Self is the only one a caller can speak
+// for, which is also why this cannot back GetInviteLink: a chat's primary link
+// may have been created by somebody else entirely.
+func (w *Wrapper) ListInviteLinks(
+	ctx context.Context, peer InputPeer, revoked bool, limit int,
+) ([]InviteLink, int, error) {
+	if peer.Type == PeerUser {
+		return nil, 0, ErrNotAGroupPeer
+	}
+
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+
+	req := &tg.MessagesGetExportedChatInvitesRequest{
+		Peer:    InputPeerToTG(peer),
+		AdminID: &tg.InputUserSelf{},
+		Limit:   limit,
+	}
+
+	if revoked {
+		req.SetRevoked(true)
+	}
+
+	result, err := w.api.MessagesGetExportedChatInvites(ctx, req)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "listing invite links")
+	}
+
+	links := make([]InviteLink, 0, len(result.Invites))
+
+	for _, invite := range result.Invites {
+		link, ok := inviteLinkFrom(invite)
+		if ok {
+			links = append(links, link)
+		}
+	}
+
+	return links, result.Count, nil
+}

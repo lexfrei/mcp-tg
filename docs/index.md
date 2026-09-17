@@ -1,6 +1,6 @@
 # mcp-tg
 
-MCP server for Telegram Client API (MTProto). Provides 79 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
+MCP server for Telegram Client API (MTProto). Provides 80 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
 
 Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **user account** client, not a bot.
 
@@ -15,7 +15,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 | Feature | Status |
 | --- | --- |
-| Tools | 79 tools with annotations (read-only / idempotent / write / destructive) |
+| Tools | 80 tools with annotations (read-only / idempotent / write / destructive) |
 | Resources | 4 (dialogs, profile, chat info, chat messages) |
 | Prompts | 3 (reply, summarize, search and reply) |
 | Completions | Peer argument autocompletion from dialogs |

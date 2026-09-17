@@ -195,3 +195,75 @@ func GroupsInviteLinkCreateTool() *mcp.Tool {
 		Annotations: writeAnnotations(),
 	}
 }
+
+// GroupsInviteLinkListParams defines the parameters for the tg_groups_invite_link_list tool.
+type GroupsInviteLinkListParams struct {
+	Peer    string `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
+	Revoked *bool  `json:"revoked,omitempty" jsonschema:"List revoked links instead of active ones"`
+	Limit   *int   `json:"limit,omitempty"   jsonschema:"Maximum number of links to return (default 100)"`
+}
+
+// GroupsInviteLinkListResult is the output of the tg_groups_invite_link_list tool.
+//
+// Total is the server's own count across all pages, which is how a caller
+// learns the page did not cover everything. Telegram does offer a cursor
+// (offset_date plus offset_link, which travel together); this tool does not
+// expose it, because links are created by hand rather than accumulated, so
+// raising Limit is the knob until somebody reports a chat that needs paging.
+type GroupsInviteLinkListResult struct {
+	Count  int              `json:"count"`
+	Total  int              `json:"total"`
+	Links  []InviteLinkItem `json:"links"`
+	Output string           `json:"output"`
+}
+
+// NewGroupsInviteLinkListHandler creates a handler for the tg_groups_invite_link_list tool.
+func NewGroupsInviteLinkListHandler(
+	client telegram.Client,
+) mcp.ToolHandlerFor[GroupsInviteLinkListParams, GroupsInviteLinkListResult] {
+	return func(
+		ctx context.Context,
+		_ *mcp.CallToolRequest,
+		params GroupsInviteLinkListParams,
+	) (*mcp.CallToolResult, GroupsInviteLinkListResult, error) {
+		if params.Peer == "" {
+			return &mcp.CallToolResult{IsError: true}, GroupsInviteLinkListResult{},
+				validationErr(ErrPeerRequired)
+		}
+
+		err := validateLimit(deref(params.Limit))
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, GroupsInviteLinkListResult{}, validationErr(err)
+		}
+
+		peer, err := client.ResolvePeer(ctx, params.Peer)
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, GroupsInviteLinkListResult{},
+				telegramErr("failed to resolve peer", err)
+		}
+
+		links, total, err := client.ListInviteLinks(ctx, peer, deref(params.Revoked), deref(params.Limit))
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, GroupsInviteLinkListResult{},
+				telegramErr("failed to list invite links", err)
+		}
+
+		return nil, GroupsInviteLinkListResult{
+			Count:  len(links),
+			Total:  total,
+			Links:  links,
+			Output: formatInviteLinks(links, total),
+		}, nil
+	}
+}
+
+// GroupsInviteLinkListTool returns the MCP tool definition for tg_groups_invite_link_list.
+func GroupsInviteLinkListTool() *mcp.Tool {
+	return &mcp.Tool{
+		Name: "tg_groups_invite_link_list",
+		Description: "List the invite links this account created in a chat. Telegram scopes the " +
+			"listing to one administrator, so links created by anyone else — including the " +
+			"chat's primary link — do not appear",
+		Annotations: readOnlyAnnotations(),
+	}
+}

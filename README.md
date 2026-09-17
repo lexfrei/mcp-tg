@@ -1,6 +1,6 @@
 # mcp-tg
 
-MCP server for Telegram Client API (MTProto). Provides 79 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
+MCP server for Telegram Client API (MTProto). Provides 80 tools, 4 resources, 3 prompts, and argument completions for comprehensive Telegram account management.
 
 Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **user account** client, not a bot.
 
@@ -42,7 +42,7 @@ Or skip the steps entirely: tell your agent to read [Agent Setup](https://mcp-tg
 
 Everything lives at **[mcp-tg.lexfrei.dev](https://mcp-tg.lexfrei.dev)**:
 
-- [Tools](https://mcp-tg.lexfrei.dev/tools/) — the full 79-tool reference
+- [Tools](https://mcp-tg.lexfrei.dev/tools/) — the full 80-tool reference
 - [Configuration](https://mcp-tg.lexfrei.dev/getting-started/configuration/) — environment variables and flags
 - [Authentication](https://mcp-tg.lexfrei.dev/getting-started/authentication/) — login, session storage, revoked-session recovery
 - [Messages](https://mcp-tg.lexfrei.dev/guides/messages/) — output format, `parseMode`, markdown limitations

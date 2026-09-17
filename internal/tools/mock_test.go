@@ -15,34 +15,38 @@ type mockClient struct {
 	getMessagesFn  func(ids []int) []telegram.Message
 	// getMessagesErrFn fails a GetMessages call based on the request,
 	// so a test can model a server that rejects an over-long id list.
-	getMessagesErrFn func(ids []int) error
-	getHistoryFn     func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
-	resolvePeerFn    func(identifier string) (telegram.InputPeer, error)
-	message          *telegram.Message
-	total            int
-	historyHasMore   bool
-	dialogs          []telegram.Dialog
-	user             *telegram.User
-	users            []telegram.User
-	group            *telegram.GroupInfo
-	info             *telegram.PeerInfo
-	infos            []telegram.PeerInfo
-	photos           []telegram.Photo
-	topics           []telegram.ForumTopic
-	topic            *telegram.ForumTopic
-	sets             []telegram.StickerSet
-	setFull          *telegram.StickerSetFull
-	folders          []telegram.Folder
-	folder           *telegram.Folder
-	uploaded         *telegram.UploadedFile
-	reactions        []telegram.ReactionUser
-	statuses         []telegram.ContactStatus
-	link             string
-	createdInvite    *telegram.InviteLink
-	lastInviteOpts   telegram.InviteLinkOpts
-	filePath         string
-	peer             telegram.InputPeer
-	transcription    *telegram.Transcription
+	getMessagesErrFn  func(ids []int) error
+	getHistoryFn      func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
+	resolvePeerFn     func(identifier string) (telegram.InputPeer, error)
+	message           *telegram.Message
+	total             int
+	historyHasMore    bool
+	dialogs           []telegram.Dialog
+	user              *telegram.User
+	users             []telegram.User
+	group             *telegram.GroupInfo
+	info              *telegram.PeerInfo
+	infos             []telegram.PeerInfo
+	photos            []telegram.Photo
+	topics            []telegram.ForumTopic
+	topic             *telegram.ForumTopic
+	sets              []telegram.StickerSet
+	setFull           *telegram.StickerSetFull
+	folders           []telegram.Folder
+	folder            *telegram.Folder
+	uploaded          *telegram.UploadedFile
+	reactions         []telegram.ReactionUser
+	statuses          []telegram.ContactStatus
+	link              string
+	createdInvite     *telegram.InviteLink
+	inviteLinks       []telegram.InviteLink
+	inviteTotal       int
+	lastInviteOpts    telegram.InviteLinkOpts
+	lastInviteRevoked bool
+	lastInviteLimit   int
+	filePath          string
+	peer              telegram.InputPeer
+	transcription     *telegram.Transcription
 
 	// Error to return
 	err           error
@@ -378,6 +382,16 @@ func (m *mockClient) CreateInviteLink(
 	m.lastInviteOpts = opts
 
 	return m.createdInvite, m.err
+}
+
+func (m *mockClient) ListInviteLinks(
+	_ context.Context, peer telegram.InputPeer, revoked bool, limit int,
+) ([]telegram.InviteLink, int, error) {
+	m.lastPeer = peer
+	m.lastInviteRevoked = revoked
+	m.lastInviteLimit = limit
+
+	return m.inviteLinks, m.inviteTotal, m.err
 }
 
 func (m *mockClient) RevokeInviteLink(_ context.Context, peer telegram.InputPeer, _ string) error {

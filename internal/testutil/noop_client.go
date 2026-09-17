@@ -143,6 +143,13 @@ func (NoopClient) CreateInviteLink(
 	return nil, nil
 }
 
+// ListInviteLinks implements telegram.Client.
+func (NoopClient) ListInviteLinks(
+	_ context.Context, _ telegram.InputPeer, _ bool, _ int,
+) ([]telegram.InviteLink, int, error) {
+	return nil, 0, nil
+}
+
 func (NoopClient) RevokeInviteLink(_ context.Context, _ telegram.InputPeer, _ string) error {
 	return nil
 }

@@ -2,7 +2,7 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (79)
+## Tools (80)
 
 ### Messages (16)
 
@@ -44,7 +44,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_contacts_get_statuses` — Get online statuses of all contacts
 - `tg_contacts_list_blocked` — List blocked users
 
-### Groups (13)
+### Groups (14)
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
@@ -55,6 +55,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_groups_members_remove` — Remove a member
 - `tg_groups_invite_link_get` — Get the chat's primary invite link, without creating one
 - `tg_groups_invite_link_create` — Create an additional invite link, leaving the primary one alone
+- `tg_groups_invite_link_list` — List the invite links this account created in a chat
 - `tg_groups_invite_link_revoke` — Revoke invite link
 - `tg_groups_members_list` — List group members
 - `tg_groups_admin_set` — Promote or demote an admin with specific rights
@@ -132,7 +133,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 31 | Only reads data |
+| read-only | 32 | Only reads data |
 | idempotent | 28 | Modifies state, safe to retry |
 | write | 11 | Creates new entities, not idempotent |
 | destructive | 9 | Deletes or removes things |

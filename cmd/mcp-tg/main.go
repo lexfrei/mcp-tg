@@ -580,6 +580,8 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.GroupsInviteLinkGetTool(), tools.NewGroupsInviteLinkGetHandler(client))
 	tools.AddTool(server, registry, gate,
 		tools.GroupsInviteLinkCreateTool(), tools.NewGroupsInviteLinkCreateHandler(client))
+	tools.AddTool(server, registry, gate,
+		tools.GroupsInviteLinkListTool(), tools.NewGroupsInviteLinkListHandler(client))
 	tools.AddTool(server, registry, gate, tools.GroupsInviteLinkRevokeTool(), tools.NewGroupsInviteLinkRevokeHandler(client))
 	tools.AddTool(server, registry, gate, tools.ChatsAdminsTool(), tools.NewChatsAdminsHandler(client))
 	tools.AddTool(server, registry, gate, tools.ChatsPermissionsTool(), tools.NewChatsPermissionsHandler(client))

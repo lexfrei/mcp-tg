@@ -282,3 +282,109 @@ func TestCreateInviteLink_RefusesAUserPeer(t *testing.T) {
 		t.Error("a user peer must be refused before the round trip")
 	}
 }
+
+// listInviteInvoker captures the list request and answers with a canned page.
+type listInviteInvoker struct {
+	req      *tg.MessagesGetExportedChatInvitesRequest
+	response *tg.MessagesExportedChatInvites
+}
+
+func (l *listInviteInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	req, ok := input.(*tg.MessagesGetExportedChatInvitesRequest)
+	if !ok {
+		return errors.Wrapf(errUnexpectedRequest, "%T", input)
+	}
+
+	l.req = req
+
+	return encodeResp(l.response, output)
+}
+
+func newListInviteWrapper(response *tg.MessagesExportedChatInvites) (*Wrapper, *listInviteInvoker) {
+	invoker := &listInviteInvoker{response: response}
+
+	return NewWrapper(tg.NewClient(invoker)), invoker
+}
+
+// admin_id is mandatory, so the only question is WHOSE links are asked for.
+// Anything but self answers about an administrator the caller cannot speak for.
+
+func TestListInviteLinks_AsksForItsOwnLinks(t *testing.T) {
+	wrap, invoker := newListInviteWrapper(&tg.MessagesExportedChatInvites{Count: 0})
+
+	_, _, err := wrap.ListInviteLinks(t.Context(), inviteChannelPeer(), false, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := invoker.req.AdminID.(*tg.InputUserSelf); !ok {
+		t.Errorf("admin_id = %T, want *tg.InputUserSelf", invoker.req.AdminID)
+	}
+
+	if invoker.req.Limit != DefaultLimit {
+		t.Errorf("limit = %d, want %d", invoker.req.Limit, DefaultLimit)
+	}
+
+	if invoker.req.GetRevoked() {
+		t.Error("the revoked flag must stay clear unless it was asked for")
+	}
+}
+
+func TestListInviteLinks_RevokedRidesTheFlag(t *testing.T) {
+	wrap, invoker := newListInviteWrapper(&tg.MessagesExportedChatInvites{Count: 0})
+
+	_, _, err := wrap.ListInviteLinks(t.Context(), inviteChannelPeer(), true, 5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !invoker.req.GetRevoked() {
+		t.Error("revoked must reach the wire")
+	}
+
+	if invoker.req.Limit != 5 {
+		t.Errorf("limit = %d, want 5", invoker.req.Limit)
+	}
+}
+
+// The linkless constructor must not become a zero-valued row, and the total
+// must come from the server rather than from the rows that survived.
+func TestListInviteLinks_SkipsLinklessInvitesAndKeepsTheServerTotal(t *testing.T) {
+	wrap, _ := newListInviteWrapper(&tg.MessagesExportedChatInvites{
+		Count: 7,
+		Invites: []tg.ExportedChatInviteClass{
+			&tg.ChatInviteExported{Link: invitePrimaryLink, Permanent: true},
+			&tg.ChatInvitePublicJoinRequests{},
+		},
+	})
+
+	links, total, err := wrap.ListInviteLinks(t.Context(), inviteChannelPeer(), false, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(links) != 1 {
+		t.Fatalf("links = %d, want 1", len(links))
+	}
+
+	if links[0].Link != invitePrimaryLink {
+		t.Errorf("link = %q, want %q", links[0].Link, invitePrimaryLink)
+	}
+
+	if total != 7 {
+		t.Errorf("total = %d, want the server's 7", total)
+	}
+}
+
+func TestListInviteLinks_RefusesAUserPeer(t *testing.T) {
+	wrap, invoker := newListInviteWrapper(&tg.MessagesExportedChatInvites{})
+
+	_, _, err := wrap.ListInviteLinks(t.Context(), InputPeer{Type: PeerUser, ID: 42}, false, 0)
+	if !errors.Is(err, ErrNotAGroupPeer) {
+		t.Fatalf("error = %v, want ErrNotAGroupPeer", err)
+	}
+
+	if invoker.req != nil {
+		t.Error("a user peer must be refused before the round trip")
+	}
+}

@@ -129,9 +129,10 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // link, but it DESTROYS the answer. Revoking a chat's primary link makes the
 // server mint a replacement and report it as exportedChatInviteReplaced, and
 // only the attempt that performed the replacement carries it. A resend answers
-// about a link that is already revoked, so tg_groups_invite_link_revoke would
-// report no replacement for a chat that just got one, which is precisely what
-// its newLink field promises cannot happen.
+// about a link that is already revoked, so the replacement goes unreported for
+// a chat that just got one. A caller who repeats the call knowingly can read
+// the new link back; a resend inside a single call throws away an answer the
+// first attempt already earned, with nobody in a position to notice.
 //
 // This is a DENY-LIST of what has been found, not a proof that nothing else
 // qualifies: MTProto marks no request as non-idempotent, so nothing here can be

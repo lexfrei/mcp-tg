@@ -14,8 +14,8 @@ import (
 // answers a question about rights, not about the chat.
 var ErrNoPrimaryInviteLink = errors.New(
 	"no primary invite link is visible for this chat; Telegram shows it only to " +
-		"administrators with the invite-users right — call tg_groups_invite_link_create " +
-		"for a link of your own instead",
+		"administrators with the invite-users right. If you hold that right, the chat " +
+		"simply has none, and tg_groups_invite_link_create makes one",
 )
 
 // ErrInviteLinkIsJoinRequestOnly is returned for chatInvitePublicJoinRequests,

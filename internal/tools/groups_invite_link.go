@@ -141,7 +141,7 @@ type GroupsInviteLinkCreateParams struct {
 	ExpireDate *int    `json:"expireDate,omitempty" jsonschema:"Unix timestamp when the link stops working; omit for no expiry"`
 	UsageLimit *int    `json:"usageLimit,omitempty" jsonschema:"How many people may join through this link; omit for no limit"`
 	//nolint:lll // the Bot API caveat is the whole reason this parameter needs a description.
-	RequestNeeded *bool `json:"requestNeeded,omitempty" jsonschema:"Joiners must be approved by an administrator. Telegram's Bot API documents that usageLimit cannot be combined with this; the MTProto documentation does not, so the server decides — read the echoed usageLimit to see what it did"`
+	RequestNeeded *bool `json:"requestNeeded,omitempty" jsonschema:"Joiners must be approved by an administrator. Telegram's Bot API documents that usageLimit cannot be combined with this; the MTProto documentation does not, so the server decides — read the echoed usageLimit, or the error, to see what it did"`
 }
 
 // GroupsInviteLinkCreateResult is the output of the tg_groups_invite_link_create tool.
@@ -277,8 +277,8 @@ func GroupsInviteLinkListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name: "tg_groups_invite_link_list",
 		Description: "List the invite links this account created in a chat. Telegram scopes the " +
-			"listing to one administrator, so links created by anyone else — including the " +
-			"chat's primary link — do not appear",
+			"listing to one administrator, so links created by anyone else do not appear; the " +
+			"chat's primary link shows up only if this account is what created it",
 		Annotations: readOnlyAnnotations(),
 	}
 }

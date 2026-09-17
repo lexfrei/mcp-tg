@@ -283,6 +283,17 @@ func TestCreateInviteLink_RefusesAUserPeer(t *testing.T) {
 	}
 }
 
+// The server answering an export with the linkless constructor is odd, but it
+// is the one branch of the create path nothing else executes.
+func TestCreateInviteLink_LinklessAnswerIsAnError(t *testing.T) {
+	wrap, _ := newCreateInviteWrapper(&tg.ChatInvitePublicJoinRequests{})
+
+	_, err := wrap.CreateInviteLink(t.Context(), inviteChannelPeer(), InviteLinkOpts{})
+	if !errors.Is(err, ErrInviteLinkIsJoinRequestOnly) {
+		t.Fatalf("error = %v, want ErrInviteLinkIsJoinRequestOnly", err)
+	}
+}
+
 // listInviteInvoker captures the list request and answers with a canned page.
 type listInviteInvoker struct {
 	req      *tg.MessagesGetExportedChatInvitesRequest

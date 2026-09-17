@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 78 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 79 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -79,7 +79,7 @@ internal/telegram/           Telegram abstraction layer
   markdown_lint.go           LooksLikeMarkdown — plain-mode lint approximating what the parser would transform
   send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
   subscriptions.go           SubscriptionBroker: routes new-message updates to watching resource URIs (ResourceUpdater sink)
-internal/tools/              MCP tool handlers (78 tools)
+internal/tools/              MCP tool handlers (79 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
@@ -115,7 +115,7 @@ internal/testutil/           NoopClient for registration tests
 
 - `readOnlyAnnotations()` — tools that only read data (31 tools)
 - `idempotentAnnotations()` — tools that modify state but are safe to retry (28 tools)
-- `writeAnnotations()` — tools that create new entities, not idempotent (10 tools)
+- `writeAnnotations()` — tools that create new entities, not idempotent (11 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
 The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release. `TestDocsAnnotationTable_MatchesTheCensus` then pins the published table in `docs/tools.md` against those same constants, so the site cannot drift from the server either.

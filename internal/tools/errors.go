@@ -193,7 +193,9 @@ var ErrInvalidDateRange = errors.New(
 // ErrNegativeDate is returned when a date bound is negative — unix
 // timestamps only, mirroring ErrNegativeLimit. Names both parameter
 // spellings for the same reason as ErrInvalidDateRange.
-var ErrNegativeDate = errors.New("date bounds (minDate/maxDate, fromDate/toDate) must not be negative")
+var ErrNegativeDate = errors.New(
+	"date bounds (minDate/maxDate, fromDate/toDate, expireDate) must not be negative",
+)
 
 // ErrUnknownSearchScope is returned when a global search scope is not
 // one of the dialog kinds Telegram can restrict a search to.

@@ -38,6 +38,8 @@ type mockClient struct {
 	reactions        []telegram.ReactionUser
 	statuses         []telegram.ContactStatus
 	link             string
+	createdInvite    *telegram.InviteLink
+	lastInviteOpts   telegram.InviteLinkOpts
 	filePath         string
 	peer             telegram.InputPeer
 	transcription    *telegram.Transcription
@@ -367,6 +369,15 @@ func (m *mockClient) GetInviteLink(_ context.Context, peer telegram.InputPeer) (
 	m.lastPeer = peer
 
 	return m.link, m.err
+}
+
+func (m *mockClient) CreateInviteLink(
+	_ context.Context, peer telegram.InputPeer, opts telegram.InviteLinkOpts,
+) (*telegram.InviteLink, error) {
+	m.lastPeer = peer
+	m.lastInviteOpts = opts
+
+	return m.createdInvite, m.err
 }
 
 func (m *mockClient) RevokeInviteLink(_ context.Context, peer telegram.InputPeer, _ string) error {

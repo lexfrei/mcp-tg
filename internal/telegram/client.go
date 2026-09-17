@@ -89,6 +89,7 @@ type GroupClient interface {
 	SetAdmin(ctx context.Context, group, user InputPeer, rights AdminRights, rank string) error
 	SetSlowMode(ctx context.Context, peer InputPeer, seconds int) error
 	GetInviteLink(ctx context.Context, peer InputPeer) (string, error)
+	CreateInviteLink(ctx context.Context, peer InputPeer, opts InviteLinkOpts) (*InviteLink, error)
 	RevokeInviteLink(ctx context.Context, peer InputPeer, link string) error
 }
 

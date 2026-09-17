@@ -153,3 +153,132 @@ func TestGetGroupInfo_RefusesAUserPeerBeforeAnyRequest(t *testing.T) {
 		t.Errorf("requests sent = %d, want 0", got)
 	}
 }
+
+// createInviteInvoker captures the export request and answers with a canned
+// invite, so the assertions are about what went on the wire.
+type createInviteInvoker struct {
+	req    *tg.MessagesExportChatInviteRequest
+	invite tg.ExportedChatInviteClass
+}
+
+func (c *createInviteInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	req, ok := input.(*tg.MessagesExportChatInviteRequest)
+	if !ok {
+		return errors.Wrapf(errUnexpectedRequest, "%T", input)
+	}
+
+	c.req = req
+
+	return encodeResp(c.invite, output)
+}
+
+func newCreateInviteWrapper(invite tg.ExportedChatInviteClass) (*Wrapper, *createInviteInvoker) {
+	invoker := &createInviteInvoker{invite: invite}
+
+	return NewWrapper(tg.NewClient(invoker)), invoker
+}
+
+func inviteChannelPeer() InputPeer {
+	return InputPeer{Type: PeerChannel, ID: inviteChannelID, AccessHash: inviteChannelHash}
+}
+
+func TestCreateInviteLink_DefaultsLeaveConditionalFieldsUnset(t *testing.T) {
+	wrap, invoker := newCreateInviteWrapper(&tg.ChatInviteExported{Link: invitePrimaryLink})
+
+	_, err := wrap.CreateInviteLink(t.Context(), inviteChannelPeer(), InviteLinkOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, ok := invoker.req.GetTitle(); ok {
+		t.Error("title must stay off the wire when no title was asked for")
+	}
+
+	if _, ok := invoker.req.GetExpireDate(); ok {
+		t.Error("expire date must stay off the wire when none was asked for")
+	}
+
+	if _, ok := invoker.req.GetUsageLimit(); ok {
+		t.Error("usage limit must stay off the wire when none was asked for")
+	}
+}
+
+func TestCreateInviteLink_SetsEveryOptionalField(t *testing.T) {
+	wrap, invoker := newCreateInviteWrapper(&tg.ChatInviteExported{Link: invitePrimaryLink})
+
+	opts := InviteLinkOpts{Title: "Conference", ExpireDate: 1800000000, UsageLimit: 50, RequestNeeded: true}
+
+	_, err := wrap.CreateInviteLink(t.Context(), inviteChannelPeer(), opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got, _ := invoker.req.GetTitle(); got != opts.Title {
+		t.Errorf("title = %q, want %q", got, opts.Title)
+	}
+
+	if got, _ := invoker.req.GetExpireDate(); got != opts.ExpireDate {
+		t.Errorf("expire date = %d, want %d", got, opts.ExpireDate)
+	}
+
+	if got, _ := invoker.req.GetUsageLimit(); got != opts.UsageLimit {
+		t.Errorf("usage limit = %d, want %d", got, opts.UsageLimit)
+	}
+
+	if !invoker.req.GetRequestNeeded() {
+		t.Error("request_needed must reach the wire")
+	}
+}
+
+// legacy_revoke_permanent replaces the chat's primary link and revokes every
+// earlier one, so setting it here would quietly undo the read this tool family
+// is built on.
+func TestCreateInviteLink_NeverSetsLegacyRevokePermanent(t *testing.T) {
+	wrap, invoker := newCreateInviteWrapper(&tg.ChatInviteExported{Link: invitePrimaryLink})
+
+	opts := InviteLinkOpts{Title: "Conference", ExpireDate: 1800000000, UsageLimit: 50, RequestNeeded: true}
+
+	_, err := wrap.CreateInviteLink(t.Context(), inviteChannelPeer(), opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if invoker.req.LegacyRevokePermanent {
+		t.Error("legacy_revoke_permanent must never be set: it revokes every existing link")
+	}
+}
+
+func TestCreateInviteLink_ReturnsTheServerEcho(t *testing.T) {
+	echo := &tg.ChatInviteExported{Link: invitePrimaryLink, AdminID: 99, Date: 1700000000}
+	echo.SetTitle("Conference")
+	echo.SetUsageLimit(50)
+	echo.SetUsage(3)
+
+	wrap, _ := newCreateInviteWrapper(echo)
+
+	got, err := wrap.CreateInviteLink(t.Context(), inviteChannelPeer(), InviteLinkOpts{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	want := InviteLink{
+		Link: invitePrimaryLink, Title: "Conference", AdminID: 99,
+		Date: 1700000000, UsageLimit: 50, Usage: 3,
+	}
+	if *got != want {
+		t.Errorf("link = %+v, want %+v", *got, want)
+	}
+}
+
+func TestCreateInviteLink_RefusesAUserPeer(t *testing.T) {
+	wrap, invoker := newCreateInviteWrapper(&tg.ChatInviteExported{Link: invitePrimaryLink})
+
+	_, err := wrap.CreateInviteLink(t.Context(), InputPeer{Type: PeerUser, ID: 42}, InviteLinkOpts{})
+	if !errors.Is(err, ErrNotAGroupPeer) {
+		t.Fatalf("error = %v, want ErrNotAGroupPeer", err)
+	}
+
+	if invoker.req != nil {
+		t.Error("a user peer must be refused before the round trip")
+	}
+}

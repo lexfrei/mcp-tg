@@ -129,6 +129,12 @@ type ParticipantItem struct {
 // this struct so a consumer can treat any peer uniformly.
 type PeerRefItem = ParticipantItem
 
+// InviteLinkItem is one exported chat invite as the tool surface renders it.
+// The domain type already carries the JSON shape a caller wants, so this is an
+// alias rather than a copy: there is no peer to renumber and no type label to
+// derive.
+type InviteLinkItem = telegram.InviteLink
+
 type participantKey struct {
 	Type string
 	ID   int64

@@ -127,8 +127,10 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // editExportedChatInvite is held back for a different reason again: a resend
 // leaves no duplicate, since the second attempt revokes an already-revoked
 // link, but it DESTROYS the answer. Revoking a chat's primary link makes the
-// server mint a replacement and report it as exportedChatInviteReplaced, and
-// only the attempt that performed the replacement carries it. A resend answers
+// server mint a replacement and report it as exportedChatInviteReplaced (the
+// constructor is documented; that a primary-link revoke is what produces it is
+// read off the schema, not observed), and only the attempt that performed the
+// replacement carries it. A resend answers
 // about a link that is already revoked, so the replacement goes unreported for
 // a chat that just got one. A caller who repeats the call knowingly can read
 // the new link back; a resend inside a single call throws away an answer the

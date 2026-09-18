@@ -245,9 +245,14 @@ func formatDialog(dlg *telegram.Dialog) string {
 func formatInviteLinks(links []telegram.InviteLink, total int) string {
 	// A page can come back empty while the server still counts links: every row
 	// was the linkless constructor. Saying "none" there would claim more than
-	// the reply supports.
-	if len(links) == 0 && total == 0 {
-		return "No invite links found"
+	// the reply supports, and a heading colon would introduce a list that never
+	// arrives.
+	if len(links) == 0 {
+		if total == 0 {
+			return "No invite links found"
+		}
+
+		return fmt.Sprintf("0 of %d invite link(s), none of which carries a link", total)
 	}
 
 	var out strings.Builder

@@ -74,6 +74,10 @@ func (w *Wrapper) GetInviteLink(ctx context.Context, peer InputPeer) (string, er
 // and answer messages.exportedChatInviteReplaced. A caller told nothing about
 // that is left believing the chat now has no link, while GetInviteLink would
 // report one they have never seen.
+//
+// The replaced form is DOCUMENTED, not observed here: the live check covered an
+// ordinary revoke, which reports no replacement. That a primary-link revoke is
+// what produces the other constructor follows from the schema.
 func (w *Wrapper) RevokeInviteLink(
 	ctx context.Context, peer InputPeer, link string,
 ) (string, error) {

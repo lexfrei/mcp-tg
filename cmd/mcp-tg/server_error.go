@@ -115,13 +115,26 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // landing after the first attempt was already applied leaves a duplicate
 // nothing in the protocol lets the client notice or undo — a second identical
 // chat or folder, a second entry in the profile-photo history, a second working
-// invite link that is never returned to the caller and so can never be revoked.
+// invite link beyond the one the caller was handed, which they never see and so
+// can never revoke.
 //
-// updateDialogFilter is the one entry that is not creation-only: the same
+// updateDialogFilter is not creation-only either: the same
 // request edits and deletes a folder too, and those carry an explicit id, so
 // they are idempotent and lose the resend for nothing. Held back anyway,
 // because the type is what a switch can see, and what it costs them is a
 // resend on a call that states a final value.
+//
+// editExportedChatInvite is held back for a different reason again: a resend
+// leaves no duplicate, since the second attempt revokes an already-revoked
+// link, but it DESTROYS the answer. Revoking a chat's primary link makes the
+// server mint a replacement and report it as exportedChatInviteReplaced (the
+// constructor is documented; that a primary-link revoke is what produces it is
+// read off the schema, not observed), and only the attempt that performed the
+// replacement carries it. A resend answers
+// about a link that is already revoked, so the replacement goes unreported for
+// a chat that just got one. A caller who repeats the call knowingly can read
+// the new link back; a resend inside a single call throws away an answer the
+// first attempt already earned, with nobody in a position to notice.
 //
 // This is a DENY-LIST of what has been found, not a proof that nothing else
 // qualifies: MTProto marks no request as non-idempotent, so nothing here can be
@@ -129,8 +142,10 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // hand. Cross-checking it against the tools carrying writeAnnotations (the
 // repository's own "creates a new entity, not idempotent" category) is the
 // cheapest way to look for a gap, but not a sufficient one: an annotation can
-// itself be wrong, which is how the invite-link request below arrived here from
-// a tool marked read-only.
+// itself be wrong, and this list is where that was found. exportChatInvite
+// arrived here from a tool annotated read-only that minted a link on every
+// call; that tool reads the chat's existing link now, and the entry stayed,
+// because the method itself still creates one.
 //
 // Two things it deliberately leaves out. The value-setting writes above are
 // idempotent in their value but not in the chat history: editChatTitle,
@@ -145,7 +160,8 @@ func safeToResend(input bin.Encoder) bool {
 		*tg.MessagesCreateChatRequest,
 		*tg.MessagesUpdateDialogFilterRequest,
 		*tg.PhotosUploadProfilePhotoRequest,
-		*tg.MessagesExportChatInviteRequest:
+		*tg.MessagesExportChatInviteRequest,
+		*tg.MessagesEditExportedChatInviteRequest:
 		return false
 	default:
 		return true

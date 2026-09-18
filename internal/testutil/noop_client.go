@@ -136,8 +136,20 @@ func (NoopClient) GetInviteLink(_ context.Context, _ telegram.InputPeer) (string
 	return "", nil
 }
 
-func (NoopClient) RevokeInviteLink(_ context.Context, _ telegram.InputPeer, _ string) error {
-	return nil
+func (NoopClient) CreateInviteLink(
+	_ context.Context, _ telegram.InputPeer, _ telegram.InviteLinkOpts,
+) (*telegram.InviteLink, error) {
+	return nil, nil
+}
+
+func (NoopClient) ListInviteLinks(
+	_ context.Context, _ telegram.InputPeer, _ bool, _ int,
+) ([]telegram.InviteLink, int, error) {
+	return nil, 0, nil
+}
+
+func (NoopClient) RevokeInviteLink(_ context.Context, _ telegram.InputPeer, _ string) (string, error) {
+	return "", nil
 }
 
 func (NoopClient) CreateChat(_ context.Context, _ string, _ []telegram.InputPeer, _ bool) (*telegram.PeerInfo, error) {

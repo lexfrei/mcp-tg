@@ -239,3 +239,62 @@ func formatDialog(dlg *telegram.Dialog) string {
 
 	return ref + unread
 }
+
+// formatInviteLinks renders an invite-link listing. Total is the server's count
+// across all pages, so it can exceed the number of rows shown.
+func formatInviteLinks(links []telegram.InviteLink, total int) string {
+	// A page can come back empty while the server still counts links: every row
+	// was the linkless constructor. Saying "none" there would claim more than
+	// the reply supports, and a heading colon would introduce a list that never
+	// arrives.
+	if len(links) == 0 {
+		if total == 0 {
+			return "No invite links found"
+		}
+
+		return fmt.Sprintf("0 of %d invite link(s), none of which carries a link", total)
+	}
+
+	var out strings.Builder
+
+	fmt.Fprintf(&out, "%d of %d invite link(s):\n", len(links), total)
+
+	for idx := range links {
+		out.WriteString(inviteLinkLine(&links[idx]))
+		out.WriteString("\n")
+	}
+
+	return strings.TrimRight(out.String(), "\n")
+}
+
+func inviteLinkLine(link *telegram.InviteLink) string {
+	var facts []string
+
+	if link.Title != "" {
+		facts = append(facts, fmt.Sprintf("%q", link.Title))
+	}
+
+	if link.Permanent {
+		facts = append(facts, "permanent")
+	}
+
+	if link.Revoked {
+		facts = append(facts, "revoked")
+	}
+
+	if link.UsageLimit > 0 {
+		facts = append(facts, fmt.Sprintf("%d/%d used", link.Usage, link.UsageLimit))
+	} else {
+		facts = append(facts, fmt.Sprintf("%d used", link.Usage))
+	}
+
+	if link.ExpireDate > 0 {
+		facts = append(facts, "expires "+formatTimestamp(link.ExpireDate))
+	}
+
+	if link.RequestNeeded {
+		facts = append(facts, fmt.Sprintf("approval required, %d pending", link.Requested))
+	}
+
+	return link.Link + " — " + strings.Join(facts, ", ")
+}

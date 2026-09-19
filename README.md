@@ -14,7 +14,7 @@ Homebrew (macOS, Linux) — also installs a `brew services` unit for the shared 
 brew install lexfrei/tap/mcp-tg
 ```
 
-APT (Debian, Ubuntu) — binary only, no daemon unit:
+APT (Debian, Ubuntu) — also ships a systemd user unit for the shared HTTP daemon:
 
 ```bash
 curl --fail --silent --show-error --location https://apt.lexfrei.dev/lexfrei.asc \

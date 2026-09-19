@@ -46,6 +46,15 @@ nfpms:
     contents:
       - src: LICENSE
         dst: /usr/share/doc/mcp-tg/copyright
+      # /usr/lib/systemd/user is where a package's user units belong;
+      # /etc/systemd/user is the admin's and ~/.config/systemd/user is the
+      # user's, and writing to either from a package would fight whoever
+      # owns it. Not enabled on install: without credentials the server
+      # exits on every start, so enabling is the user's explicit step.
+      - src: packaging/mcp-tg.service
+        dst: /usr/lib/systemd/user/mcp-tg.service
+      - src: packaging/mcp-tg.env.example
+        dst: /usr/share/doc/mcp-tg/mcp-tg.env.example
 
 # A formula rather than a cask: casks are macOS-only, and a formula also
 # gives `brew services`, which is how this server is meant to run — one

@@ -1,0 +1,23 @@
+# A user unit, not a system one: `mcp-tg login` writes the session to the
+# keychain of whoever ran it, and a system service would run as its own user
+# and look for that session where it was never written.
+[Unit]
+Description=Telegram MTProto MCP server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/mcp-tg
+# No leading "-": without credentials the server cannot serve anything, and
+# systemd naming the missing file is a clearer failure than the server
+# starting and exiting on its own check.
+EnvironmentFile=%h/.mcp-tg/env
+Restart=always
+# The server exits immediately when the credentials are missing or the session
+# is gone, so an unconfigured unit restarts forever; this keeps that loop cheap
+# enough to leave running while you go and fix the config.
+RestartSec=30
+
+[Install]
+WantedBy=default.target

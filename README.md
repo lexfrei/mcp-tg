@@ -14,6 +14,23 @@ Homebrew (macOS, Linux) — also installs a `brew services` unit for the shared 
 brew install lexfrei/tap/mcp-tg
 ```
 
+APT (Debian, Ubuntu) — binary only, no daemon unit:
+
+```bash
+curl --fail --silent --show-error --location https://lexfrei.github.io/apt/lexfrei.asc \
+  | sudo gpg --dearmor --output /usr/share/keyrings/lexfrei.gpg
+
+sudo tee /etc/apt/sources.list.d/lexfrei.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://lexfrei.github.io/apt
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/lexfrei.gpg
+EOF
+
+sudo apt update && sudo apt install mcp-tg
+```
+
 Container:
 
 ```bash

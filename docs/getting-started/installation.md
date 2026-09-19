@@ -35,6 +35,47 @@ Do not reach for `sudo brew services start`: that installs a LaunchDaemon, which
 
 A service manager passes only the variables its unit declares, and credentials cannot ship inside a public formula — so the service is a small wrapper that sources `$(brew --prefix)/etc/mcp-tg/mcp-tg.env` on every start. That is the one file to edit, it survives upgrades and reboots, and nothing depends on your login shell. Uncomment `TELEGRAM_SESSION_INSECURE=true` in it if (and only if) you logged in with `--insecure-storage` — the session backend must match on both sides, or the daemon looks for the session where it was never written.
 
+## APT (Debian, Ubuntu)
+
+```bash
+curl --fail --silent --show-error --location https://lexfrei.github.io/apt/lexfrei.asc \
+  | sudo gpg --dearmor --output /usr/share/keyrings/lexfrei.gpg
+
+sudo tee /etc/apt/sources.list.d/lexfrei.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://lexfrei.github.io/apt
+Suites: stable
+Components: main
+Signed-By: /usr/share/keyrings/lexfrei.gpg
+EOF
+
+sudo apt update && sudo apt install mcp-tg
+claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
+```
+
+The package carries the binary and nothing else — no service unit, unlike the Homebrew formula. That is deliberate: a system-wide unit would run as its own user with its own keychain, and `mcp-tg login` writes the session for the user who ran it. To run the shared daemon on Linux, log in first and then write a user unit that starts under your own account:
+
+```ini
+# ~/.config/systemd/user/mcp-tg.service
+[Service]
+Environment=MCP_HTTP_ONLY=true MCP_HTTP_HOST=127.0.0.1 MCP_HTTP_PORT=8787
+EnvironmentFile=%h/.config/mcp-tg/mcp-tg.env
+ExecStart=/usr/bin/mcp-tg
+Restart=always
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+systemctl --user enable --now mcp-tg
+claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
+```
+
+A headless daemon cannot prompt, so run `mcp-tg login` in a terminal before the first start — with the same credentials the unit reads, and with `TELEGRAM_SESSION_INSECURE` matching on both sides if the machine has no Secret Service.
+
+Packages are built for `amd64` and `arm64`. The repository is [lexfrei/apt](https://github.com/lexfrei/apt) and it serves everything else I publish, so the key and the source file are set up once.
+
 ## Container
 
 ```bash

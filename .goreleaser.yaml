@@ -30,6 +30,23 @@ archives:
         formats: [zip]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 
+nfpms:
+  - formats: [deb]
+    # GoReleaser's default puts the OS in the name, which no Debian tool
+    # expects: the archive is what carries a platform, a .deb carries an
+    # architecture. lexfrei/apt sorts packages by their control fields, not
+    # by file name, so this is for people reading a directory listing.
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Arch }}"
+    vendor: lexfrei
+    homepage: "https://github.com/lexfrei/mcp-tg"
+    maintainer: Aleksei Sviridkin <f@lex.la>
+    description: MCP server for the Telegram Client API (MTProto, user account)
+    license: BSD-3-Clause
+    section: net
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/mcp-tg/copyright
+
 # A formula rather than a cask: casks are macOS-only, and a formula also
 # gives `brew services`, which is how this server is meant to run — one
 # shared HTTP daemon per machine. The section is deprecated in GoReleaser

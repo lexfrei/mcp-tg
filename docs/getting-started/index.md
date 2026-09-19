@@ -12,7 +12,7 @@ This is a **user account** client over MTProto, not a bot — so it authenticate
 
     ---
 
-    Homebrew, container, or a signed release binary — and how to register the server with an MCP client.
+    Homebrew, apt, container, or a signed release binary — and how to register the server with an MCP client.
 
     [:octicons-arrow-right-24: Installation](installation.md)
 

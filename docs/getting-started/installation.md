@@ -29,6 +29,8 @@ brew services start mcp-tg        # shared HTTP daemon on 127.0.0.1:8787
 claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 ```
 
+`brew upgrade` replaces the binary and leaves the daemon running the old one: it touches no services, so a process nobody stopped goes on serving the image it started with. Finish the upgrade with `brew services restart mcp-tg`, and ask `tg_server_version` if you want to be sure which build is answering.
+
 The trade-off between the two modes is described in [Transport modes](../building.md#transport-modes).
 
 Do not reach for `sudo brew services start`: that installs a LaunchDaemon, which runs as root and reads the **System** keychain, while `mcp-tg login` wrote the session to your **login** keychain. The daemon would insist you log in, which you already did.
@@ -75,6 +77,16 @@ claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 The unit reads `~/.mcp-tg/env` on every start, so nothing depends on your login shell. The session lands next to it as `~/.mcp-tg/session.json`, which is the default and needs no variable of its own. On a machine with no Secret Service — a container, or a headless box — log in with `--insecure-storage` and uncomment `TELEGRAM_SESSION_INSECURE` in the same file; the backend must match on both sides.
 
 If the daemon crash-loops, the config is the first suspect: `systemctl --user status mcp-tg` and `journalctl --user --unit mcp-tg`. The unit waits 30 seconds between restarts, so a broken config costs you nothing while you fix it.
+
+After an upgrade the running daemon is still the old binary. Nothing restarts it for you — the package ships no maintainer scripts, and a user unit is not root's to restart in any case — so the last step is yours:
+
+```bash
+systemctl --user daemon-reload && systemctl --user restart mcp-tg
+```
+
+The reload is there because a release can replace the unit itself, and with no maintainer scripts nothing tells systemd to re-read it; restarting alone would start the cached copy and warn that the file changed on disk.
+
+`tg_server_version` reports the build the process started with, which is how you tell a finished upgrade from a pending one.
 
 For a login session that should keep the daemon alive after you log out, `loginctl enable-linger $USER`.
 

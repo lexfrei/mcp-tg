@@ -6,7 +6,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 
 ## Start here
 
-- [Installation](getting-started/installation.md) — Homebrew, container, or a release binary
+- [Installation](getting-started/installation.md) — Homebrew, apt, container, or a release binary
 - [Authentication](getting-started/authentication.md) — the `mcp-tg login` flow and where the session is stored
 - [Configuration](getting-started/configuration.md) — environment variables and command-line flags
 - [Tools](tools.md) — the full tool reference

@@ -53,26 +53,30 @@ sudo apt update && sudo apt install mcp-tg
 claude mcp add mcp-tg --env TELEGRAM_APP_ID=12345 --env TELEGRAM_APP_HASH=your_app_hash -- mcp-tg
 ```
 
-The package carries the binary and nothing else — no service unit, unlike the Homebrew formula. That is deliberate: a system-wide unit would run as its own user with its own keychain, and `mcp-tg login` writes the session for the user who ran it. To run the shared daemon on Linux, log in first and then write a user unit that starts under your own account:
+### Shared daemon with systemd
 
-```ini
-# ~/.config/systemd/user/mcp-tg.service
-[Service]
-Environment=MCP_HTTP_ONLY=true MCP_HTTP_HOST=127.0.0.1 MCP_HTTP_PORT=8787
-EnvironmentFile=%h/.config/mcp-tg/mcp-tg.env
-ExecStart=/usr/bin/mcp-tg
-Restart=always
+The package ships a systemd **user** unit at `/usr/lib/systemd/user/mcp-tg.service`, the counterpart of what `brew services` gives on macOS. It is a user unit rather than a system one because `mcp-tg login` writes the session for whoever ran it, and a system service would run as its own user and look for that session where it was never written.
 
-[Install]
-WantedBy=default.target
-```
+It is installed disabled. Without credentials the server exits on every start, so enabling it before there is a config would just restart it forever.
 
 ```bash
+install --directory --mode 700 ~/.mcp-tg
+cp /usr/share/doc/mcp-tg/mcp-tg.env.example ~/.mcp-tg/env
+chmod 600 ~/.mcp-tg/env
+$EDITOR ~/.mcp-tg/env          # app id and hash from https://my.telegram.org/apps
+
+set -a; . ~/.mcp-tg/env; set +a
+mcp-tg login                   # a headless daemon cannot prompt; log in from the terminal
+
 systemctl --user enable --now mcp-tg
 claude mcp add --transport http mcp-tg http://127.0.0.1:8787 --scope user
 ```
 
-A headless daemon cannot prompt, so run `mcp-tg login` in a terminal before the first start — with the same credentials the unit reads, and with `TELEGRAM_SESSION_INSECURE` matching on both sides if the machine has no Secret Service.
+The unit reads `~/.mcp-tg/env` on every start, so nothing depends on your login shell. The session lands next to it as `~/.mcp-tg/session.json`, which is the default and needs no variable of its own. On a machine with no Secret Service — a container, or a headless box — log in with `--insecure-storage` and uncomment `TELEGRAM_SESSION_INSECURE` in the same file; the backend must match on both sides.
+
+If the daemon crash-loops, the config is the first suspect: `systemctl --user status mcp-tg` and `journalctl --user --unit mcp-tg`. The unit waits 30 seconds between restarts, so a broken config costs you nothing while you fix it.
+
+For a login session that should keep the daemon alive after you log out, `loginctl enable-linger $USER`.
 
 Packages are built for `amd64` and `arm64`. The repository is [lexfrei/apt](https://github.com/lexfrei/apt) and it serves everything else I publish, so the key and the source file are set up once.
 

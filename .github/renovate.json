@@ -1,25 +1,63 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>lexfrei/renovate-config"],
+  "extends": [
+    "github>lexfrei/renovate-config"
+  ],
   "rangeStrategy": "pin",
   "packageRules": [
     {
       "description": "Group all Go module updates into one PR",
-      "matchManagers": ["gomod"],
+      "matchManagers": [
+        "gomod"
+      ],
       "groupName": "go modules",
       "groupSlug": "go-modules"
     },
     {
       "description": "Group all GitHub Actions updates into one PR",
-      "matchManagers": ["github-actions"],
+      "matchManagers": [
+        "github-actions"
+      ],
       "groupName": "github actions",
       "groupSlug": "github-actions"
     },
     {
       "description": "Pin the Go base image in the Containerfile using docker versioning",
-      "matchManagers": ["dockerfile"],
-      "matchPackageNames": ["docker.io/library/golang"],
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "docker.io/library/golang"
+      ],
       "versioning": "docker"
+    },
+    {
+      "description": "Restate the preset's go-toolchain group after the gomod grouping above. Rules in this file are evaluated after the preset, so the broad gomod rule would otherwise pull the go directive back into the go-modules PR and leave the golang base image and the documented minimum behind in a separate one.",
+      "matchDatasources": [
+        "golang-version",
+        "docker"
+      ],
+      "matchPackageNames": [
+        "go",
+        "golang",
+        "**/golang"
+      ],
+      "groupName": "go toolchain",
+      "groupSlug": "go-toolchain"
+    }
+  ],
+  "customManagers": [
+    {
+      "description": "Track the minimum Go version stated in docs/building.md. TestDocsGoVersion_MatchesGoMod compares it to the go directive exactly, so a bump that moves only go.mod fails CI.",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^docs\\/building\\.md$/"
+      ],
+      "matchStrings": [
+        "- Go (?<currentValue>\\d+\\.\\d+\\.\\d+)\\+"
+      ],
+      "datasourceTemplate": "golang-version",
+      "depNameTemplate": "go"
     }
   ]
 }

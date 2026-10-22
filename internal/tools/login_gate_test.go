@@ -305,7 +305,7 @@ func TestAddTool_GatesEveryToolButTheVersionOne(t *testing.T) {
 				return &mcp.CallToolResult{}, struct{}{}, nil
 			}
 
-			AddTool(server, BoolFieldRegistry{}, newTestGate(), &mcp.Tool{Name: tc.tool}, handler)
+			AddTool(server, NewRegistry(ToolPolicy{}), newTestGate(), &mcp.Tool{Name: tc.tool}, handler)
 
 			result := callGatedTool(t, server, tc.tool)
 

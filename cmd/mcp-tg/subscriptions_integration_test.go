@@ -11,6 +11,7 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
+	"github.com/lexfrei/mcp-tg/internal/tools"
 )
 
 // resolvingClient overrides NoopClient.ResolvePeer to map any identifier to a
@@ -86,7 +87,12 @@ func TestSubscription_EndToEnd(t *testing.T) {
 	broker := tgclient.NewSubscriptionBroker()
 	client := resolvingClient{peer: tgclient.InputPeer{Type: tgclient.PeerUser, ID: selfID}}
 
-	server := buildServer(client, "/tmp/mcp-tg/downloads", nil, broker, authDone, health, nil, discardLogger())
+	server, err := buildServer(
+		client, "/tmp/mcp-tg/downloads", nil, broker, authDone, health, nil, tools.ToolPolicy{}, discardLogger(),
+	)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
 
 	ct, st := mcp.NewInMemoryTransports()
 
@@ -187,7 +193,12 @@ func TestSubscription_UnsubscribeStopsUpdates(t *testing.T) {
 	broker := tgclient.NewSubscriptionBroker()
 	client := resolvingClient{peer: tgclient.InputPeer{Type: tgclient.PeerUser, ID: selfID}}
 
-	server := buildServer(client, "/tmp/mcp-tg/downloads", nil, broker, authDone, health, nil, discardLogger())
+	server, err := buildServer(
+		client, "/tmp/mcp-tg/downloads", nil, broker, authDone, health, nil, tools.ToolPolicy{}, discardLogger(),
+	)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
 
 	ct, st := mcp.NewInMemoryTransports()
 

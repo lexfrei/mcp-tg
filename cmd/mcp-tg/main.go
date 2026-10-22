@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,6 +44,10 @@ var (
 	version  = "dev"
 	revision = "unknown"
 )
+
+// ErrUnknownTool is returned when TELEGRAM_TOOLS or TELEGRAM_DISABLED_TOOLS
+// names a tool the server does not have.
+var ErrUnknownTool = errors.New("unknown tool name in TELEGRAM_TOOLS or TELEGRAM_DISABLED_TOOLS")
 
 func main() {
 	if versionRequested(os.Args) {
@@ -136,13 +141,21 @@ func startServer(
 	transcriptionBroker *tgclient.TranscriptionBroker, subscriptionBroker *tgclient.SubscriptionBroker,
 	cfg *config.Config, health *mcpmw.SessionHealth, logger *slog.Logger,
 ) error {
-	wrapper := tgclient.NewWrapperWithTranscriptionBroker(tgClient.API(), transcriptionBroker)
-
-	if cfg.HTTPOnly {
-		return startHeadless(ctx, tgClient, wrapper, subscriptionBroker, cfg, health, logger)
+	var client tgclient.Client = tgclient.NewWrapperWithTranscriptionBroker(tgClient.API(), transcriptionBroker)
+	if len(cfg.Access.AllowedPeers) > 0 {
+		client = tgclient.NewPeerAllowlist(client, cfg.Access.AllowedPeers)
 	}
 
-	return startStdio(ctx, cancel, tgClient, wrapper, subscriptionBroker, cfg, health, logger)
+	if cfg.HTTPOnly {
+		return startHeadless(ctx, tgClient, client, subscriptionBroker, cfg, health, logger)
+	}
+
+	return startStdio(ctx, cancel, tgClient, client, subscriptionBroker, cfg, health, logger)
+}
+
+// toolPolicy builds the tool policy from the access settings.
+func toolPolicy(access *config.Access) tools.ToolPolicy {
+	return tools.NewToolPolicy(access.ReadOnly, access.Tools, access.DisabledTools, len(access.AllowedPeers) > 0)
 }
 
 // startStdio runs the server with stdio as the primary transport (the default
@@ -158,9 +171,13 @@ func startStdio(
 	authDone := make(chan struct{})
 	login := newLogin(tgClient, cfg, health, authDone, logger)
 
-	server := buildServer(
-		wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, login, logger,
+	server, err := buildServer(
+		wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, login,
+		toolPolicy(&cfg.Access), logger,
 	)
+	if err != nil {
+		return err
+	}
 
 	stdioSession, err := server.Connect(ctx, &mcp.StdioTransport{}, nil)
 	if err != nil {
@@ -194,7 +211,13 @@ func startHeadless(
 ) error {
 	authDone := make(chan struct{})
 	login := newLogin(tgClient, cfg, health, authDone, logger)
-	server := newHeadlessServer(wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, logger)
+
+	server, err := newHeadlessServer(
+		wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, toolPolicy(&cfg.Access), logger,
+	)
+	if err != nil {
+		return err
+	}
 
 	authErr := login.Probe(ctx)
 	if authErr == nil && !login.Done() {
@@ -220,19 +243,21 @@ func startHeadless(
 // named seam so the daemon and its tests construct the server identically.
 func newHeadlessServer(
 	client tgclient.Client, downloadDir string, fileRoots []string, broker *tgclient.SubscriptionBroker,
-	authDone chan struct{}, health *mcpmw.SessionHealth, logger *slog.Logger,
-) *mcp.Server {
-	return buildServer(client, downloadDir, fileRoots, broker, authDone, health, nil, logger)
+	authDone chan struct{}, health *mcpmw.SessionHealth, policy tools.ToolPolicy, logger *slog.Logger,
+) (*mcp.Server, error) {
+	return buildServer(client, downloadDir, fileRoots, broker, authDone, health, nil, policy, logger)
 }
 
 // buildServer constructs the MCP server with all tools, resources, prompts, and
 // middleware. login, when non-nil, is offered to every Telegram tool so the
 // first call that needs an account can log in; pass nil when there is no
-// Telegram client to log into.
+// Telegram client to log into. policy decides which tools are registered; a
+// policy naming a tool that does not exist is ErrUnknownTool.
 func buildServer(
 	client tgclient.Client, downloadDir string, fileRoots []string, broker *tgclient.SubscriptionBroker,
-	authDone chan struct{}, health *mcpmw.SessionHealth, login *tgclient.Login, logger *slog.Logger,
-) *mcp.Server {
+	authDone chan struct{}, health *mcpmw.SessionHealth, login *tgclient.Login, policy tools.ToolPolicy,
+	logger *slog.Logger,
+) (*mcp.Server, error) {
 	opts := newServerOptions(client, broker, logger)
 
 	server := mcp.NewServer(
@@ -247,13 +272,18 @@ func buildServer(
 	// registered before Run, but ResourceUpdated needs the built server.
 	broker.SetNotifier(newResourceUpdater(server))
 
-	boolFields := tools.BoolFieldRegistry{}
-	registerTools(server, client, boolFields, tools.NewLoginGate(login), downloadDir, fileRoots)
+	registry := tools.NewRegistry(policy)
+	registerTools(server, client, registry, tools.NewLoginGate(login), downloadDir, fileRoots)
+
+	if unknown := registry.UnknownTools(); len(unknown) > 0 {
+		return nil, errors.Errorf("%w: %s", ErrUnknownTool, strings.Join(unknown, ", "))
+	}
+
 	resources.Register(server, client)
 	prompts.Register(server, client)
-	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone, health)...)
+	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, registry.BoolFields, authDone, health)...)
 
-	return server
+	return server, nil
 }
 
 // receivingMiddlewares returns the server middleware chain; the first entry is
@@ -541,7 +571,7 @@ func newServerOptions(
 }
 
 func registerTools(
-	server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry, gate *tools.LoginGate,
+	server *mcp.Server, client tgclient.Client, registry *tools.Registry, gate *tools.LoginGate,
 	downloadDir string, fileRoots []string,
 ) {
 	tools.AddTool(server, registry, gate, tools.ServerVersionTool(),

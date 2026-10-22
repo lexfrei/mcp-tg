@@ -16,6 +16,7 @@ import (
 	"github.com/lexfrei/mcp-tg/internal/middleware"
 	tgclient "github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/lexfrei/mcp-tg/internal/testutil"
+	"github.com/lexfrei/mcp-tg/internal/tools"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -78,14 +79,17 @@ func TestToolCall_LogsInOnTheCurrentProtocolRevision(t *testing.T) {
 			close(authDone)
 		})
 
-	server := buildServer(
+	server, err := buildServer(
 		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
-		tgclient.NewSubscriptionBroker(), authDone, health, login, discardLogger(),
+		tgclient.NewSubscriptionBroker(), authDone, health, login, tools.ToolPolicy{}, discardLogger(),
 	)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
 
 	ct, st := mcp.NewInMemoryTransports()
 
-	_, err := server.Connect(ctx, st, nil)
+	_, err = server.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatalf("server connect: %v", err)
 	}

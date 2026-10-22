@@ -62,7 +62,7 @@ cmd/mcp-tg/server_error.go  500-class internal-error retry middleware for gotd/t
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 cmd/mcp-tg/subscriptions.go resourceUpdater adapter + Subscribe/Unsubscribe handlers wiring the SubscriptionBroker to the MCP server
-internal/config/             Env var loading and validation
+internal/config/             Env var loading and validation (access.go: TELEGRAM_ALLOWED_PEERS / READ_ONLY / TOOLS / DISABLED_TOOLS)
 internal/telegram/           Telegram abstraction layer
   types.go                   Domain types (Message, User, Dialog, etc.)
   client.go                  Client interface (14 sub-interfaces)
@@ -80,6 +80,7 @@ internal/telegram/           Telegram abstraction layer
   invite_link.go             Invite links: the primary link read from the full chat, plus list, create and revoke
   send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
   subscriptions.go           SubscriptionBroker: routes new-message updates to watching resource URIs (ResourceUpdater sink)
+  peer_allowlist.go          PeerAllowlist: Client decorator enforcing TELEGRAM_ALLOWED_PEERS
 internal/tools/              MCP tool handlers (80 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
@@ -88,7 +89,8 @@ internal/tools/              MCP tool handlers (80 tools)
   file_roots.go              File path validation against the TELEGRAM_FILE_ROOTS allowlist
   progress.go                Progress notification helper
   result_types.go            Structured JSON result types (DialogItem, MessageItem, etc.)
-  register.go                tools.AddTool wrapper (records bool fields into the coercer registry, applies the LoginGate) + inputSchemaWithEnum for enum-constrained input schemas
+  register.go                tools.AddTool wrapper (consults the Registry's policy, records bool fields into the coercer registry, applies the LoginGate) + inputSchemaWithEnum for enum-constrained input schemas
+  policy.go                  ToolPolicy (read-only / allow / deny / account-wide filtering) + Registry
   login_gate.go              LoginGate: runs the login on the first tool call that needs an account, by elicitation or input requests
   mock_test.go               Mock telegram.Client for tests
 internal/resources/          MCP resources (4 resources)
@@ -111,6 +113,7 @@ internal/testutil/           NoopClient for registration tests
 3. Register in `cmd/mcp-tg/main.go` `registerTools()` via `tools.AddTool(server, registry, gate, ...)` — NOT `mcp.AddTool`. The wrapper reflects over the Params struct, records every `bool`/`*bool` field into the registry consumed by the bool-coercion middleware, wraps the handler in the login gate, and then delegates to the SDK. Bypassing it silently disables coercion for the new tool's bool params AND leaves it unable to log in.
 4. Add mock method in `internal/tools/mock_test.go`
 5. Add noop method in `internal/testutil/noop_client.go`
+6. If the tool reads or changes chats WITHOUT taking a peer the caller names, add it to `accountWideTools` (`internal/tools/policy.go`) and refuse its client method in `telegram.PeerAllowlist` — otherwise `TELEGRAM_ALLOWED_PEERS` does not scope it (see "Access control")
 
 ### Tool annotations
 
@@ -120,6 +123,14 @@ internal/testutil/           NoopClient for registration tests
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
 The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release. `TestDocsAnnotationTable_MatchesTheCensus` then pins the published table in `docs/tools.md` against those same constants, so the site cannot drift from the server either.
+
+### Access control
+
+Two independent layers, both off by default (`docs/getting-started/configuration.md`, "Access control").
+
+**Tool policy** (`TELEGRAM_READ_ONLY`, `TELEGRAM_TOOLS`, `TELEGRAM_DISABLED_TOOLS`). `tools.ToolPolicy` decides per tool, and `tools.AddTool` skips registration of a rejected tool entirely — a hidden tool cannot be listed or called, so no middleware has to keep a list and a call path in agreement. `buildServer` hands `registerTools` a `*tools.Registry` (the policy plus the bool-field map the coercer reads, plus every tool name offered to `AddTool`); after registration `Registry.UnknownTools` turns a policy naming a nonexistent tool into `ErrUnknownTool` at startup, because a typo in the deny list would otherwise fail open. Read-only is the `ReadOnlyHint` annotation, so the census's read-only count is exactly what that mode lists (`TestReadOnlyMode_ListsOnlyReadOnlyTools`). `tg_server_version` is always admitted.
+
+**Peer allowlist** (`TELEGRAM_ALLOWED_PEERS`). `telegram.PeerAllowlist` decorates the `Client` in `startServer`, before anything else sees it. Every tool, resource, prompt, subscription and completion turns a peer string into an `InputPeer` through `ResolvePeer`, so refusing there (`ErrPeerNotAllowed`) is the one choke point — including secondary peers (`from`, `sendAs`, `offsetPeer`, a user to add). Listings that return peers the caller never named are filtered (`GetDialogs`, `SearchDialogs`, `GetCommonChats`); operations that can only act on the whole account are refused (`ErrAccountWideDisabled`: `SearchGlobal`, `ClearAllDrafts`, the folder methods) and their tools are hidden by the policy's `peerScoped` flag via `accountWideTools`. Folders are refused rather than filtered because `EditFolder` replaces the whole peer list — an agent seeing a filtered folder would delete the chats it cannot see. The decorator embeds `Client`, so a NEW method passes straight through: a new account-wide method must be added to both lists by hand. Comparison is by (type, ID) only; a numeric identifier is checked BEFORE the wrapped `ResolvePeer` runs, because resolving an unknown user ID can cost a full dialog warm. Entries resolve lazily (the server logs in on the first tool call) and an entry that fails to resolve fails the check and is retried next time — dropping it would shrink the list silently.
 
 ### Peer resolution
 

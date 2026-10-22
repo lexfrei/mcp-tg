@@ -48,20 +48,29 @@ type BoolFieldRegistry = map[string]map[string]struct{}
 // string-encoded booleans (e.g. "true") into real JSON booleans before the
 // SDK validator runs.
 //
+// A tool the registry's policy rejects is not registered at all. A nil
+// registry admits every tool and records nothing.
+//
 // gate, when non-nil, runs the Telegram login before the handler on any tool
 // that needs an account. It is applied here rather than in a middleware
 // because only a result returned from the tool dispatch can carry a login
 // prompt back to the client.
 func AddTool[In, Out any](
 	server *mcp.Server,
-	registry BoolFieldRegistry,
+	registry *Registry,
 	gate *LoginGate,
 	tool *mcp.Tool,
 	handler mcp.ToolHandlerFor[In, Out],
 ) {
-	fields := boolJSONFields[In]()
-	if len(fields) > 0 && registry != nil {
-		registry[tool.Name] = fields
+	if registry != nil {
+		if !registry.admit(tool) {
+			return
+		}
+
+		fields := boolJSONFields[In]()
+		if len(fields) > 0 {
+			registry.BoolFields[tool.Name] = fields
+		}
 	}
 
 	if gate != nil && tool.Name != ServerVersionToolName {

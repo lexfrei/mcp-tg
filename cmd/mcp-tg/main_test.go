@@ -38,7 +38,7 @@ func TestRegisterTools(t *testing.T) {
 	)
 
 	client := testutil.NoopClient{}
-	registry := tools.BoolFieldRegistry{}
+	registry := tools.NewRegistry(tools.ToolPolicy{})
 	registerTools(server, client, registry, nil, "/tmp/mcp-tg/downloads", nil)
 
 	// Sample several tools spread across registration phases. If any of
@@ -58,7 +58,7 @@ func TestRegisterTools(t *testing.T) {
 	}
 
 	for name, expected := range cases {
-		got, ok := registry[name]
+		got, ok := registry.BoolFields[name]
 		if !ok {
 			t.Errorf("%s missing from bool registry — likely registered via mcp.AddTool instead of tools.AddTool", name)
 
@@ -90,10 +90,13 @@ func TestHeadlessServer_ServesMultipleClients(t *testing.T) {
 	authDone := make(chan struct{})
 	close(authDone) // simulate completed auth so the guard lets calls through
 
-	server := newHeadlessServer(
+	server, err := newHeadlessServer(
 		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
-		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), discardLogger(),
+		tgclient.NewSubscriptionBroker(), authDone, middleware.NewSessionHealth(), tools.ToolPolicy{}, discardLogger(),
 	)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
 
 	for i := range 2 {
 		ct, st := mcp.NewInMemoryTransports()
@@ -139,10 +142,13 @@ func TestHeadlessServer_RevokedSessionBlocksToolsOverMCP(t *testing.T) {
 	health.Arm()
 	health.MarkRevoked("AUTH_KEY_UNREGISTERED")
 
-	server := buildServer(
+	server, err := buildServer(
 		testutil.NoopClient{}, "/tmp/mcp-tg/downloads", nil,
-		tgclient.NewSubscriptionBroker(), authDone, health, nil, discardLogger(),
+		tgclient.NewSubscriptionBroker(), authDone, health, nil, tools.ToolPolicy{}, discardLogger(),
 	)
+	if err != nil {
+		t.Fatalf("build server: %v", err)
+	}
 
 	ct, st := mcp.NewInMemoryTransports()
 

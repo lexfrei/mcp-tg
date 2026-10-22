@@ -22,8 +22,8 @@ import (
 //
 // When a tool is added, update these numbers AND the two documents.
 const (
-	wantToolsTotal       = 90
-	wantReadOnlyTools    = 38
+	wantToolsTotal       = 91
+	wantReadOnlyTools    = 39
 	wantIdempotentTools  = 29
 	wantWriteTools       = 14
 	wantDestructiveTools = 9

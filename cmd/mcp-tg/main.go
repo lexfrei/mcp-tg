@@ -635,6 +635,16 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
+
+	// Group administration.
+	tools.AddTool(server, registry, gate, tools.GroupsBanTool(), tools.NewGroupsBanHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsInviteCheckTool(), tools.NewGroupsInviteCheckHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsJoinInviteTool(), tools.NewGroupsJoinInviteHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsUpgradeTool(), tools.NewGroupsUpgradeHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsSetForumTool(), tools.NewGroupsSetForumHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsAdminLogTool(), tools.NewGroupsAdminLogHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsDeletePhotoTool(), tools.NewChatsDeletePhotoHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsDeleteTool(), tools.NewTopicsDeleteHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

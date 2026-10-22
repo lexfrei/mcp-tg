@@ -92,6 +92,12 @@ type GroupClient interface {
 	CreateInviteLink(ctx context.Context, peer InputPeer, opts InviteLinkOpts) (*InviteLink, error)
 	ListInviteLinks(ctx context.Context, peer InputPeer, revoked bool, limit int) ([]InviteLink, int, error)
 	RevokeInviteLink(ctx context.Context, peer InputPeer, link string) (string, error)
+	BanMember(ctx context.Context, group, user InputPeer, untilDate int, unban bool) error
+	CheckInvite(ctx context.Context, link string) (*InviteInfo, error)
+	JoinByInvite(ctx context.Context, link string) (*PeerInfo, error)
+	UpgradeToSupergroup(ctx context.Context, peer InputPeer) (*PeerInfo, error)
+	SetForum(ctx context.Context, peer InputPeer, enabled bool) error
+	GetAdminLog(ctx context.Context, peer InputPeer, opts AdminLogOpts) ([]AdminLogEvent, error)
 }
 
 // ChatClient handles chat management operations.
@@ -104,6 +110,7 @@ type ChatClient interface {
 	SetChatAbout(ctx context.Context, peer InputPeer, about string) error
 	GetChatAdmins(ctx context.Context, peer InputPeer) ([]User, error)
 	SetChatPermissions(ctx context.Context, peer InputPeer, perms ChatPermissions) error
+	DeleteChatPhoto(ctx context.Context, peer InputPeer) error
 }
 
 // UserClient handles user and profile operations.
@@ -123,6 +130,7 @@ type TopicClient interface {
 	GetForumTopics(ctx context.Context, peer InputPeer, opts TopicOpts) ([]ForumTopic, error)
 	CreateForumTopic(ctx context.Context, peer InputPeer, title string, sendAs *InputPeer) (*ForumTopic, error)
 	EditForumTopic(ctx context.Context, peer InputPeer, topicID int, title string) error
+	DeleteForumTopic(ctx context.Context, peer InputPeer, topicID int) error
 }
 
 // StickerClient handles sticker operations.

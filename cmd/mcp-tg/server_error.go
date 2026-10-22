@@ -136,6 +136,11 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // the new link back; a resend inside a single call throws away an answer the
 // first attempt already earned, with nobody in a position to notice.
 //
+// migrateChat is held back for the same reason as editExportedChatInvite: the
+// supergroup it creates is reported only to the attempt that created it. A
+// resend finds the basic group already migrated and answers with an error, so
+// the caller loses the new supergroup's ID to a request that succeeded.
+//
 // This is a DENY-LIST of what has been found, not a proof that nothing else
 // qualifies: MTProto marks no request as non-idempotent, so nothing here can be
 // derived, and a new tool wrapping another creating method has to be added by
@@ -161,7 +166,8 @@ func safeToResend(input bin.Encoder) bool {
 		*tg.MessagesUpdateDialogFilterRequest,
 		*tg.PhotosUploadProfilePhotoRequest,
 		*tg.MessagesExportChatInviteRequest,
-		*tg.MessagesEditExportedChatInviteRequest:
+		*tg.MessagesEditExportedChatInviteRequest,
+		*tg.MessagesMigrateChatRequest:
 		return false
 	default:
 		return true

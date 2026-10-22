@@ -2,7 +2,7 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (96)
+## Tools (104)
 
 ### Messages (20)
 
@@ -48,7 +48,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_contacts_get_statuses` — Get online statuses of all contacts
 - `tg_contacts_list_blocked` — List blocked users
 
-### Groups (14)
+### Groups (20)
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
@@ -64,8 +64,14 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_groups_members_list` — List group members
 - `tg_groups_admin_set` — Promote or demote an admin with specific rights
 - `tg_groups_slowmode` — Set the slowmode delay
+- `tg_groups_ban` — Ban a user from a channel or supergroup, or lift the ban
+- `tg_groups_invite_check` — Preview the chat behind an invite link without joining
+- `tg_groups_join_invite` — Join a group or channel by its private invite link
+- `tg_groups_upgrade` — Upgrade a basic group to a supergroup
+- `tg_groups_set_forum` — Turn forum topics on or off
+- `tg_groups_admin_log` — Read recent admin actions in a channel or supergroup
 
-### Chat Management (10)
+### Chat Management (11)
 
 - `tg_chats_create` — Create a new group or channel
 - `tg_chats_archive` — Archive or unarchive a chat
@@ -77,6 +83,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_chats_set_permissions` — Set default permissions
 - `tg_chats_get_send_as` — List the identities this account may post under in a supergroup or channel
 - `tg_chats_set_send_as` — Set the identity this account posts under by default in a supergroup or channel
+- `tg_chats_delete_photo` — Remove a group or channel photo
 
 ### Media & Files (7)
 
@@ -100,12 +107,13 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_profile_set_bio` — Update bio
 - `tg_profile_set_photo` — Set profile photo
 
-### Forum Topics (4)
+### Forum Topics (5)
 
 - `tg_topics_list` — List forum topics
 - `tg_topics_search` — Search forum topics
 - `tg_topics_create` — Create a forum topic
 - `tg_topics_edit` — Rename a forum topic
+- `tg_topics_delete` — Delete a forum topic with all its messages
 
 ### Stickers (3)
 
@@ -155,7 +163,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 41 | Only reads data |
-| idempotent | 30 | Modifies state, safe to retry |
-| write | 15 | Creates new entities, not idempotent |
-| destructive | 10 | Deletes or removes things |
+| read-only | 43 | Only reads data |
+| idempotent | 32 | Modifies state, safe to retry |
+| write | 16 | Creates new entities, not idempotent |
+| destructive | 13 | Deletes or removes things |

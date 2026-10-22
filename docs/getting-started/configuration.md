@@ -13,6 +13,7 @@
 | `TELEGRAM_AUTH_CODE` | One-time auth code | — | No (prompted in the client on the first tool call) |
 | `TELEGRAM_DOWNLOAD_DIR` | Media download directory | `mcp-tg/downloads` under the OS temp dir (see below) | No |
 | `TELEGRAM_FILE_ROOTS` | Directory allowlist for tools that read or write local files | unset (no restriction) | No |
+| `TELEGRAM_PROXY` | Proxy for every connection to Telegram: SOCKS5 or MTProxy (see [Proxy](#proxy)) | unset (direct) | No |
 | `MCP_HTTP_PORT` | Streamable HTTP transport port | disabled | No |
 | `MCP_HTTP_HOST` | HTTP bind address | `127.0.0.1` | No |
 | `MCP_HTTP_ONLY` | Run as a headless HTTP-only daemon (no stdio transport) | `false` | No (requires `MCP_HTTP_PORT`) |
@@ -21,6 +22,15 @@
 The download directory's default has no single spelling: the code derives it from Go's `os.TempDir()`, which returns `$TMPDIR` when that is set and falls back to `/tmp` on Unix otherwise. macOS sets `$TMPDIR` for every login session, so the default there lands under `/var/folders/...`; a plain container and Linux CI runners do not set it, so the container image resolves the default to `/tmp/mcp-tg/downloads`. Set `TELEGRAM_DOWNLOAD_DIR` explicitly if you need to know where files land without checking the environment first.
 
 `TELEGRAM_FILE_ROOTS` is a list of absolute directories joined with the OS path-list separator (`:` on Unix, `;` on Windows), the `PATH` convention. When set, every file path a tool reads (uploads, photos) or writes (downloads) must sit under one of the listed directories; a path outside them is rejected before any network call. Symlinks are resolved on both sides before the check, so a link under a root cannot smuggle in the tree it points to, and a root that is itself a symlink (macOS `/tmp`) admits its resolved tree. A path spelled with a `..` component is rejected outright: mixed with symlinks it cannot be judged safely, and every in-root path has a `..`-free spelling. A relative entry fails configuration loading outright, because a daemon's working directory is an accident of how it was launched; so does a set value that parses to no directories at all (unexpanded shell templating), since the operator asked for a boundary and running without one would fail open. When unset, paths are not restricted. This replaced the MCP roots capability, which the protocol deprecated (SEP-2577) and which only ever protected sessions whose client declared roots; the allowlist holds for every client of a shared daemon. If you set it, make sure `TELEGRAM_DOWNLOAD_DIR` points inside one of the roots, or downloads will be rejected.
+
+## Proxy
+
+`TELEGRAM_PROXY` routes every connection to Telegram — the server's and `mcp-tg login`'s alike — through a proxy. Two kinds are accepted:
+
+- SOCKS5: `socks5://host:port`, or `socks5://user:password@host:port` with authentication.
+- MTProxy: the share link Telegram hands out, in either spelling — `tg://proxy?server=HOST&port=PORT&secret=SECRET` or `https://t.me/proxy?server=HOST&port=PORT&secret=SECRET`. Hex secrets and the base64 fake-TLS (`ee…`) ones both work.
+
+A value that is neither fails configuration loading rather than falling back to a direct connection, so a typo cannot quietly bypass the proxy. HTTP proxies are not supported: MTProto is not HTTP.
 
 ## Command-line flags
 

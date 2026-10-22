@@ -1,6 +1,6 @@
 # Posting as a channel (`sendAs`)
 
-Telegram lets an account post into a supergroup under the identity of a channel it administrates, rather than under its own name. Six tools take an optional `sendAs` parameter for this: `tg_messages_send`, `tg_messages_send_file`, `tg_media_send_album`, `tg_messages_forward`, `tg_topics_create` and `tg_stickers_send`.
+Telegram lets an account post into a supergroup under the identity of a channel it administrates, rather than under its own name. Eight tools take an optional `sendAs` parameter for this: `tg_messages_send`, `tg_messages_send_file`, `tg_media_send_album`, `tg_messages_forward`, `tg_topics_create`, `tg_stickers_send`, `tg_media_send_voice` and `tg_inline_send`.
 
 Omitting `sendAs` does **not** force your own account — it lets the server apply the chat's saved default, exactly as the official clients do. That default is your account until `tg_chats_set_send_as` changes it, after which every send that omits `sendAs` posts as the saved identity. Pass `sendAs` explicitly when the identity matters.
 

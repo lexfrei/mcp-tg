@@ -635,6 +635,13 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
+
+	// Media extras and inline bots.
+	tools.AddTool(server, registry, gate, tools.MediaSendVoiceTool(), tools.NewMediaSendVoiceHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.MediaGetInfoTool(), tools.NewMediaGetInfoHandler(client))
+	tools.AddTool(server, registry, gate, tools.MediaViewTool(), tools.NewMediaViewHandler(client))
+	tools.AddTool(server, registry, gate, tools.InlineQueryTool(), tools.NewInlineQueryHandler(client))
+	tools.AddTool(server, registry, gate, tools.InlineSendTool(), tools.NewInlineSendHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

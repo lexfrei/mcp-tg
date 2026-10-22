@@ -94,6 +94,11 @@ func run() error {
 
 	device := mcpDevice()
 
+	resolver, resolverErr := newResolver(cfg.Proxy)
+	if resolverErr != nil {
+		return resolverErr
+	}
+
 	transcriptionBroker := tgclient.NewTranscriptionBroker()
 	subscriptionBroker := tgclient.NewSubscriptionBroker()
 	dispatcher := tg.NewUpdateDispatcher()
@@ -105,6 +110,7 @@ func run() error {
 		SessionStorage: storage,
 		Logger:         logzap.New(newGotdLogger(level)),
 		Device:         device,
+		Resolver:       resolver,
 		UpdateHandler:  dispatcher,
 		// Order is outermost first, and the nesting decides whose budget
 		// multiplies whose. With FLOOD_WAIT outermost a server-named delay is

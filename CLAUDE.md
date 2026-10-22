@@ -62,6 +62,7 @@ cmd/mcp-tg/server_error.go  500-class internal-error retry middleware for gotd/t
 cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 cmd/mcp-tg/subscriptions.go resourceUpdater adapter + Subscribe/Unsubscribe handlers wiring the SubscriptionBroker to the MCP server
+cmd/mcp-tg/proxy.go         TELEGRAM_PROXY → gotd dcs.Resolver (SOCKS5 via x/net/proxy, MTProxy via dcs.MTProxy), used by both the server and `mcp-tg login`
 internal/config/             Env var loading and validation
 internal/telegram/           Telegram abstraction layer
   types.go                   Domain types (Message, User, Dialog, etc.)
@@ -365,6 +366,7 @@ Strict config in `.golangci.yml`:
 - `github.com/modelcontextprotocol/go-sdk` — MCP protocol SDK
 - `github.com/google/jsonschema-go` — the SDK's schema inference, imported directly by `inputSchemaWithEnum` to constrain `parseMode` to an enum
 - `github.com/lexfrei/keychain` — cgo-free OS secret store (macOS Keychain / Linux Secret Service / Windows Credential Manager) for the default session backend; pulls `purego` + `godbus/dbus` indirectly
+- `golang.org/x/net` — the SOCKS5 dialer behind `TELEGRAM_PROXY` (`proxy.SOCKS5`, used through its `ContextDialer` so gotd can cancel a dial)
 - `golang.org/x/sync` — errgroup for concurrent transports
 - `golang.org/x/term` — no-echo TTY password read in `mcp-tg login`
 - `golang.org/x/text` — NFKD fold in `slugifyHeading` (`docs_contract_test.go`), so the docs-link pin slugs headings exactly as python-markdown does. Test-only, but a direct dependency

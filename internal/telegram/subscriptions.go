@@ -72,6 +72,11 @@ type SubscriptionBroker struct {
 	// used to find the watchers when a message arrives.
 	peerURIs map[subscriptionKey]map[string]struct{}
 	notifier ResourceUpdater
+	// listeners are in-process waiters (tg_messages_wait) woken by a new
+	// message in a peer. Each channel has a one-slot buffer and is signalled
+	// without blocking, so a waiter that has not yet drained a wake-up loses
+	// nothing: one pending signal already means "look again".
+	listeners map[subscriptionKey]map[chan struct{}]struct{}
 }
 
 // NewSubscriptionBroker creates an empty broker with no notifier wired yet.
@@ -80,6 +85,7 @@ func NewSubscriptionBroker() *SubscriptionBroker {
 		subscribers: make(map[string]map[any]struct{}),
 		owner:       make(map[string]subscriptionKey),
 		peerURIs:    make(map[subscriptionKey]map[string]struct{}),
+		listeners:   make(map[subscriptionKey]map[chan struct{}]struct{}),
 	}
 }
 
@@ -186,6 +192,38 @@ func (b *SubscriptionBroker) HandleNewChannelMessage(
 	return b.dispatch(ctx, update.Message)
 }
 
+// Listener is one in-process waiter on a peer: Signal receives a value
+// whenever a new message arrives there, and Stop releases it. Signal is never
+// closed.
+type Listener struct {
+	Signal <-chan struct{}
+	Stop   func()
+}
+
+// Listen starts listening for new messages in peer. A peer with no ID never
+// signals.
+//
+// The self-send echo carries no peer (see messagePeer), so a message this
+// server sends does not wake its own listeners; one sent from another device
+// does.
+func (b *SubscriptionBroker) Listen(peer InputPeer) Listener {
+	wake := make(chan struct{}, 1)
+	key := subscriptionKey{peerType: peer.Type, peerID: peer.ID}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	set := b.listeners[key]
+	if set == nil {
+		set = make(map[chan struct{}]struct{})
+		b.listeners[key] = set
+	}
+
+	set[wake] = struct{}{}
+
+	return Listener{Signal: wake, Stop: func() { b.stopListening(key, wake) }}
+}
+
 // attach adds a URI to a peer's trigger set. The caller must hold b.mu.
 func (b *SubscriptionBroker) attach(key subscriptionKey, uri string) {
 	uris := b.peerURIs[key]
@@ -219,6 +257,8 @@ func (b *SubscriptionBroker) detach(key subscriptionKey, uri string) {
 // are attempted, so one bad URI does not skip the rest (inert in the daemon,
 // where the async notifier always returns nil).
 func (b *SubscriptionBroker) dispatch(ctx context.Context, msg tg.MessageClass) error {
+	b.wake(messagePeer(msg))
+
 	uris, notifier := b.lookup(msg)
 	if notifier == nil {
 		return nil
@@ -275,4 +315,33 @@ func messagePeer(msg tg.MessageClass) InputPeer {
 	}
 
 	return extractPeerID(notEmpty.GetPeerID())
+}
+
+func (b *SubscriptionBroker) stopListening(key subscriptionKey, signal chan struct{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	set := b.listeners[key]
+	delete(set, signal)
+
+	if len(set) == 0 {
+		delete(b.listeners, key)
+	}
+}
+
+// wake signals every listener of peer without blocking.
+func (b *SubscriptionBroker) wake(peer InputPeer) {
+	if peer.ID == 0 {
+		return
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for signal := range b.listeners[subscriptionKey{peerType: peer.Type, peerID: peer.ID}] {
+		select {
+		case signal <- struct{}{}:
+		default:
+		}
+	}
 }

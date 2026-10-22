@@ -248,7 +248,7 @@ func buildServer(
 	broker.SetNotifier(newResourceUpdater(server))
 
 	boolFields := tools.BoolFieldRegistry{}
-	registerTools(server, client, boolFields, tools.NewLoginGate(login), downloadDir, fileRoots)
+	registerTools(server, client, broker, boolFields, tools.NewLoginGate(login), downloadDir, fileRoots)
 	resources.Register(server, client)
 	prompts.Register(server, client)
 	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone, health)...)
@@ -541,8 +541,8 @@ func newServerOptions(
 }
 
 func registerTools(
-	server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry, gate *tools.LoginGate,
-	downloadDir string, fileRoots []string,
+	server *mcp.Server, client tgclient.Client, listener tools.MessageListener, registry tools.BoolFieldRegistry,
+	gate *tools.LoginGate, downloadDir string, fileRoots []string,
 ) {
 	tools.AddTool(server, registry, gate, tools.ServerVersionTool(),
 		tools.NewServerVersionHandler(version, revision, runtime.Version()))
@@ -562,6 +562,7 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesTranscribeAudioTool(), tools.NewMessagesTranscribeAudioHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesWaitTool(), tools.NewMessagesWaitHandler(client, listener))
 
 	// Phase 2: Contacts, Users, Groups, Chat management tools.
 	tools.AddTool(server, registry, gate, tools.ContactsGetTool(), tools.NewContactsGetHandler(client))

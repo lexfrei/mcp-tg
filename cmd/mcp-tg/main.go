@@ -635,6 +635,13 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
+
+	// Message utilities.
+	tools.AddTool(server, registry, gate, tools.MessagesGetLinkTool(), tools.NewMessagesGetLinkHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesGetReadByTool(), tools.NewMessagesGetReadByHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesUnpinAllTool(), tools.NewMessagesUnpinAllHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesSendContactTool(), tools.NewMessagesSendContactHandler(client))
+	tools.AddTool(server, registry, gate, tools.DraftsListTool(), tools.NewDraftsListHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

@@ -22,6 +22,7 @@ type Client interface {
 	FolderClient
 	StatusClient
 	SendAsClient
+	BotClient
 	PeerResolver
 }
 
@@ -157,6 +158,16 @@ type StatusClient interface {
 type SendAsClient interface {
 	GetSendAs(ctx context.Context, peer InputPeer) ([]SendAsOption, error)
 	SetDefaultSendAs(ctx context.Context, peer InputPeer, sendAs *InputPeer) error
+}
+
+// BotClient handles what bots attach to messages: keyboards and polls.
+type BotClient interface {
+	GetMessageButtons(ctx context.Context, peer InputPeer, msgID int) ([]MessageButton, error)
+	PressButton(ctx context.Context, peer InputPeer, msgID, row, column int) (*ButtonPress, error)
+	GetBotInfo(ctx context.Context, peer InputPeer) (*BotInfo, error)
+	SendPoll(ctx context.Context, peer InputPeer, opts *PollOpts) (*Message, error)
+	GetPoll(ctx context.Context, peer InputPeer, msgID int) (*Poll, error)
+	VotePoll(ctx context.Context, peer InputPeer, msgID int, indexes []int) error
 }
 
 // PeerResolver resolves string identifiers to InputPeer.

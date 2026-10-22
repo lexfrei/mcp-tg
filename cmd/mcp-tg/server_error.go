@@ -136,6 +136,12 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // the new link back; a resend inside a single call throws away an answer the
 // first attempt already earned, with nobody in a position to notice.
 //
+// getBotCallbackAnswer is held back because it is not a read at all: it is a
+// button press, and the bot behind it decides what the press does — confirm
+// an order, delete a record, advance a game. Nothing in the request lets the
+// server or the bot tell a resend from a second press, so a resend after the
+// bot already acted presses the button twice.
+//
 // This is a DENY-LIST of what has been found, not a proof that nothing else
 // qualifies: MTProto marks no request as non-idempotent, so nothing here can be
 // derived, and a new tool wrapping another creating method has to be added by
@@ -161,7 +167,8 @@ func safeToResend(input bin.Encoder) bool {
 		*tg.MessagesUpdateDialogFilterRequest,
 		*tg.PhotosUploadProfilePhotoRequest,
 		*tg.MessagesExportChatInviteRequest,
-		*tg.MessagesEditExportedChatInviteRequest:
+		*tg.MessagesEditExportedChatInviteRequest,
+		*tg.MessagesGetBotCallbackAnswerRequest:
 		return false
 	default:
 		return true

@@ -98,6 +98,14 @@ type mockClient struct {
 	getSendAsCalls  int
 	resolvedQueries []string
 	lastStickerID   int64
+	// Bot keyboards and polls.
+	buttons      []telegram.MessageButton
+	press        *telegram.ButtonPress
+	lastPress    [2]int
+	botInfo      *telegram.BotInfo
+	poll         *telegram.Poll
+	lastPollOpts *telegram.PollOpts
+	lastVote     []int
 }
 
 // ResolvePeer answers with m.peer unless resolvePeerFn is set. Tools
@@ -673,6 +681,51 @@ func (m *mockClient) SetDefaultSendAs(
 	m.lastPeer = peer
 	m.lastSetSendAs = sendAs
 	m.setSendAsCalls++
+
+	return m.err
+}
+
+func (m *mockClient) GetMessageButtons(
+	_ context.Context, peer telegram.InputPeer, _ int,
+) ([]telegram.MessageButton, error) {
+	m.lastPeer = peer
+
+	return m.buttons, m.err
+}
+
+func (m *mockClient) PressButton(
+	_ context.Context, peer telegram.InputPeer, _, row, column int,
+) (*telegram.ButtonPress, error) {
+	m.lastPeer = peer
+	m.lastPress = [2]int{row, column}
+
+	return m.press, m.err
+}
+
+func (m *mockClient) GetBotInfo(_ context.Context, peer telegram.InputPeer) (*telegram.BotInfo, error) {
+	m.lastPeer = peer
+
+	return m.botInfo, m.err
+}
+
+func (m *mockClient) SendPoll(
+	_ context.Context, peer telegram.InputPeer, opts *telegram.PollOpts,
+) (*telegram.Message, error) {
+	m.lastPeer = peer
+	m.lastPollOpts = opts
+
+	return m.message, m.err
+}
+
+func (m *mockClient) GetPoll(_ context.Context, peer telegram.InputPeer, _ int) (*telegram.Poll, error) {
+	m.lastPeer = peer
+
+	return m.poll, m.err
+}
+
+func (m *mockClient) VotePoll(_ context.Context, peer telegram.InputPeer, _ int, indexes []int) error {
+	m.lastPeer = peer
+	m.lastVote = indexes
 
 	return m.err
 }

@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 80 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 87 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -79,8 +79,9 @@ internal/telegram/           Telegram abstraction layer
   markdown_lint.go           LooksLikeMarkdown — plain-mode lint approximating what the parser would transform
   invite_link.go             Invite links: the primary link read from the full chat, plus list, create and revoke
   send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
+  account.go                 Privacy settings (privacyKeys table), profile photo removal, public search, contact list/import, folder order
   subscriptions.go           SubscriptionBroker: routes new-message updates to watching resource URIs (ResourceUpdater sink)
-internal/tools/              MCP tool handlers (80 tools)
+internal/tools/              MCP tool handlers (87 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
@@ -114,10 +115,10 @@ internal/testutil/           NoopClient for registration tests
 
 ### Tool annotations
 
-- `readOnlyAnnotations()` — tools that only read data (32 tools)
-- `idempotentAnnotations()` — tools that modify state but are safe to retry (28 tools)
-- `writeAnnotations()` — tools that create new entities, not idempotent (11 tools)
-- `destructiveAnnotations()` — tools that delete/remove things (9 tools)
+- `readOnlyAnnotations()` — tools that only read data (35 tools)
+- `idempotentAnnotations()` — tools that modify state but are safe to retry (30 tools)
+- `writeAnnotations()` — tools that create new entities, not idempotent (12 tools)
+- `destructiveAnnotations()` — tools that delete/remove things (10 tools)
 
 The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release. `TestDocsAnnotationTable_MatchesTheCensus` then pins the published table in `docs/tools.md` against those same constants, so the site cannot drift from the server either.
 

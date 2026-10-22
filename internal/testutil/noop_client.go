@@ -296,3 +296,31 @@ func (NoopClient) GetSendAs(_ context.Context, _ telegram.InputPeer) ([]telegram
 func (NoopClient) SetDefaultSendAs(_ context.Context, _ telegram.InputPeer, _ *telegram.InputPeer) error {
 	return nil
 }
+
+func (NoopClient) GetPrivacy(_ context.Context, key string) (*telegram.PrivacySetting, error) {
+	return &telegram.PrivacySetting{Key: key, Value: telegram.PrivacyEverybody}, nil
+}
+
+func (NoopClient) SetPrivacy(_ context.Context, _ *telegram.PrivacyUpdate) error {
+	return nil
+}
+
+func (NoopClient) DeleteProfilePhoto(_ context.Context) error {
+	return nil
+}
+
+func (NoopClient) ListContacts(_ context.Context) ([]telegram.User, error) {
+	return nil, nil
+}
+
+func (NoopClient) ImportContacts(_ context.Context, _ []telegram.PhoneContact) (*telegram.ImportResult, error) {
+	return &telegram.ImportResult{}, nil
+}
+
+func (NoopClient) SearchPublic(_ context.Context, _ string, _ int) ([]telegram.PeerInfo, error) {
+	return nil, nil
+}
+
+func (NoopClient) ReorderFolders(_ context.Context, _ []int) error {
+	return nil
+}

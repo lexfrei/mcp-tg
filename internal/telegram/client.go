@@ -63,6 +63,7 @@ type DialogClient interface {
 	GetPeerInfo(ctx context.Context, peer InputPeer) (*PeerInfo, error)
 	PinDialog(ctx context.Context, peer InputPeer, pinned bool) error
 	MarkDialogUnread(ctx context.Context, peer InputPeer, unread bool) error
+	SearchPublic(ctx context.Context, query string, limit int) ([]PeerInfo, error)
 }
 
 // ContactClient handles contact operations.
@@ -73,6 +74,8 @@ type ContactClient interface {
 	GetContactStatuses(ctx context.Context) ([]ContactStatus, error)
 	AddContact(ctx context.Context, peer InputPeer, firstName, lastName, phone string) error
 	DeleteContact(ctx context.Context, peer InputPeer) error
+	ListContacts(ctx context.Context) ([]User, error)
+	ImportContacts(ctx context.Context, contacts []PhoneContact) (*ImportResult, error)
 }
 
 // GroupClient handles group-specific operations.
@@ -107,6 +110,8 @@ type ChatClient interface {
 }
 
 // UserClient handles user and profile operations.
+//
+//nolint:interfacebloat // covers all user, profile and privacy RPCs as a cohesive group.
 type UserClient interface {
 	GetSelf(ctx context.Context) (*User, error)
 	GetUser(ctx context.Context, peer InputPeer) (*User, error)
@@ -116,6 +121,9 @@ type UserClient interface {
 	SetProfilePhoto(ctx context.Context, path string) error
 	BlockUser(ctx context.Context, peer InputPeer, block bool) error
 	GetCommonChats(ctx context.Context, peer InputPeer) ([]PeerInfo, error)
+	GetPrivacy(ctx context.Context, key string) (*PrivacySetting, error)
+	SetPrivacy(ctx context.Context, update *PrivacyUpdate) error
+	DeleteProfilePhoto(ctx context.Context) error
 }
 
 // TopicClient handles forum topic operations.
@@ -145,6 +153,7 @@ type FolderClient interface {
 	CreateFolder(ctx context.Context, title string, peers []InputPeer) (*Folder, error)
 	EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error
 	DeleteFolder(ctx context.Context, folderID int) error
+	ReorderFolders(ctx context.Context, folderIDs []int) error
 }
 
 // StatusClient handles presence and typing operations.

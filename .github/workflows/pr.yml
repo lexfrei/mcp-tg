@@ -60,7 +60,7 @@ jobs:
       - name: GoReleaser snapshot
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          version: "v2.18.3"
+          version: "v2.19.0"
           # A snapshot publishes nothing; a keyless sign-blob over a snapshot
           # checksums file only records the hash of a file that never leaves
           # the runner. Signing runs here so the hand-written cosign arguments

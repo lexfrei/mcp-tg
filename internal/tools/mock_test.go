@@ -9,6 +9,7 @@ import (
 
 // mockClient implements telegram.Client for testing.
 type mockClient struct {
+	lastDialogOpts telegram.DialogOpts
 	// Return values
 	messages       []telegram.Message
 	parentMessages []telegram.Message // see getMessages for selection rules
@@ -305,7 +306,9 @@ func (m *mockClient) UploadFile(_ context.Context, _ string, opts telegram.Uploa
 	return m.uploaded, m.err
 }
 
-func (m *mockClient) GetDialogs(_ context.Context, _ telegram.DialogOpts) ([]telegram.Dialog, error) {
+func (m *mockClient) GetDialogs(_ context.Context, opts telegram.DialogOpts) ([]telegram.Dialog, error) {
+	m.lastDialogOpts = opts
+
 	return m.dialogs, m.err
 }
 

@@ -29,7 +29,8 @@ const (
 	warmDialogsThrottle = 60 * time.Second
 	// warmArchiveFolderID is the peer folder holding archived dialogs.
 	// messages.getDialogs returns one folder per call and omits archived
-	// chats when folder_id is unset, so the archive needs its own pass.
+	// chats when folder_id is unset, so the archive needs its own pass —
+	// in the warm, and when tg_dialogs_list is asked for the archive.
 	warmArchiveFolderID = 1
 )
 
@@ -187,26 +188,107 @@ func (w *Wrapper) GetSelf(ctx context.Context) (*User, error) {
 	return nil, errors.New("self user not found in response")
 }
 
-// GetDialogs returns a list of dialogs.
+// GetDialogs returns a list of dialogs. The server caps one page at 100
+// dialogs, so a larger Limit is fetched page by page, following the same
+// date/id/peer cursor as the cache warm, until Limit is reached or the
+// list ends. A dialog seen on an earlier page is not repeated.
 func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
-		Limit:      limit,
-		OffsetDate: opts.OffsetDate,
-		OffsetPeer: &tg.InputPeerEmpty{},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "getting dialogs")
+	var (
+		dialogs = make([]Dialog, 0, limit)
+		seen    = make(map[InputPeer]bool, limit)
+		cursor  = dialogOffset{date: opts.OffsetDate, peer: &tg.InputPeerEmpty{}}
+	)
+
+	for len(dialogs) < limit {
+		req := dialogsRequest(cursor, min(limit-len(dialogs), warmDialogsPageLimit), opts.Archived)
+
+		result, err := w.api.MessagesGetDialogs(ctx, req)
+		if err != nil {
+			return nil, errors.Wrap(err, "getting dialogs")
+		}
+
+		page := extractDialogs(result)
+		w.cacheDialogPeers(page)
+
+		if opts.Archived {
+			page = archivedOnly(page)
+		}
+
+		added := appendNewDialogs(&dialogs, seen, page, limit)
+
+		slice, ok := result.(*tg.MessagesDialogsSlice)
+		if !ok || added == 0 {
+			break
+		}
+
+		next, ok := w.nextDialogOffset(slice)
+		if !ok {
+			break
+		}
+
+		cursor = next
 	}
 
-	dialogs := extractDialogs(result)
-	w.cacheDialogPeers(dialogs)
-
 	return dialogs, nil
+}
+
+func dialogsRequest(cursor dialogOffset, limit int, archived bool) *tg.MessagesGetDialogsRequest {
+	req := &tg.MessagesGetDialogsRequest{
+		Limit:      limit,
+		OffsetDate: cursor.date,
+		OffsetID:   cursor.id,
+		OffsetPeer: cursor.peer,
+	}
+	if archived {
+		req.SetFolderID(warmArchiveFolderID)
+	}
+
+	return req
+}
+
+// archivedOnly drops the main list's pinned dialogs, which the server
+// returns ahead of an archive page as well (seen on a live account with an
+// empty archive), keeping only dialogs the server itself files under the
+// archive folder.
+func archivedOnly(page []Dialog) []Dialog {
+	kept := page[:0]
+
+	for _, dlg := range page {
+		if dlg.Archived {
+			kept = append(kept, dlg)
+		}
+	}
+
+	return kept
+}
+
+// appendNewDialogs appends the page's dialogs not already in seen, up to
+// limit, and reports how many it added.
+func appendNewDialogs(dialogs *[]Dialog, seen map[InputPeer]bool, page []Dialog, limit int) int {
+	added := 0
+
+	for _, dlg := range page {
+		if len(*dialogs) >= limit {
+			break
+		}
+
+		key := InputPeer{Type: dlg.Peer.Type, ID: dlg.Peer.ID}
+		if seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		*dialogs = append(*dialogs, dlg)
+		added++
+	}
+
+	return added
 }
 
 // SearchDialogs searches dialogs by query.
@@ -2381,7 +2463,7 @@ func (w *Wrapper) nextDialogOffset(slice *tg.MessagesDialogsSlice) (dialogOffset
 
 	return dialogOffset{
 		id:   last.TopMessage,
-		date: findMessageDate(slice.Messages, last.TopMessage),
+		date: findMessageDate(slice.Messages, last.Peer, last.TopMessage),
 		peer: inputPeer,
 	}, true
 }
@@ -2399,14 +2481,26 @@ func peerClassTypeID(p tg.PeerClass) (PeerType, int64, bool) {
 	}
 }
 
-func findMessageDate(messages []tg.MessageClass, messageID int) int {
+// findMessageDate returns the date of a dialog's top message. Message
+// IDs are numbered per chat, so the match is on the chat as well as the
+// ID, and service messages (a member joined, the group was created) count:
+// they are often a quiet chat's newest message.
+func findMessageDate(messages []tg.MessageClass, peer tg.PeerClass, messageID int) int {
 	for _, raw := range messages {
-		if msg, ok := raw.(*tg.Message); ok && msg.ID == messageID {
-			return msg.Date
+		msg, ok := raw.AsNotEmpty()
+		if ok && msg.GetID() == messageID && sameTGPeer(msg.GetPeerID(), peer) {
+			return msg.GetDate()
 		}
 	}
 
 	return 0
+}
+
+func sameTGPeer(left, right tg.PeerClass) bool {
+	leftType, leftID, leftOK := peerClassTypeID(left)
+	rightType, rightID, rightOK := peerClassTypeID(right)
+
+	return leftOK && rightOK && leftType == rightType && leftID == rightID
 }
 
 // searchGlobalPage converts an MTProto search response into one result

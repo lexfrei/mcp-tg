@@ -155,9 +155,12 @@ type Dialog struct {
 	Title       string    `json:"title"`
 	Username    string    `json:"username,omitempty"`
 	UnreadCount int       `json:"unreadCount,omitempty"`
-	LastMessage *Message  `json:"lastMessage,omitempty"`
-	IsChannel   bool      `json:"isChannel,omitempty"`
-	IsGroup     bool      `json:"isGroup,omitempty"`
+	// LastMessageDate is the Unix time of the dialog's top message, the
+	// value to pass back as OffsetDate to continue the listing.
+	LastMessageDate int      `json:"lastMessageDate,omitempty"`
+	LastMessage     *Message `json:"lastMessage,omitempty"`
+	IsChannel       bool     `json:"isChannel,omitempty"`
+	IsGroup         bool     `json:"isGroup,omitempty"`
 }
 
 // GroupInfo holds detailed information about a group, supergroup or channel.

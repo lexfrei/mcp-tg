@@ -187,26 +187,78 @@ func (w *Wrapper) GetSelf(ctx context.Context) (*User, error) {
 	return nil, errors.New("self user not found in response")
 }
 
-// GetDialogs returns a list of dialogs.
+// GetDialogs returns a list of dialogs. The server caps one page at 100
+// dialogs, so a larger Limit is fetched page by page, following the same
+// date/id/peer cursor as the cache warm, until Limit is reached or the
+// list ends. A dialog seen on an earlier page is not repeated.
 func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
-		Limit:      limit,
-		OffsetDate: opts.OffsetDate,
-		OffsetPeer: &tg.InputPeerEmpty{},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "getting dialogs")
+	var (
+		dialogs    = make([]Dialog, 0, limit)
+		seen       = make(map[InputPeer]bool, limit)
+		offsetDate = opts.OffsetDate
+		offsetID   int
+		offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
+	)
+
+	for len(dialogs) < limit {
+		result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+			Limit:      min(limit-len(dialogs), warmDialogsPageLimit),
+			OffsetDate: offsetDate,
+			OffsetID:   offsetID,
+			OffsetPeer: offsetPeer,
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "getting dialogs")
+		}
+
+		page := extractDialogs(result)
+		w.cacheDialogPeers(page)
+
+		added := appendNewDialogs(&dialogs, seen, page, limit)
+
+		slice, ok := result.(*tg.MessagesDialogsSlice)
+		if !ok || added == 0 {
+			break
+		}
+
+		next, ok := w.nextDialogOffset(slice)
+		if !ok {
+			break
+		}
+
+		offsetDate, offsetID, offsetPeer = next.date, next.id, next.peer
 	}
 
-	dialogs := extractDialogs(result)
-	w.cacheDialogPeers(dialogs)
-
 	return dialogs, nil
+}
+
+// appendNewDialogs appends the page's dialogs not already in seen, up to
+// limit, and reports how many it added.
+func appendNewDialogs(dialogs *[]Dialog, seen map[InputPeer]bool, page []Dialog, limit int) int {
+	added := 0
+
+	for _, dlg := range page {
+		if len(*dialogs) >= limit {
+			break
+		}
+
+		key := InputPeer{Type: dlg.Peer.Type, ID: dlg.Peer.ID}
+		if seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		*dialogs = append(*dialogs, dlg)
+		added++
+	}
+
+	return added
 }
 
 // SearchDialogs searches dialogs by query.

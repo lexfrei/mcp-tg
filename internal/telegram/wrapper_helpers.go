@@ -545,7 +545,7 @@ func buildDialogs(
 
 		entry := Dialog{
 			UnreadCount:     dialog.UnreadCount,
-			LastMessageDate: findMessageDate(messages, dialog.TopMessage),
+			LastMessageDate: findMessageDate(messages, dialog.Peer, dialog.TopMessage),
 		}
 		fillDialogPeer(&entry, dialog.Peer, chatMap, userMap)
 

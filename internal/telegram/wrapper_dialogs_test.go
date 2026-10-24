@@ -111,3 +111,16 @@ func TestGetDialogs_StopsAtLimit(t *testing.T) {
 			len(invoker.requests), invoker.requests[len(invoker.requests)-1].Limit)
 	}
 }
+
+func TestFindMessageDate_MatchesTheChatAndServiceMessages(t *testing.T) {
+	messages := []tg.MessageClass{
+		// Same ID in another chat: must not be taken for the dialog's own.
+		&tg.Message{ID: 5, Date: 111, PeerID: &tg.PeerUser{UserID: 9}},
+		// The group's newest message is a service one ("X joined").
+		&tg.MessageService{ID: 5, Date: 222, PeerID: &tg.PeerChat{ChatID: 3}, Action: &tg.MessageActionChatJoinedByLink{}},
+	}
+
+	if got := findMessageDate(messages, &tg.PeerChat{ChatID: 3}, 5); got != 222 {
+		t.Errorf("date = %d, want 222 (the group's own service message)", got)
+	}
+}

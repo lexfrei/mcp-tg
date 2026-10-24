@@ -1523,24 +1523,36 @@ func (w *Wrapper) GetFolders(ctx context.Context) ([]Folder, error) {
 
 // CreateFolder creates a new chat folder.
 func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
+	existing, err := w.api.MessagesGetDialogFilters(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting folders")
+	}
+
+	folderID, err := freeFolderID(existing.Filters)
+	if err != nil {
+		return nil, err
+	}
+
 	includePeers := make([]tg.InputPeerClass, len(peers))
 	for idx, peer := range peers {
 		includePeers[idx] = InputPeerToTG(peer)
 	}
 
 	filter := tg.DialogFilter{
+		ID:           folderID,
 		Title:        tg.TextWithEntities{Text: title},
 		IncludePeers: includePeers,
 	}
 
-	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+	_, err = w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+		ID:     folderID,
 		Filter: &filter,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "creating folder")
 	}
 
-	return w.findFolderByTitle(ctx, title, peers)
+	return &Folder{ID: folderID, Title: title, Peers: peers}, nil
 }
 
 // EditFolder updates an existing chat folder.
@@ -2477,19 +2489,4 @@ func (w *Wrapper) getRawMessage(ctx context.Context, peer InputPeer, msgID int) 
 	}
 
 	return firstRawMessage(result)
-}
-
-func (w *Wrapper) findFolderByTitle(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
-	folders, err := w.GetFolders(ctx)
-	if err != nil {
-		return &Folder{Title: title, Peers: peers}, nil //nolint:nilerr // best-effort: return without ID if listing fails.
-	}
-
-	for _, folder := range folders {
-		if folder.Title == title {
-			return &Folder{ID: folder.ID, Title: title, Peers: peers}, nil
-		}
-	}
-
-	return &Folder{Title: title, Peers: peers}, nil
 }

@@ -119,8 +119,9 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // can never revoke.
 //
 // updateDialogFilter is not creation-only either: the same
-// request edits and deletes a folder too, and those carry an explicit id, so
-// they are idempotent and lose the resend for nothing. Held back anyway,
+// request edits and deletes a folder too, and every call — a create included,
+// which picks a free id client-side — carries an explicit id, so they are
+// idempotent and lose the resend for nothing. Held back anyway,
 // because the type is what a switch can see, and what it costs them is a
 // resend on a call that states a final value.
 //

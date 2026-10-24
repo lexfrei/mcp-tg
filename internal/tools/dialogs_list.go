@@ -11,8 +11,8 @@ import (
 
 // DialogsListParams defines the parameters for the tg_dialogs_list tool.
 type DialogsListParams struct {
-	Limit      *int `json:"limit,omitempty"      jsonschema:"Maximum number of dialogs to return (default 100)"`
-	OffsetDate *int `json:"offsetDate,omitempty" jsonschema:"Unix timestamp for pagination (pass last dialog date)"`
+	Limit      *int `json:"limit,omitempty"      jsonschema:"Maximum number of dialogs to return (default 100, paged past 100)"`
+	OffsetDate *int `json:"offsetDate,omitempty" jsonschema:"Unix timestamp for pagination: the last dialog's lastMessageDate"`
 }
 
 // DialogsListResult is the output of the tg_dialogs_list tool.

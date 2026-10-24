@@ -238,3 +238,40 @@ func TestGetDialogs_ArchivedAsksForTheArchiveFolder(t *testing.T) {
 		}
 	}
 }
+
+// mixedArchiveInvoker answers an archive request the way the server was
+// seen to: the main list's pinned dialog first, without a folder, then the
+// archived ones.
+type mixedArchiveInvoker struct{}
+
+func (mixedArchiveInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	if _, ok := input.(*tg.MessagesGetDialogsRequest); !ok {
+		return errUnexpectedRequest
+	}
+
+	archived := &tg.Dialog{Peer: &tg.PeerUser{UserID: 2}, TopMessage: 2}
+	archived.SetFolderID(warmArchiveFolderID)
+
+	resp := &tg.MessagesDialogs{
+		Dialogs: []tg.DialogClass{
+			&tg.Dialog{Pinned: true, Peer: &tg.PeerUser{UserID: 1}, TopMessage: 1},
+			archived,
+		},
+		Users: []tg.UserClass{userWithHash(1, 10), userWithHash(2, 20)},
+	}
+
+	return encodeAndDecode(resp, output)
+}
+
+func TestGetDialogs_ArchivedDropsTheMainListsPinned(t *testing.T) {
+	wrap := newWrapperWithInvoker(mixedArchiveInvoker{})
+
+	dialogs, err := wrap.GetDialogs(t.Context(), DialogOpts{Archived: true})
+	if err != nil {
+		t.Fatalf("GetDialogs: %v", err)
+	}
+
+	if len(dialogs) != 1 || dialogs[0].Peer.ID != 2 || !dialogs[0].Archived {
+		t.Errorf("dialogs = %+v, want only the archived user 2", dialogs)
+	}
+}

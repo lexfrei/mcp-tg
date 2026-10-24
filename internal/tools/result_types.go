@@ -20,6 +20,9 @@ type DialogItem struct {
 	// LastMessageDate is the Unix time of the dialog's last message; pass
 	// the last item's value as offsetDate to fetch the next page.
 	LastMessageDate int `json:"lastMessageDate,omitempty"`
+	// Archived and Pinned come from the server's dialog entry.
+	Archived bool `json:"archived,omitempty"`
+	Pinned   bool `json:"pinned,omitempty"`
 }
 
 func dialogToItem(dlg *telegram.Dialog) DialogItem {
@@ -30,6 +33,8 @@ func dialogToItem(dlg *telegram.Dialog) DialogItem {
 		Type:            dialogPeerType(dlg),
 		UnreadCount:     dlg.UnreadCount,
 		LastMessageDate: dlg.LastMessageDate,
+		Archived:        dlg.Archived,
+		Pinned:          dlg.Pinned,
 	}
 }
 

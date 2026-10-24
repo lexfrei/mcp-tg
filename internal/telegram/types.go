@@ -157,10 +157,14 @@ type Dialog struct {
 	UnreadCount int       `json:"unreadCount,omitempty"`
 	// LastMessageDate is the Unix time of the dialog's top message, the
 	// value to pass back as OffsetDate to continue the listing.
-	LastMessageDate int      `json:"lastMessageDate,omitempty"`
-	LastMessage     *Message `json:"lastMessage,omitempty"`
-	IsChannel       bool     `json:"isChannel,omitempty"`
-	IsGroup         bool     `json:"isGroup,omitempty"`
+	LastMessageDate int `json:"lastMessageDate,omitempty"`
+	// Archived and Pinned are the server's own view of the dialog: whether
+	// it sits in the archive folder, and whether it is pinned there.
+	Archived    bool     `json:"archived,omitempty"`
+	Pinned      bool     `json:"pinned,omitempty"`
+	LastMessage *Message `json:"lastMessage,omitempty"`
+	IsChannel   bool     `json:"isChannel,omitempty"`
+	IsGroup     bool     `json:"isGroup,omitempty"`
 }
 
 // GroupInfo holds detailed information about a group, supergroup or channel.

@@ -202,25 +202,14 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 	// and sizing by it would allocate (or panic in makeslice) before the
 	// first request.
 	var (
-		dialogs    = make([]Dialog, 0, min(limit, warmDialogsPageLimit))
-		seen       = make(map[InputPeer]bool, min(limit, warmDialogsPageLimit))
-		offsetDate = opts.OffsetDate
-		offsetID   int
-		offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
+		dialogs = make([]Dialog, 0, min(limit, warmDialogsPageLimit))
+		seen    = make(map[InputPeer]bool, min(limit, warmDialogsPageLimit))
+		cursor  = dialogOffset{date: opts.OffsetDate, peer: &tg.InputPeerEmpty{}}
 	)
 
 	for len(dialogs) < limit {
 		pageSize := min(limit-len(dialogs), warmDialogsPageLimit)
-
-		req := &tg.MessagesGetDialogsRequest{
-			Limit:      pageSize,
-			OffsetDate: offsetDate,
-			OffsetID:   offsetID,
-			OffsetPeer: offsetPeer,
-		}
-		if opts.Archived {
-			req.SetFolderID(warmArchiveFolderID)
-		}
+		req := dialogsRequest(cursor, pageSize, opts.Archived)
 
 		result, err := w.api.MessagesGetDialogs(ctx, req)
 		if err != nil {
@@ -229,6 +218,10 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 
 		page := extractDialogs(result)
 		w.cacheDialogPeers(page)
+
+		if opts.Archived {
+			page = archivedOnly(page)
+		}
 
 		added := appendNewDialogs(&dialogs, seen, page, limit)
 
@@ -244,10 +237,40 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 			break
 		}
 
-		offsetDate, offsetID, offsetPeer = next.date, next.id, next.peer
+		cursor = next
 	}
 
 	return dialogs, nil
+}
+
+func dialogsRequest(cursor dialogOffset, limit int, archived bool) *tg.MessagesGetDialogsRequest {
+	req := &tg.MessagesGetDialogsRequest{
+		Limit:      limit,
+		OffsetDate: cursor.date,
+		OffsetID:   cursor.id,
+		OffsetPeer: cursor.peer,
+	}
+	if archived {
+		req.SetFolderID(warmArchiveFolderID)
+	}
+
+	return req
+}
+
+// archivedOnly drops the main list's pinned dialogs, which the server
+// returns ahead of an archive page as well (seen on a live account with an
+// empty archive), keeping only dialogs the server itself files under the
+// archive folder.
+func archivedOnly(page []Dialog) []Dialog {
+	kept := page[:0]
+
+	for _, dlg := range page {
+		if dlg.Archived {
+			kept = append(kept, dlg)
+		}
+	}
+
+	return kept
 }
 
 // appendNewDialogs appends the page's dialogs not already in seen, up to

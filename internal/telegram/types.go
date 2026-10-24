@@ -441,10 +441,12 @@ type ReactionOpts struct {
 	Remove bool
 }
 
-// DialogOpts configures dialog listing.
+// DialogOpts configures dialog listing. Archived lists the archive
+// instead of the main chat list; the server returns one or the other.
 type DialogOpts struct {
 	Limit      int
 	OffsetDate int
+	Archived   bool
 }
 
 // TopicOpts configures forum topic listing.

@@ -29,7 +29,8 @@ const (
 	warmDialogsThrottle = 60 * time.Second
 	// warmArchiveFolderID is the peer folder holding archived dialogs.
 	// messages.getDialogs returns one folder per call and omits archived
-	// chats when folder_id is unset, so the archive needs its own pass.
+	// chats when folder_id is unset, so the archive needs its own pass —
+	// in the warm, and when tg_dialogs_list is asked for the archive.
 	warmArchiveFolderID = 1
 )
 
@@ -211,12 +212,17 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 	for len(dialogs) < limit {
 		pageSize := min(limit-len(dialogs), warmDialogsPageLimit)
 
-		result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
+		req := &tg.MessagesGetDialogsRequest{
 			Limit:      pageSize,
 			OffsetDate: offsetDate,
 			OffsetID:   offsetID,
 			OffsetPeer: offsetPeer,
-		})
+		}
+		if opts.Archived {
+			req.SetFolderID(warmArchiveFolderID)
+		}
+
+		result, err := w.api.MessagesGetDialogs(ctx, req)
 		if err != nil {
 			return nil, errors.Wrap(err, "getting dialogs")
 		}

@@ -1543,22 +1543,21 @@ func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputP
 	return w.findFolderByTitle(ctx, title, peers)
 }
 
-// EditFolder updates an existing chat folder.
+// EditFolder updates an existing chat folder's title and, when peers is
+// non-nil, the chats it holds. updateDialogFilter replaces the whole
+// filter, so the current one is read back first and everything else it
+// carries — chat-kind rules, excluded chats, emoticon, a shared folder's
+// kind — is sent unchanged; a request built from the title and peers
+// alone would silently wipe it.
 func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error {
-	includePeers := make([]tg.InputPeerClass, len(peers))
-	for idx, peer := range peers {
-		includePeers[idx] = InputPeerToTG(peer)
+	current, err := w.rawFolder(ctx, folderID)
+	if err != nil {
+		return err
 	}
 
-	filter := tg.DialogFilter{
-		ID:           folderID,
-		Title:        tg.TextWithEntities{Text: title},
-		IncludePeers: includePeers,
-	}
-
-	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+	_, err = w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
 		ID:     folderID,
-		Filter: &filter,
+		Filter: editedFilter(current, title, peers),
 	})
 
 	return errors.Wrap(err, "editing folder")
@@ -2485,9 +2484,9 @@ func (w *Wrapper) findFolderByTitle(ctx context.Context, title string, peers []I
 		return &Folder{Title: title, Peers: peers}, nil //nolint:nilerr // best-effort: return without ID if listing fails.
 	}
 
-	for _, folder := range folders {
-		if folder.Title == title {
-			return &Folder{ID: folder.ID, Title: title, Peers: peers}, nil
+	for idx := range folders {
+		if folders[idx].Title == title {
+			return &Folder{ID: folders[idx].ID, Title: title, Peers: peers}, nil
 		}
 	}
 

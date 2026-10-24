@@ -79,7 +79,7 @@ func FoldersCreateTool() *mcp.Tool {
 type FoldersEditParams struct {
 	FolderID int      `json:"folderId"        jsonschema:"ID of the folder to edit"`
 	Title    string   `json:"title"           jsonschema:"New title for the folder"`
-	Peers    []string `json:"peers,omitempty" jsonschema:"Chats: @usernames or numeric IDs"`
+	Peers    []string `json:"peers,omitempty" jsonschema:"Full chat list: @usernames or numeric IDs. Omit to keep the current chats"`
 }
 
 // FoldersEditResult is the output of the tg_folders_edit tool.
@@ -106,13 +106,20 @@ func NewFoldersEditHandler(client telegram.Client) mcp.ToolHandlerFor[FoldersEdi
 				validationErr(ErrTitleRequired)
 		}
 
-		peers, err := resolveUserPeers(ctx, client, params.Peers)
-		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, FoldersEditResult{},
-				telegramErr("failed to resolve peers", err)
+		// nil peers keeps the folder's chats; only a supplied list replaces them.
+		var peers []telegram.InputPeer
+
+		if params.Peers != nil {
+			resolved, err := resolveUserPeers(ctx, client, params.Peers)
+			if err != nil {
+				return &mcp.CallToolResult{IsError: true}, FoldersEditResult{},
+					telegramErr("failed to resolve peers", err)
+			}
+
+			peers = resolved
 		}
 
-		err = client.EditFolder(ctx, params.FolderID, params.Title, peers)
+		err := client.EditFolder(ctx, params.FolderID, params.Title, peers)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, FoldersEditResult{},
 				telegramErr("failed to edit folder", err)
@@ -131,7 +138,7 @@ func NewFoldersEditHandler(client telegram.Client) mcp.ToolHandlerFor[FoldersEdi
 func FoldersEditTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_folders_edit",
-		Description: "Edit a Telegram chat folder's title and included peers",
+		Description: "Edit a Telegram chat folder's title and chats; its chat-kind rules, excluded chats and emoticon are kept",
 		Annotations: idempotentAnnotations(),
 	}
 }

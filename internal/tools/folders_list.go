@@ -34,8 +34,8 @@ func NewFoldersListHandler(client telegram.Client) mcp.ToolHandlerFor[FoldersLis
 
 		var buf strings.Builder
 
-		for _, folder := range folders {
-			fmt.Fprintf(&buf, "[%d] %s (%d peers)\n", folder.ID, folder.Title, len(folder.Peers))
+		for idx := range folders {
+			fmt.Fprintf(&buf, "%s\n", formatFolder(&folders[idx]))
 		}
 
 		return nil, FoldersListResult{
@@ -53,4 +53,24 @@ func FoldersListTool() *mcp.Tool {
 		Description: "List all Telegram chat folders",
 		Annotations: readOnlyAnnotations(),
 	}
+}
+
+// formatFolder renders one folder line: its chat count, then the
+// chat-kind rules that add or hide chats beyond the listed ones.
+func formatFolder(folder *telegram.Folder) string {
+	line := fmt.Sprintf("[%d] %s (%d peers)", folder.ID, folder.Title, len(folder.Peers)+len(folder.PinnedPeers))
+
+	if len(folder.Includes) > 0 {
+		line += " +" + strings.Join(folder.Includes, ",")
+	}
+
+	if len(folder.Excludes) > 0 {
+		line += " -" + strings.Join(folder.Excludes, ",")
+	}
+
+	if folder.Shared {
+		line += " shared"
+	}
+
+	return line
 }

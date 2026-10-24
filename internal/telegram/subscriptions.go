@@ -45,8 +45,8 @@ type subscriptionKey struct {
 // Subscription drift is a known limitation, cleared only by a process restart:
 // the MCP SDK removes a disconnected session from its OWN subscription registry
 // but does not call the UnsubscribeHandler, so the broker's session set is not
-// pruned on an abnormal disconnect (a crash, or network loss past the KeepAlive
-// window). Delivery stays correct — the SDK's registry is authoritative, so a
+// pruned on an abnormal disconnect (a crash, or a lost network connection).
+// Delivery stays correct — the SDK's registry is authoritative, so a
 // dead session receives nothing — but two costs accrue over the daemon's
 // lifetime, and neither is bounded by the set of distinct chats: the retained
 // (URI, session) entries grow with cumulative reconnect churn, since each

@@ -36,7 +36,7 @@ const (
 	serverName        = "mcp-tg"
 	readHeaderTimeout = 10 * time.Second
 	shutdownTimeout   = 5 * time.Second
-	keepAliveInterval = 30 * time.Second
+	httpIdleTimeout   = 60 * time.Second
 )
 
 var (
@@ -532,8 +532,10 @@ func newServerOptions(
 			"the formatting-entity count of the sent message (auto-detected links and hashtags excluded) — " +
 			"0 after a commonmark send whose text CONTAINED formatting means the markdown did not parse. " +
 			"Read-only tools are safe to call freely. Write/destructive tools modify Telegram state.",
-		Logger:             logger,
-		KeepAlive:          keepAliveInterval,
+		Logger: logger,
+		// No KeepAlive: the SDK starts it before version negotiation and keeps
+		// sending server-to-client pings to 2026-07-28 clients, which reject them
+		// and drop the stdio connection.
 		CompletionHandler:  completions.NewHandler(client),
 		SubscribeHandler:   newSubscribeHandler(client, broker),
 		UnsubscribeHandler: newUnsubscribeHandler(broker),
@@ -660,7 +662,7 @@ func runHTTPServer(ctx context.Context, server *mcp.Server, addr string, logger 
 		Addr:              addr,
 		Handler:           newHTTPHandler(server),
 		ReadHeaderTimeout: readHeaderTimeout,
-		IdleTimeout:       keepAliveInterval * 2,
+		IdleTimeout:       httpIdleTimeout,
 	}
 
 	//nolint:gosec // G118: ctx is already cancelled when goroutine runs, must use fresh context for graceful shutdown.

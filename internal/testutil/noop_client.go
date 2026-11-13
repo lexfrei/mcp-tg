@@ -296,3 +296,37 @@ func (NoopClient) GetSendAs(_ context.Context, _ telegram.InputPeer) ([]telegram
 func (NoopClient) SetDefaultSendAs(_ context.Context, _ telegram.InputPeer, _ *telegram.InputPeer) error {
 	return nil
 }
+
+func (NoopClient) BanMember(_ context.Context, _, _ telegram.InputPeer, _ int, _ bool) error {
+	return nil
+}
+
+func (NoopClient) CheckInvite(_ context.Context, _ string) (*telegram.InviteInfo, error) {
+	return &telegram.InviteInfo{}, nil
+}
+
+func (NoopClient) JoinByInvite(_ context.Context, _ string) (*telegram.PeerInfo, error) {
+	return &telegram.PeerInfo{}, nil
+}
+
+func (NoopClient) UpgradeToSupergroup(_ context.Context, _ telegram.InputPeer) (*telegram.PeerInfo, error) {
+	return &telegram.PeerInfo{}, nil
+}
+
+func (NoopClient) SetForum(_ context.Context, _ telegram.InputPeer, _ bool) error {
+	return nil
+}
+
+func (NoopClient) GetAdminLog(
+	_ context.Context, _ telegram.InputPeer, _ telegram.AdminLogOpts,
+) ([]telegram.AdminLogEvent, error) {
+	return nil, nil
+}
+
+func (NoopClient) DeleteChatPhoto(_ context.Context, _ telegram.InputPeer) error {
+	return nil
+}
+
+func (NoopClient) DeleteForumTopic(_ context.Context, _ telegram.InputPeer, _ int) error {
+	return nil
+}

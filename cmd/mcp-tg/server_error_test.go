@@ -247,6 +247,8 @@ func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 		},
 		"profile photo": &tg.PhotosUploadProfilePhotoRequest{},
 		"invite link":   &tg.MessagesExportChatInviteRequest{Peer: &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1}},
+		// Creates a supergroup reported only to the attempt that created it.
+		"supergroup upgrade": &tg.MessagesMigrateChatRequest{ChatID: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer

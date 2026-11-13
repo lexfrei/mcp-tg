@@ -111,6 +111,7 @@ func run() error {
 		Logger:         logzap.New(newGotdLogger(level)),
 		Device:         device,
 		UpdateHandler:  dispatcher,
+		RequestTimeout: requestDeadline,
 		// Order is outermost first, and the nesting decides whose budget
 		// multiplies whose. With FLOOD_WAIT outermost a server-named delay is
 		// slept once per flood attempt, with the fast 500 cycle nested inside
@@ -119,9 +120,11 @@ func run() error {
 		// middleware either way, so the order is about the sleeping, not about
 		// honouring the delay the server asked for.
 		Middlewares: []telegram.Middleware{
+			// Outermost so a resend after a dropped connection travels the whole
+			// chain again and keeps its FLOOD_WAIT and 500 handling.
+			newConnectionLossMiddleware(logger),
 			newFloodWaitMiddleware(logger),
 			newServerErrorMiddleware(logger, serverErrorBaseDelay),
-			newConnReinitMiddleware(cfg.AppID, &device),
 			newAuthRevokedMiddleware(health, logger),
 		},
 	})
@@ -567,6 +570,12 @@ func newServerOptions(
 		CompletionHandler:  completions.NewHandler(client),
 		SubscribeHandler:   newSubscribeHandler(client, broker),
 		UnsubscribeHandler: newUnsubscribeHandler(broker),
+		// Applies to discover, the list methods and resources/read. The SDK
+		// defaults an unset scope to "public", and a resource read here is one
+		// account's chat history.
+		SetCacheable: func(_ context.Context, _ mcp.Request, cacheable *mcp.Cacheable) {
+			cacheable.CacheScope = "private"
+		},
 	}
 }
 

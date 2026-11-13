@@ -351,6 +351,22 @@ func TestNewServerOptions_UsesThreadedLogger(t *testing.T) {
 	}
 }
 
+// A resource read returns one account's chat history; the SDK's default scope
+// would let an intermediary cache it for other users.
+func TestNewServerOptions_CacheScopeIsPrivate(t *testing.T) {
+	opts := newServerOptions(testutil.NoopClient{}, tgclient.NewSubscriptionBroker(), discardLogger())
+	if opts.SetCacheable == nil {
+		t.Fatal("newServerOptions must set SetCacheable")
+	}
+
+	var cacheable mcp.Cacheable
+	opts.SetCacheable(context.Background(), nil, &cacheable)
+
+	if cacheable.CacheScope != "private" {
+		t.Errorf("cacheScope = %q, want private", cacheable.CacheScope)
+	}
+}
+
 // TestNewLogger_HonoursLevel pins that newLogger actually applies the resolved
 // level: the returned logger reports info as disabled and warn as enabled at
 // warn level. Uses Enabled (not a write) since newLogger targets os.Stderr

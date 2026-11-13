@@ -26,7 +26,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
-          version: latest
+          version: v2.15.0
 
   goreleaser:
     name: Release Config
@@ -55,12 +55,12 @@ jobs:
         # A fork PR cannot mint an OIDC token, so signing is only exercised on
         # branches of this repository. Everything else runs either way.
         if: github.event.pull_request.head.repo.full_name == github.repository
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
 
       - name: GoReleaser snapshot
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          version: "v2.18.3"
+          version: "v2.20.2"
           # A snapshot publishes nothing; a keyless sign-blob over a snapshot
           # checksums file only records the hash of a file that never leaves
           # the runner. Signing runs here so the hand-written cosign arguments

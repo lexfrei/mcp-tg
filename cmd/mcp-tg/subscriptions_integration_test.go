@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -173,9 +174,66 @@ func TestSubscription_EndToEnd(t *testing.T) {
 	}
 }
 
-// TestSubscription_UnsubscribeStopsUpdates pins that after an unsubscribe a new
-// message in the same chat no longer delivers a notification — the broker drops
-// the watch and the SDK drops the session from its registry.
+// sdkEventHandler forwards the messages of the SDK's own log records about one
+// URI: the SDK logs them right after it updates its subscription registry, and
+// exposes no other hook at that point. The message text is the SDK's own log
+// text; if it changes, waitForSDKEvent fails rather than passing.
+type sdkEventHandler struct {
+	uri    string
+	events chan<- string
+}
+
+func (h sdkEventHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h sdkEventHandler) Handle(_ context.Context, rec slog.Record) error {
+	rec.Attrs(func(attr slog.Attr) bool {
+		if attr.Key != "uri" || attr.Value.String() != h.uri {
+			return true
+		}
+
+		select {
+		case h.events <- rec.Message:
+		default:
+		}
+
+		return false
+	})
+
+	return nil
+}
+
+func (h sdkEventHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h sdkEventHandler) WithGroup(string) slog.Handler { return h }
+
+func waitForSDKEvent(t *testing.T, events <-chan string, want string) {
+	t.Helper()
+
+	deadline := time.After(5 * time.Second)
+
+	for {
+		select {
+		case got := <-events:
+			if got == want {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("server never logged %q", want)
+		}
+	}
+}
+
+// TestSubscription_UnsubscribeStopsUpdates pins that once the server has
+// processed an unsubscribe, a new message in the same chat no longer delivers a
+// notification — the broker drops the watch and the SDK drops the session from
+// its registry.
+//
+// Under protocol 2026-07-28 ClientSession.Unsubscribe only cancels the
+// subscriptions/listen stream on the client; it does not wait for the server to
+// process the cancellation, so a message fired right after it can still reach the client.
+// The test therefore waits for the server's own "resource unsubscribed" event
+// instead of treating Unsubscribe's return as that point. Subscribe does not
+// wait for the server either, hence the "resource subscribed" wait.
 func TestSubscription_UnsubscribeStopsUpdates(t *testing.T) {
 	ctx := context.Background()
 
@@ -193,8 +251,11 @@ func TestSubscription_UnsubscribeStopsUpdates(t *testing.T) {
 	broker := tgclient.NewSubscriptionBroker()
 	client := resolvingClient{peer: tgclient.InputPeer{Type: tgclient.PeerUser, ID: selfID}}
 
+	events := make(chan string, 16)
+	logger := slog.New(sdkEventHandler{uri: uri, events: events})
+
 	server, err := buildServer(
-		client, "/tmp/mcp-tg/downloads", nil, broker, authDone, health, nil, tools.ToolPolicy{}, discardLogger(),
+		client, "/tmp/mcp-tg/downloads", nil, broker, authDone, health, nil, tools.ToolPolicy{}, logger,
 	)
 	if err != nil {
 		t.Fatalf("build server: %v", err)
@@ -226,20 +287,38 @@ func TestSubscription_UnsubscribeStopsUpdates(t *testing.T) {
 
 	defer func() { _ = cs.Close() }()
 
+	fire := func() {
+		err := broker.HandleNewMessage(
+			ctx, tg.Entities{}, &tg.UpdateNewMessage{Message: &tg.Message{PeerID: &tg.PeerUser{UserID: selfID}}},
+		)
+		if err != nil {
+			t.Fatalf("HandleNewMessage: %v", err)
+		}
+	}
+
 	if subErr := cs.Subscribe(ctx, &mcp.SubscribeParams{URI: uri}); subErr != nil {
 		t.Fatalf("subscribe: %v", subErr)
+	}
+
+	waitForSDKEvent(t, events, "resource subscribed")
+
+	// Without a delivered update first, the silence asserted below would also
+	// hold for a subscription that never worked.
+	fire()
+
+	select {
+	case <-updates:
+	case <-time.After(5 * time.Second):
+		t.Fatal("no update while subscribed")
 	}
 
 	if unsubErr := cs.Unsubscribe(ctx, &mcp.UnsubscribeParams{URI: uri}); unsubErr != nil {
 		t.Fatalf("unsubscribe: %v", unsubErr)
 	}
 
-	fireErr := broker.HandleNewMessage(
-		ctx, tg.Entities{}, &tg.UpdateNewMessage{Message: &tg.Message{PeerID: &tg.PeerUser{UserID: selfID}}},
-	)
-	if fireErr != nil {
-		t.Fatalf("HandleNewMessage: %v", fireErr)
-	}
+	waitForSDKEvent(t, events, "resource unsubscribed")
+
+	fire()
 
 	select {
 	case got := <-updates:

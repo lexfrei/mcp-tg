@@ -59,7 +59,6 @@ cmd/mcp-tg/login.go         `mcp-tg login` — interactive TTY login (writes the
 cmd/mcp-tg/storage.go       Session backend factory: OS keychain (lexfrei/keychain) by default, plaintext file on --insecure-storage/TELEGRAM_SESSION_INSECURE
 cmd/mcp-tg/flood_wait.go    FLOOD_WAIT auto-retry middleware for gotd/td (WARN log per retry; surfaces as tools.ErrFloodWait after exhaustion)
 cmd/mcp-tg/server_error.go  500-class internal-error retry middleware for gotd/td (exponential backoff; surfaces as tools.ErrServerError after exhaustion)
-cmd/mcp-tg/conn_reinit.go   CONNECTION_LAYER_INVALID re-init middleware for gotd/td (takes the mcpDevice DeviceConfig)
 cmd/mcp-tg/auth_revoked.go  AUTH_KEY_UNREGISTERED (revoked session) detection middleware for gotd/td
 cmd/mcp-tg/subscriptions.go resourceUpdater adapter + Subscribe/Unsubscribe handlers wiring the SubscriptionBroker to the MCP server
 internal/config/             Env var loading and validation
@@ -178,7 +177,7 @@ Secure by default: the session lives in the OS keychain via `github.com/lexfrei/
 
 ### Client identity
 
-`mcpDevice()` sets `telegram.Options.Device` so the account's Devices list names the client `mcp-tg` (not gotd's default "go1.26.4" device model). The same `DeviceConfig` is passed to `newConnReinitMiddleware` so a connection re-init advertises identical parameters. App-name (from api_id) and Telegram's platform icon are not ours to set.
+`mcpDevice()` sets `telegram.Options.Device` so the account's Devices list names the client `mcp-tg` (not gotd's default "go1.26.4" device model). gotd re-sends `initConnection` with that same `DeviceConfig` when the server forgets a connection's state (`CONNECTION_NOT_INITED` / `CONNECTION_LAYER_INVALID`), so a re-init advertises identical parameters; there is no middleware of ours for it. App-name (from api_id) and Telegram's platform icon are not ours to set.
 
 ### Transport modes
 

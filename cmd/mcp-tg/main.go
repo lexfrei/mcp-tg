@@ -119,7 +119,6 @@ func run() error {
 			newConnectionLossMiddleware(logger),
 			newFloodWaitMiddleware(logger),
 			newServerErrorMiddleware(logger, serverErrorBaseDelay),
-			newConnReinitMiddleware(cfg.AppID, &device),
 			newAuthRevokedMiddleware(health, logger),
 		},
 	})

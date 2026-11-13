@@ -61,7 +61,9 @@ func NewMessagesEditHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesE
 		return nil, MessagesEditResult{
 			MessageID:      msgID,
 			EntitiesParsed: entityCount(msg),
-			Output:         fmt.Sprintf("Message %d edited", msgID),
+			// A state, not an action: an edit Telegram refused as unchanged
+			// arrives here as a success too (Wrapper.EditMessage).
+			Output: fmt.Sprintf("Message %d has the requested text", msgID),
 		}, nil
 	}
 }

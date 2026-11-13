@@ -154,7 +154,9 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // leaves a second one. That is visible and deletable, unlike the entries here.
 // And this closes only the trigger this middleware adds — gotd's invokeConn
 // resends any method on a dead connection, which is not this middleware's to
-// fix.
+// fix. The deadline resend gotd does is switchable per query, and
+// requestDeadline switches it off for everything held back here. The resend
+// after a server session reset (gotd v0.165+) has no switch at all.
 func safeToResend(input bin.Encoder) bool {
 	switch input.(type) {
 	case *tg.ChannelsCreateChannelRequest,

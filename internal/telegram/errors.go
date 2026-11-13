@@ -1,6 +1,8 @@
 package telegram
 
 import (
+	"context"
+
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tgerr"
 )
@@ -17,6 +19,26 @@ import (
 // wire, while a fresh tool call builds one the server has nothing to match
 // against.
 var ErrNotResent = errors.New("telegram query not resent")
+
+// ErrLostInFlight marks a query the connection to Telegram closed under after
+// the server had acknowledged it. gotd reports that case as the plain
+// cancellation of its own context (rpc.Engine.Do, "engine forcibly closed"),
+// so below the caller's context nothing names the connection; the marker
+// records the classification once LostInFlight has made it. It is set whether
+// or not the query was resent — ErrNotResent says which.
+var ErrLostInFlight = errors.New("telegram connection lost while the query was in flight")
+
+// LostInFlight reports whether err is a cancellation that came from below the
+// caller: the caller's ctx is still live, yet the query ended in
+// context.Canceled. The caller's own cancellation returns ctx.Err() and is
+// never classified as a loss.
+//
+// gotd retries on its own a request the server never acknowledged
+// (github.com/gotd/td/pull/1749) and leaves the acknowledged one to the
+// caller, because the server may already have run it; this is that case.
+func LostInFlight(ctx context.Context, err error) bool {
+	return ctx.Err() == nil && errors.Is(err, context.Canceled)
+}
 
 // ErrNotAGroupPeer is returned when an operation that reads a chat's full
 // record is handed a user. Telegram has no full-chat read for a user, and

@@ -114,6 +114,9 @@ func run() error {
 		// middleware either way, so the order is about the sleeping, not about
 		// honouring the delay the server asked for.
 		Middlewares: []telegram.Middleware{
+			// Outermost so a resend after a dropped connection travels the whole
+			// chain again and keeps its FLOOD_WAIT and 500 handling.
+			newConnectionLossMiddleware(logger),
 			newFloodWaitMiddleware(logger),
 			newServerErrorMiddleware(logger, serverErrorBaseDelay),
 			newConnReinitMiddleware(cfg.AppID, &device),

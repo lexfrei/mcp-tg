@@ -2,6 +2,7 @@
 package tools
 
 import (
+	"context"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -42,7 +43,8 @@ var ErrServerError = errors.New("telegram server error")
 // the server had already acknowledged, and the one automatic resend did not
 // bring an answer either — or was withheld, for a request whose repeat could
 // create a duplicate. Without the marker the failure reads as "context
-// canceled", which a caller takes for its own doing and never retries.
+// canceled", which a caller takes for its own doing and never retries. It also
+// marks a query that ran into one of gotd's own timeouts.
 var ErrConnectionLost = errors.New("telegram connection lost")
 
 // ErrPeerRequired is returned when a peer parameter is missing.
@@ -378,6 +380,18 @@ func wrapTelegramError(err error) error {
 		return errors.Mark(errors.Wrap(err,
 			"the connection to telegram closed while this call was in flight and the automatic "+
 				"resend was lost too; retry the same call"), ErrConnectionLost)
+	}
+
+	// Tool calls carry no deadline, so this is one of gotd's own timeouts. The
+	// request deadline is the one that matters here: it passed, gotd resent
+	// the query, and it passed again, so either copy may have run and a
+	// repeated send carries a fresh random_id. A DC migration timeout ends the
+	// same way without any resend, hence the wording names no mechanism.
+	if errors.Is(err, context.DeadlineExceeded) {
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+		return errors.Mark(errors.Wrap(err,
+			"telegram did not answer this call in time, so "+
+				"check whether it took effect before repeating it"), ErrConnectionLost)
 	}
 
 	// An unmarked 500 reaches here after the server-error middleware resent the

@@ -17,15 +17,19 @@ type DialogItem struct {
 	Username    string `json:"username,omitempty"`
 	Type        string `json:"type"`
 	UnreadCount int    `json:"unreadCount,omitempty"`
+	// LastMessageDate is the Unix time of the dialog's last message; pass
+	// the last item's value as offsetDate to fetch the next page.
+	LastMessageDate int `json:"lastMessageDate,omitempty"`
 }
 
 func dialogToItem(dlg *telegram.Dialog) DialogItem {
 	return DialogItem{
-		Peer:        formatPeer(dlg.Peer),
-		Title:       dlg.Title,
-		Username:    dlg.Username,
-		Type:        dialogPeerType(dlg),
-		UnreadCount: dlg.UnreadCount,
+		Peer:            formatPeer(dlg.Peer),
+		Title:           dlg.Title,
+		Username:        dlg.Username,
+		Type:            dialogPeerType(dlg),
+		UnreadCount:     dlg.UnreadCount,
+		LastMessageDate: dlg.LastMessageDate,
 	}
 }
 

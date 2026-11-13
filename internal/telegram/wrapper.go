@@ -2183,7 +2183,10 @@ func (w *Wrapper) shared(ctx context.Context, key string, call func(context.Cont
 	// Two attempts: ours, plus one more for a leader cancelled under us.
 	// The retry goes back THROUGH the singleflight rather than around it,
 	// so several waiters orphaned by the same leader collapse onto one
-	// retry instead of each issuing its own.
+	// retry instead of each issuing its own. Only Canceled reads as that:
+	// tool calls carry no deadline, so DeadlineExceeded under a live
+	// context is one of gotd's own timeouts (the request deadline, a DC
+	// migration), and a retry would wait it out a second time.
 	for range 2 {
 		result := w.warmSF.DoChan(key, func() (any, error) {
 			return nil, call(ctx)
@@ -2196,7 +2199,7 @@ func (w *Wrapper) shared(ctx context.Context, key string, call func(context.Cont
 			err = shared.Err
 		}
 
-		if err == nil || ctx.Err() != nil || !isContextError(err) {
+		if err == nil || ctx.Err() != nil || !errors.Is(err, context.Canceled) {
 			return err
 		}
 	}

@@ -106,6 +106,7 @@ func run() error {
 		Logger:         logzap.New(newGotdLogger(level)),
 		Device:         device,
 		UpdateHandler:  dispatcher,
+		RequestTimeout: requestDeadline,
 		// Order is outermost first, and the nesting decides whose budget
 		// multiplies whose. With FLOOD_WAIT outermost a server-named delay is
 		// slept once per flood attempt, with the fast 500 cycle nested inside

@@ -209,6 +209,39 @@ func TestWrapTelegramError_LostInFlightResentSurfacesAsTransient(t *testing.T) {
 	}
 }
 
+// gotd gives up on a query after its request deadline passed twice, the second
+// time after reconnecting and resending it. The server may have run either
+// copy, and a send repeated by the caller carries a fresh random_id, so the
+// message must ask for a check rather than a retry.
+func TestWrapTelegramError_MissedDeadlineAsksToCheck(t *testing.T) {
+	missed := errors.Wrap(context.DeadlineExceeded, "no response in 30s")
+
+	wrapped := wrapTelegramError(missed)
+	if !errors.Is(wrapped, ErrConnectionLost) {
+		t.Fatalf("a missed deadline must be marked ErrConnectionLost, got: %v", wrapped)
+	}
+
+	got := wrapped.Error()
+	if !strings.Contains(got, "check whether it took effect") {
+		t.Errorf("a missed deadline must ask the caller to check first, got: %q", got)
+	}
+
+	if !errors.Is(wrapped, context.DeadlineExceeded) {
+		t.Error("wrapTelegramError must preserve the deadline as cause")
+	}
+}
+
+// gotd has other timeouts of its own: a DC migration that does not complete in
+// time also ends in DeadlineExceeded, without the query ever being resent. The
+// message must not describe a resend that may not have happened.
+func TestWrapTelegramError_DeadlineClaimsNoResend(t *testing.T) {
+	wrapped := wrapTelegramError(errors.Wrap(context.DeadlineExceeded, "migrate to dc"))
+
+	if got := wrapped.Error(); strings.Contains(got, "again") {
+		t.Errorf("a deadline error must not claim the call was resent, got: %q", got)
+	}
+}
+
 // A creating request the middleware held back was sent ONCE, and the server may
 // have run it. Inviting a repeat would create the duplicate the hold-back
 // exists to prevent, so the hint asks the caller to look first.

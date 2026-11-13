@@ -1438,11 +1438,27 @@ func extractFolders(result *tg.MessagesDialogFilters) []Folder {
 
 	folders := make([]Folder, 0, len(result.Filters))
 
-	for _, f := range result.Filters {
-		if filter, ok := f.(*tg.DialogFilter); ok {
+	for _, raw := range result.Filters {
+		switch filter := raw.(type) {
+		case *tg.DialogFilter:
 			folders = append(folders, Folder{
-				ID:    filter.ID,
-				Title: filter.Title.Text,
+				ID:           filter.ID,
+				Title:        filter.Title.Text,
+				Emoticon:     filter.Emoticon,
+				Peers:        inputPeersFromTG(filter.IncludePeers),
+				PinnedPeers:  inputPeersFromTG(filter.PinnedPeers),
+				ExcludePeers: inputPeersFromTG(filter.ExcludePeers),
+				Includes:     folderIncludes(filter),
+				Excludes:     folderExcludes(filter),
+			})
+		case *tg.DialogFilterChatlist:
+			folders = append(folders, Folder{
+				ID:          filter.ID,
+				Title:       filter.Title.Text,
+				Emoticon:    filter.Emoticon,
+				Peers:       inputPeersFromTG(filter.IncludePeers),
+				PinnedPeers: inputPeersFromTG(filter.PinnedPeers),
+				Shared:      true,
 			})
 		}
 	}
@@ -1641,7 +1657,7 @@ func participantFilter(
 		return &tg.ChannelParticipantsAdmins{}
 	case "banned":
 		return &tg.ChannelParticipantsBanned{}
-	case "bots":
+	case kindBots:
 		return &tg.ChannelParticipantsBots{}
 	case "kicked":
 		return &tg.ChannelParticipantsKicked{}

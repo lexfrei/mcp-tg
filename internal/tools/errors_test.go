@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -179,5 +180,72 @@ func TestWrapTelegramError_UnresentQueryDoesNotInviteABlindRepeat(t *testing.T) 
 	// tg_folders_create and are idempotent.
 	if strings.Contains(got, "creates") {
 		t.Errorf("the message must not claim what the call does, got: %q", got)
+	}
+}
+
+// A query the connection dropped after Telegram acknowledged it comes back as a
+// bare "context canceled" that reads as the caller's own doing. Once the
+// middleware has resent it and lost it again, the tools layer must say what
+// happened and invite the retry the caller would otherwise not dare.
+func TestWrapTelegramError_LostInFlightResentSurfacesAsTransient(t *testing.T) {
+	lost := errors.Mark(errors.Wrap(context.Canceled, "rpcDoRequest: engine forcibly closed"), telegram.ErrLostInFlight)
+
+	wrapped := wrapTelegramError(lost)
+	if !errors.Is(wrapped, ErrConnectionLost) {
+		t.Fatalf("a lost query must be marked ErrConnectionLost, got: %v", wrapped)
+	}
+
+	if errors.Is(wrapped, ErrServerError) {
+		t.Errorf("a lost query is not a server error, got: %v", wrapped)
+	}
+
+	got := wrapped.Error()
+	if !strings.Contains(got, "connection") || !strings.Contains(got, "retry") {
+		t.Errorf("a lost query must name the connection and invite a retry, got: %q", got)
+	}
+
+	if !errors.Is(wrapped, context.Canceled) {
+		t.Error("wrapTelegramError must preserve the original cancellation as cause")
+	}
+}
+
+// A creating request the middleware held back was sent ONCE, and the server may
+// have run it. Inviting a repeat would create the duplicate the hold-back
+// exists to prevent, so the hint asks the caller to look first.
+func TestWrapTelegramError_LostInFlightNotResentAsksToCheck(t *testing.T) {
+	lost := errors.Mark(errors.Mark(errors.Wrap(context.Canceled, "rpcDoRequest: engine forcibly closed"),
+		telegram.ErrLostInFlight), telegram.ErrNotResent)
+
+	wrapped := wrapTelegramError(lost)
+	if !errors.Is(wrapped, ErrConnectionLost) {
+		t.Fatalf("a held-back lost query must be marked ErrConnectionLost, got: %v", wrapped)
+	}
+
+	if errors.Is(wrapped, ErrServerError) {
+		t.Errorf("a held-back lost query is not a server error, got: %v", wrapped)
+	}
+
+	got := wrapped.Error()
+	if !strings.Contains(got, "check whether it took effect") {
+		t.Errorf("a held-back lost query must ask the caller to check first, got: %q", got)
+	}
+
+	if strings.Contains(got, "retry the same call") {
+		t.Errorf("a held-back lost query must not invite a repeat, got: %q", got)
+	}
+}
+
+// telegramErr composes wrapTelegramError, so the marker must survive through
+// the wrapper the handlers actually call.
+func TestTelegramErr_ConnectionLostKeepsSentinel(t *testing.T) {
+	lost := errors.Mark(errors.Wrap(context.Canceled, "rpcDoRequest"), telegram.ErrLostInFlight)
+
+	wrapped := telegramErr("failed to get messages", lost)
+	if !errors.Is(wrapped, ErrConnectionLost) {
+		t.Fatalf("telegramErr must keep the ErrConnectionLost marker, got: %v", wrapped)
+	}
+
+	if !errors.Is(wrapped, ErrTelegram) {
+		t.Error("telegramErr must still mark the error as ErrTelegram")
 	}
 }

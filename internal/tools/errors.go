@@ -38,6 +38,13 @@ var ErrFloodWait = errors.New("flood wait")
 // carve-out needs its own reason per error, not a rule about the remainder.
 var ErrServerError = errors.New("telegram server error")
 
+// ErrConnectionLost indicates the connection to Telegram closed under a query
+// the server had already acknowledged, and the one automatic resend did not
+// bring an answer either — or was withheld, for a request whose repeat could
+// create a duplicate. Without the marker the failure reads as "context
+// canceled", which a caller takes for its own doing and never retries.
+var ErrConnectionLost = errors.New("telegram connection lost")
+
 // ErrPeerRequired is returned when a peer parameter is missing.
 var ErrPeerRequired = errors.New("peer is required")
 
@@ -352,6 +359,25 @@ func wrapTelegramError(err error) error {
 	if wait, ok := tgerr.AsFloodWait(err); ok {
 		//nolint:wrapcheck // Mark adds the sentinel category; Wrapf supplies the readable retry hint.
 		return errors.Mark(errors.Wrapf(err, "flood wait: retry after %ds", int(wait.Seconds())), ErrFloodWait)
+	}
+
+	// A query the connection dropped after the server acknowledged it carries no
+	// rpc code at all, only context.Canceled. Checked before ErrNotResent: a
+	// creating request held back from the resend carries that mark too, and the
+	// server-error text below would then report a 500 that never happened.
+	if errors.Is(err, telegram.ErrLostInFlight) {
+		if errors.Is(err, telegram.ErrNotResent) {
+			//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+			return errors.Mark(errors.Wrap(err,
+				"the connection to telegram closed while this call was in flight and it was not sent "+
+					"again automatically, so check whether it took effect before repeating it"),
+				ErrConnectionLost)
+		}
+
+		//nolint:wrapcheck // Mark adds the sentinel category; Wrap supplies the readable explanation.
+		return errors.Mark(errors.Wrap(err,
+			"the connection to telegram closed while this call was in flight and the automatic "+
+				"resend was lost too; retry the same call"), ErrConnectionLost)
 	}
 
 	// An unmarked 500 reaches here after the server-error middleware resent the

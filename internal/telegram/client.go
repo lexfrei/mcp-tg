@@ -46,6 +46,10 @@ type MessageClient interface {
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error
 	SendReaction(ctx context.Context, peer InputPeer, msgID int, opts ReactionOpts) error
 	MarkRead(ctx context.Context, peer InputPeer, maxID int) error
+	UnpinAllMessages(ctx context.Context, peer InputPeer, topicID int) error
+	GetMessageLink(ctx context.Context, peer InputPeer, msgID int, thread bool) (string, error)
+	GetMessageReadBy(ctx context.Context, peer InputPeer, msgID int) ([]ReadReceipt, error)
+	SendContact(ctx context.Context, peer InputPeer, contact Contact, opts SendOpts) (*Message, error)
 }
 
 // MediaClient handles file and media operations.
@@ -137,6 +141,7 @@ type DraftClient interface {
 	SetDraft(ctx context.Context, peer InputPeer, text string, replyTo int) error
 	ClearDraft(ctx context.Context, peer InputPeer) error
 	ClearAllDrafts(ctx context.Context) error
+	GetAllDrafts(ctx context.Context) ([]Draft, error)
 }
 
 // FolderClient handles chat folder operations.

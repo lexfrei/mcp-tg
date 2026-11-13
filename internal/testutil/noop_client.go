@@ -296,3 +296,25 @@ func (NoopClient) GetSendAs(_ context.Context, _ telegram.InputPeer) ([]telegram
 func (NoopClient) SetDefaultSendAs(_ context.Context, _ telegram.InputPeer, _ *telegram.InputPeer) error {
 	return nil
 }
+
+func (NoopClient) UnpinAllMessages(_ context.Context, _ telegram.InputPeer, _ int) error {
+	return nil
+}
+
+func (NoopClient) GetMessageLink(_ context.Context, _ telegram.InputPeer, _ int, _ bool) (string, error) {
+	return "", nil
+}
+
+func (NoopClient) GetMessageReadBy(_ context.Context, _ telegram.InputPeer, _ int) ([]telegram.ReadReceipt, error) {
+	return nil, nil
+}
+
+func (NoopClient) SendContact(
+	_ context.Context, _ telegram.InputPeer, _ telegram.Contact, _ telegram.SendOpts,
+) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) GetAllDrafts(_ context.Context) ([]telegram.Draft, error) {
+	return nil, nil
+}

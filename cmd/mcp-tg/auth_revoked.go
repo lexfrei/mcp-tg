@@ -34,7 +34,6 @@ var authRevokedCodes = []string{
 	"AUTH_KEY_INVALID",
 	// same key from two places; gotd makes this a permanent connection error, so revokedExitError catches it (not the invoker)
 	"AUTH_KEY_DUPLICATED",
-	"AUTH_KEY_PERM_EMPTY",
 	"SESSION_REVOKED",
 	"SESSION_EXPIRED",
 }

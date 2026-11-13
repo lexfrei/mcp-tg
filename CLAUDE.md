@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 80 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 81 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -79,8 +79,8 @@ internal/telegram/           Telegram abstraction layer
   markdown_lint.go           LooksLikeMarkdown — plain-mode lint approximating what the parser would transform
   invite_link.go             Invite links: the primary link read from the full chat, plus list, create and revoke
   send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
-  subscriptions.go           SubscriptionBroker: routes new-message updates to watching resource URIs (ResourceUpdater sink)
-internal/tools/              MCP tool handlers (80 tools)
+  subscriptions.go           SubscriptionBroker: routes new-message updates to watching resource URIs (ResourceUpdater sink) and wakes tg_messages_wait listeners
+internal/tools/              MCP tool handlers (81 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
@@ -114,7 +114,7 @@ internal/testutil/           NoopClient for registration tests
 
 ### Tool annotations
 
-- `readOnlyAnnotations()` — tools that only read data (32 tools)
+- `readOnlyAnnotations()` — tools that only read data (33 tools)
 - `idempotentAnnotations()` — tools that modify state but are safe to retry (28 tools)
 - `writeAnnotations()` — tools that create new entities, not idempotent (11 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
@@ -196,6 +196,8 @@ Both paths build the server through `buildServer`, which takes the `*tgclient.Lo
 Wiring (`main.go`): `dispatcher.OnNewMessage`/`OnNewChannelMessage` are registered BEFORE `tgClient.Run` (same as `OnTranscribedAudio`); the broker threads through `startServer → startStdio/startHeadless → buildServer → newServerOptions`; `SetNotifier` runs after the server is built. `newServerOptions` installs both a `SubscribeHandler` and `UnsubscribeHandler` (the SDK panics if only one is set, and auto-advertises `Resources.Subscribe` once both exist). Each resolves the URI's peer via `resources.ChatMessagesPeer` (which REQUIRES the `/messages` suffix, so the bare info URI is ignored → `nil`) then `client.ResolvePeer`; a resolution error fails the subscribe.
 
 The peer match comes from `msg.AsNotEmpty().GetPeerID()` — `tg.MessageClass` has no `GetPeerID`; only `NotEmptyMessage` does. A `MessageEmpty` or a message with no `PeerID` yields the ID-0 sentinel and is dropped. That is exactly the self-send echo shape: `updateShortSentMessage` upconverts to an `UpdateNewMessage` with NO `PeerID`, so the account's OWN outgoing message (sent through this server) never fires the notification — a Saved-Messages message from ANOTHER device arrives with `PeerID=PeerUser{selfID}` and does. Live smoke must therefore send from a second device, and the smoke URI uses the numeric self-ID (`resolve.go` has no me/self shorthand).
+
+The broker has a second, in-process consumer: `Listen(peer)` hands `tg_messages_wait` a one-slot channel that `dispatch` signals (`wake`) for every message in that peer, BEFORE and independently of the URI lookup, so a waiter needs no subscription and no notifier. It lives on the broker because `tg.UpdateDispatcher` keeps ONE handler per update type and the broker already owns `OnNewMessage`/`OnNewChannelMessage`; a second handler registered there would silently replace it. The send is non-blocking and the buffer coalesces a burst — a pending signal already means "re-read", and the tool re-reads the history anyway — so a waiter that is slow to drain never stalls gotd's update loop. The tool itself treats the signal as a hint, not as data: it re-reads one page of history on every signal AND on a 15 s ticker, because the update stream is not a delivery guarantee. It subscribes BEFORE its first read so a message landing between the two is not lost, and it filters the account's own messages by comparing `FromID` with `GetSelf` (domain `Message` carries no `out` flag).
 
 Known limitation (disconnect drift, cleared only by process restart): the SDK removes a disconnected session from its own subscription registry (`server.go` `disconnect`) but does NOT call `UnsubscribeHandler` (that fires only on the explicit `unsubscribe` RPC). The broker's session set is not pruned, so a dead session's entry lingers. Delivery stays correct — the SDK's registry is authoritative, a dead session receives nothing — but two costs accrue and neither is bounded by the set of distinct chats: the retained `(URI, session)` entries grow with cumulative abnormal-disconnect churn over the daemon's lifetime (each reconnect mints a new `*ServerSession`); and a lingering entry keeps `subscribers[uri]` non-empty, so that URI's `owner`/`peerURIs` are never cleaned and every later message in the chat costs a peer lookup plus one `subscriber_count=0` INFO line. No clean fix exists — `ServerOptions` has no session-closed callback, the headless path never holds the per-session handle, and a prune-on-zero-live-subscribers scheme would race `Watch` (which runs before the SDK registers the subscription). Accept and document; a restart clears it.
 

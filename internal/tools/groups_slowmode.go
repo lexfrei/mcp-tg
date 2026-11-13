@@ -48,6 +48,12 @@ func NewGroupsSlowmodeHandler(
 		}
 
 		err = client.SetSlowMode(ctx, peer, params.Seconds)
+		if alreadyDone(err, "CHAT_NOT_MODIFIED") {
+			return nil, GroupsSlowmodeResult{
+				Output: fmt.Sprintf("Slowmode is already %ds for %s", params.Seconds, params.Peer),
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},
 				GroupsSlowmodeResult{},

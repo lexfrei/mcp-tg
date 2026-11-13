@@ -38,6 +38,14 @@ func NewGroupsLeaveHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsLeav
 		}
 
 		err = client.LeaveGroup(ctx, peer)
+		if alreadyDone(err, "USER_NOT_PARTICIPANT") {
+			return nil, GroupsLeaveResult{
+				Peer:    params.Peer,
+				Success: true,
+				Output:  "Not a member of " + params.Peer,
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsLeaveResult{},
 				telegramErr("failed to leave group", err)

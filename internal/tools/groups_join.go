@@ -36,6 +36,10 @@ func NewGroupsJoinHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsJoinP
 		}
 
 		err = client.JoinGroup(ctx, peer)
+		if alreadyDone(err, "USER_ALREADY_PARTICIPANT") {
+			return nil, GroupsJoinResult{Output: "Already a member of " + params.Peer}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsJoinResult{},
 				telegramErr("failed to join group", err)

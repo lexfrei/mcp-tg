@@ -112,6 +112,14 @@ func NewChatsSetDescriptionHandler(
 		}
 
 		err = client.SetChatAbout(ctx, peer, params.About)
+		if alreadyDone(err, "CHAT_ABOUT_NOT_MODIFIED", "CHAT_NOT_MODIFIED") {
+			return nil, ChatsSetDescriptionResult{
+				Peer:   params.Peer,
+				About:  params.About,
+				Output: "Description for " + params.Peer + " already matches",
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, ChatsSetDescriptionResult{},
 				telegramErr("failed to set chat description", err)

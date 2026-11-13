@@ -660,6 +660,15 @@ func (w *Wrapper) EditMessage(
 	}
 
 	result, err := w.api.MessagesEditMessage(ctx, req)
+	if tgerr.Is(err, "MESSAGE_NOT_MODIFIED") {
+		// The stored message equals the submitted one, entities included,
+		// so the edit's postcondition holds — whether the caller repeated
+		// the call or a resend below this layer landed after the first copy
+		// applied. Same contract as tools.alreadyDone, which this package
+		// cannot import.
+		return echoOrSubmitted(nil, msgID, req.Entities), nil
+	}
+
 	if err != nil {
 		return nil, errors.Wrap(err, "editing message")
 	}

@@ -420,3 +420,24 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 		return fmt.Sprintf("%s:%d", unknownPeerType, peer.ID)
 	}
 }
+
+// resolveMessageTarget validates a peer + message ID pair and resolves the
+// peer, for the tools that act on one existing message.
+func resolveMessageTarget(
+	ctx context.Context, client telegram.Client, ref string, msgID int,
+) (telegram.InputPeer, error) {
+	if ref == "" {
+		return telegram.InputPeer{}, validationErr(ErrPeerRequired)
+	}
+
+	if msgID == 0 {
+		return telegram.InputPeer{}, validationErr(ErrMessageIDRequired)
+	}
+
+	peer, err := client.ResolvePeer(ctx, ref)
+	if err != nil {
+		return telegram.InputPeer{}, telegramErr("failed to resolve peer", err)
+	}
+
+	return peer, nil
+}

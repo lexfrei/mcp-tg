@@ -540,6 +540,12 @@ func newServerOptions(
 		CompletionHandler:  completions.NewHandler(client),
 		SubscribeHandler:   newSubscribeHandler(client, broker),
 		UnsubscribeHandler: newUnsubscribeHandler(broker),
+		// Applies to discover, the list methods and resources/read. The SDK
+		// defaults an unset scope to "public", and a resource read here is one
+		// account's chat history.
+		SetCacheable: func(_ context.Context, _ mcp.Request, cacheable *mcp.Cacheable) {
+			cacheable.CacheScope = "private"
+		},
 	}
 }
 

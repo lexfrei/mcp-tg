@@ -275,6 +275,15 @@ func telegramErr(msg string, err error) error {
 	return errors.Mark(errors.Wrap(wrapTelegramError(err), msg), ErrTelegram)
 }
 
+// alreadyDone reports whether err is one of codes: refusals stating that the
+// state the call asked for already holds, which the tool reports as success.
+// Checked unconditionally because gotd resends below the middlewares without
+// marking the error. Pass only codes whose documented meaning IS the tool's
+// postcondition, and word the reply as a state, never as a first attempt.
+func alreadyDone(err error, codes ...string) bool {
+	return tgerr.Is(err, codes...)
+}
+
 // sendErr wraps a failed send, naming the send-as identity as a suspect
 // when one was requested.
 //

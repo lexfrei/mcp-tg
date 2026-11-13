@@ -247,6 +247,9 @@ func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 		},
 		"profile photo": &tg.PhotosUploadProfilePhotoRequest{},
 		"invite link":   &tg.MessagesExportChatInviteRequest{Peer: &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1}},
+		// Not creating, but a button press the bot acts on: a resend is a
+		// second press.
+		"button press": &tg.MessagesGetBotCallbackAnswerRequest{Peer: &tg.InputPeerUser{UserID: 1, AccessHash: 1}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer

@@ -155,9 +155,16 @@ type Dialog struct {
 	Title       string    `json:"title"`
 	Username    string    `json:"username,omitempty"`
 	UnreadCount int       `json:"unreadCount,omitempty"`
-	LastMessage *Message  `json:"lastMessage,omitempty"`
-	IsChannel   bool      `json:"isChannel,omitempty"`
-	IsGroup     bool      `json:"isGroup,omitempty"`
+	// LastMessageDate is the Unix time of the dialog's top message, the
+	// value to pass back as OffsetDate to continue the listing.
+	LastMessageDate int `json:"lastMessageDate,omitempty"`
+	// Archived and Pinned are the server's own view of the dialog: whether
+	// it sits in the archive folder, and whether it is pinned there.
+	Archived    bool     `json:"archived,omitempty"`
+	Pinned      bool     `json:"pinned,omitempty"`
+	LastMessage *Message `json:"lastMessage,omitempty"`
+	IsChannel   bool     `json:"isChannel,omitempty"`
+	IsGroup     bool     `json:"isGroup,omitempty"`
 }
 
 // GroupInfo holds detailed information about a group, supergroup or channel.
@@ -438,10 +445,12 @@ type ReactionOpts struct {
 	Remove bool
 }
 
-// DialogOpts configures dialog listing.
+// DialogOpts configures dialog listing. Archived lists the archive
+// instead of the main chat list; the server returns one or the other.
 type DialogOpts struct {
 	Limit      int
 	OffsetDate int
+	Archived   bool
 }
 
 // TopicOpts configures forum topic listing.

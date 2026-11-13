@@ -47,3 +47,18 @@ func TestDialogsListHandler_Error(t *testing.T) {
 		t.Error("result.IsError should be true")
 	}
 }
+
+func TestDialogsListHandler_PassesArchived(t *testing.T) {
+	mock := &mockClient{}
+	handler := NewDialogsListHandler(mock)
+	archived := true
+
+	_, _, err := handler(context.Background(), nil, DialogsListParams{Archived: &archived})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !mock.lastDialogOpts.Archived {
+		t.Error("archived: true did not reach the client")
+	}
+}

@@ -11,8 +11,9 @@ import (
 
 // DialogsListParams defines the parameters for the tg_dialogs_list tool.
 type DialogsListParams struct {
-	Limit      *int `json:"limit,omitempty"      jsonschema:"Maximum number of dialogs to return (default 100)"`
-	OffsetDate *int `json:"offsetDate,omitempty" jsonschema:"Unix timestamp for pagination (pass last dialog date)"`
+	Limit      *int  `json:"limit,omitempty"      jsonschema:"Maximum number of dialogs to return (default 100, paged past 100)"`
+	OffsetDate *int  `json:"offsetDate,omitempty" jsonschema:"Unix timestamp for pagination: the last dialog's lastMessageDate"`
+	Archived   *bool `json:"archived,omitempty"   jsonschema:"List the archived chats instead of the main list"`
 }
 
 // DialogsListResult is the output of the tg_dialogs_list tool.
@@ -41,6 +42,7 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 		opts := telegram.DialogOpts{
 			Limit:      limit,
 			OffsetDate: deref(params.OffsetDate),
+			Archived:   deref(params.Archived),
 		}
 
 		dialogs, err := client.GetDialogs(ctx, opts)

@@ -54,6 +54,11 @@ func alreadyDoneCalls() map[string]alreadyDoneCall {
 
 			return res, out.Output, err
 		},
+		"tg_topics_edit": func(c telegram.Client) (*mcp.CallToolResult, string, error) {
+			res, out, err := NewTopicsEditHandler(c)(ctx, nil, TopicsEditParams{Peer: "@grp", TopicID: 7, Title: "Same"})
+
+			return res, out.Output, err
+		},
 	}
 }
 
@@ -83,6 +88,7 @@ func TestAlreadyDone_RefusalStatingThePostconditionIsSuccess(t *testing.T) {
 		{"tg_chats_set_description", "CHAT_ABOUT_NOT_MODIFIED", "Description for @grp already matches"},
 		{"tg_chats_set_description", "CHAT_NOT_MODIFIED", "Description for @grp already matches"},
 		{"tg_chats_set_permissions", "CHAT_NOT_MODIFIED", "Chat permissions for @grp already match"},
+		{"tg_topics_edit", "TOPIC_NOT_MODIFIED", `Topic 7 in @grp already has the title "Same"`},
 	}
 
 	calls := alreadyDoneCalls()
@@ -123,6 +129,7 @@ func TestAlreadyDone_OtherRefusalsStillFail(t *testing.T) {
 		{"tg_groups_slowmode", "USER_ALREADY_PARTICIPANT"},
 		{"tg_chats_set_description", "CHAT_ADMIN_REQUIRED"},
 		{"tg_chats_set_permissions", "CHAT_ABOUT_NOT_MODIFIED"},
+		{"tg_topics_edit", "CHAT_NOT_MODIFIED"},
 	}
 
 	calls := alreadyDoneCalls()

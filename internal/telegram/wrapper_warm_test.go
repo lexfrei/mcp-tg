@@ -419,6 +419,28 @@ func TestShared_RetriesALeadersCancellationOnItsOwnContext(t *testing.T) {
 	}
 }
 
+func TestShared_DoesNotRetryAMissedResponseDeadline(t *testing.T) {
+	// With a live context, DeadlineExceeded is gotd giving up on a connection
+	// after its own reconnect and resend, not a leader that went away. A
+	// retry would wait out the same dead connection a second time.
+	wrap := newWrapperWithInvoker(refusingChannelInvoker{})
+
+	var calls int
+
+	err := wrap.shared(t.Context(), "channel:3", func(context.Context) error {
+		calls++
+
+		return context.DeadlineExceeded
+	})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected the deadline to surface, got %v", err)
+	}
+
+	if calls != 1 {
+		t.Errorf("expected no retry after a missed deadline, got %d call(s)", calls)
+	}
+}
+
 func TestResolvePeer_UnknownUserDoesNotRescanOnEveryCall(t *testing.T) {
 	// A scan that RAN and still missed is the best answer the dialog list
 	// can give. Unlatching the throttle there would make every repeat of

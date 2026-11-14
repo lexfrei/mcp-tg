@@ -71,6 +71,8 @@ Everything lives at **[mcp-tg.lexfrei.dev](https://mcp-tg.lexfrei.dev)**:
 
 ## Contributing
 
+Commits need a DCO sign-off (`git commit --signoff`); see [CONTRIBUTING.md](CONTRIBUTING.md) for what it certifies and the exemptions.
+
 The site is built from `docs/` with [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) and deploys on every push to `master`. Dependencies are locked in `requirements-docs.txt` (pinned and hashed; edit `requirements-docs.in` and recompile). To preview locally:
 
 ```bash

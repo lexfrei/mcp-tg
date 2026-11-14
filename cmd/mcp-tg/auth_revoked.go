@@ -34,7 +34,6 @@ var authRevokedCodes = []string{
 	"AUTH_KEY_INVALID",
 	// same key from two places; gotd makes this a permanent connection error, so revokedExitError catches it (not the invoker)
 	"AUTH_KEY_DUPLICATED",
-	"AUTH_KEY_PERM_EMPTY",
 	"SESSION_REVOKED",
 	"SESSION_EXPIRED",
 }
@@ -44,7 +43,7 @@ var authRevokedCodes = []string{
 // the operator sees a single clear signal instead of a stream of raw
 // AUTH_KEY_UNREGISTERED failures, and the MCP session guard can then fast-fail
 // tool calls with an explanation. The original error is passed through
-// unchanged, mirroring the other invoker middlewares (flood_wait, conn_reinit).
+// unchanged, mirroring the other invoker middlewares.
 func newAuthRevokedMiddleware(health *middleware.SessionHealth, logger *slog.Logger) telegram.MiddlewareFunc {
 	return func(next tg.Invoker) telegram.InvokeFunc {
 		return func(ctx context.Context, input bin.Encoder, output bin.Decoder) error {

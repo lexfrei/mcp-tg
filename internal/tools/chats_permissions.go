@@ -48,6 +48,12 @@ func NewChatsPermissionsHandler(
 		perms := buildPermissions(&params)
 
 		err = client.SetChatPermissions(ctx, peer, perms)
+		if alreadyDone(err, "CHAT_NOT_MODIFIED") {
+			return nil, ChatsPermissionsResult{
+				Output: "Chat permissions for " + params.Peer + " already match",
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, ChatsPermissionsResult{},
 				telegramErr("failed to set chat permissions", err)

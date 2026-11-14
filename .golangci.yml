@@ -46,6 +46,21 @@ linters:
       require-explanation: true
       require-specific: true
       allow-unused: false
+    wrapcheck:
+      # tgerr.New constructs an rpc error the way errors.New constructs a plain
+      # one; a return of a freshly built error has nothing to wrap. The rest is
+      # the linter's own default list, which this setting replaces.
+      ignore-sigs:
+        - .Errorf(
+        - errors.New(
+        - errors.Unwrap(
+        - errors.Join(
+        - .Wrap(
+        - .Wrapf(
+        - .WithMessage(
+        - .WithMessagef(
+        - .WithStack(
+        - tgerr.New(
     varnamelen:
       max-distance: 5
       min-name-length: 3

@@ -112,9 +112,11 @@ func TestRevokedCode(t *testing.T) {
 		}
 	}
 
-	// Not revoked-session codes: a flood wait, and account-level bans that
-	// re-login cannot fix (deliberately excluded from the list).
-	for _, code := range []string{"FLOOD_WAIT_42", "USER_DEACTIVATED", "USER_DEACTIVATED_BAN"} {
+	// Not revoked-session codes: a flood wait, account-level bans that re-login
+	// cannot fix (deliberately excluded from the list), and a lost PFS key
+	// binding: the server sends it only with PFS on, and gotd answers it by
+	// reconnecting rather than logging out.
+	for _, code := range []string{"FLOOD_WAIT_42", "USER_DEACTIVATED", "USER_DEACTIVATED_BAN", "AUTH_KEY_PERM_EMPTY"} {
 		if _, ok := revokedCode(tgerr.New(400, code)); ok {
 			t.Errorf("revokedCode(%s) should not match", code)
 		}

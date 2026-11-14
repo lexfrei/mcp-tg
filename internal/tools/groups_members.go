@@ -51,6 +51,14 @@ func NewGroupsMembersAddHandler(client telegram.Client) mcp.ToolHandlerFor[Group
 		}
 
 		err = client.AddGroupMember(ctx, group, user)
+		if alreadyDone(err, "USER_ALREADY_PARTICIPANT") {
+			return nil, GroupsMembersAddResult{
+				Group:  params.Group,
+				User:   params.User,
+				Output: fmt.Sprintf("%s is already a member of %s", params.User, params.Group),
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsMembersAddResult{},
 				telegramErr("failed to add member to group", err)

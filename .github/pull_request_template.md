@@ -21,3 +21,4 @@
 - [ ] Code follows project conventions
 - [ ] Tests added/updated for changes
 - [ ] Documentation updated if needed
+- [ ] All commits are signed off (DCO)

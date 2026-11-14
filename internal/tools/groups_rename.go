@@ -54,6 +54,15 @@ func NewGroupsRenameHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsRen
 		}
 
 		err = client.RenameGroup(ctx, peer, params.Title)
+		if alreadyDone(err, "CHAT_NOT_MODIFIED") {
+			return nil, GroupsRenameResult{
+				Peer:     params.Peer,
+				OldTitle: oldTitle,
+				NewTitle: params.Title,
+				Output:   fmt.Sprintf("Group %s already has the title %q", params.Peer, params.Title),
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsRenameResult{},
 				telegramErr("failed to rename group", err)

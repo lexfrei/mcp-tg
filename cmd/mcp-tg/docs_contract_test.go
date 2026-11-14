@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cockroachdb/errors"
@@ -415,6 +416,7 @@ var (
 
 var (
 	docsFloodAttempts = regexp.MustCompile(`up to (\d+) attempts in total`)
+	docsDeadline      = regexp.MustCompile(`no answer within (\d+) seconds`)
 	licenseYear       = regexp.MustCompile(`Copyright \(c\) (\d{4})`)
 	mkdocsCopyright   = regexp.MustCompile(`(?m)^copyright:.*?(\d{4}(?:-\d{4})?) `)
 )
@@ -439,6 +441,31 @@ func TestDocsFloodRetries_MatchTheMiddleware(t *testing.T) {
 	if documented != maxFloodRetries {
 		t.Errorf("%s claims %d FLOOD_WAIT attempts, the middleware makes %d",
 			docsIndexPage, documented, maxFloodRetries)
+	}
+}
+
+// TestDocsRequestDeadline_MatchesTheCode pins the response deadline the docs
+// promise against requestTimeout, and checks the page still tells the reader
+// to look before repeating the call.
+func TestDocsRequestDeadline_MatchesTheCode(t *testing.T) {
+	page := readDocsPage(t, docsIndexPage)
+
+	claim := docsDeadline.FindStringSubmatch(page)
+	if claim == nil {
+		t.Fatalf("%s no longer states the response deadline", docsIndexPage)
+	}
+
+	documented, err := strconv.Atoi(claim[1])
+	if err != nil {
+		t.Fatalf("%s: unparseable deadline %q: %v", docsIndexPage, claim[0], err)
+	}
+
+	if want := int(requestTimeout / time.Second); documented != want {
+		t.Errorf("%s claims a %ds deadline, requestTimeout is %ds", docsIndexPage, documented, want)
+	}
+
+	if !strings.Contains(page, "check whether it took effect before repeating it") {
+		t.Errorf("%s must say a missed deadline asks for a check before a repeat", docsIndexPage)
 	}
 }
 

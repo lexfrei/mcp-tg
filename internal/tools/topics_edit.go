@@ -29,22 +29,9 @@ func NewTopicsEditHandler(
 		_ *mcp.CallToolRequest,
 		params TopicsEditParams,
 	) (*mcp.CallToolResult, TopicsEditResult, error) {
-		if params.Peer == "" {
-			return &mcp.CallToolResult{IsError: true},
-				TopicsEditResult{},
-				validationErr(ErrPeerRequired)
-		}
-
-		if params.TopicID == 0 {
-			return &mcp.CallToolResult{IsError: true},
-				TopicsEditResult{},
-				validationErr(ErrTopicIDRequired)
-		}
-
-		if params.Title == "" {
-			return &mcp.CallToolResult{IsError: true},
-				TopicsEditResult{},
-				validationErr(ErrTitleRequired)
+		err := validateTopicsEdit(params)
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, TopicsEditResult{}, err
 		}
 
 		peer, err := client.ResolvePeer(ctx, params.Peer)
@@ -57,6 +44,12 @@ func NewTopicsEditHandler(
 		err = client.EditForumTopic(
 			ctx, peer, params.TopicID, params.Title,
 		)
+		if alreadyDone(err, "TOPIC_NOT_MODIFIED") {
+			return nil, TopicsEditResult{
+				Output: fmt.Sprintf("Topic %d in %s already has the title %q", params.TopicID, params.Peer, params.Title),
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true},
 				TopicsEditResult{},
@@ -77,5 +70,18 @@ func TopicsEditTool() *mcp.Tool {
 		Name:        "tg_topics_edit",
 		Description: "Edit a forum topic title in a Telegram supergroup",
 		Annotations: idempotentAnnotations(),
+	}
+}
+
+func validateTopicsEdit(params TopicsEditParams) error {
+	switch {
+	case params.Peer == "":
+		return validationErr(ErrPeerRequired)
+	case params.TopicID == 0:
+		return validationErr(ErrTopicIDRequired)
+	case params.Title == "":
+		return validationErr(ErrTitleRequired)
+	default:
+		return nil
 	}
 }

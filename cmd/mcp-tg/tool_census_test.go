@@ -22,10 +22,10 @@ import (
 //
 // When a tool is added, update these numbers AND the two documents.
 const (
-	wantToolsTotal       = 80
-	wantReadOnlyTools    = 32
-	wantIdempotentTools  = 28
-	wantWriteTools       = 11
+	wantToolsTotal       = 86
+	wantReadOnlyTools    = 35
+	wantIdempotentTools  = 29
+	wantWriteTools       = 13
 	wantDestructiveTools = 9
 
 	// The docs advertise these beside the tool total, so they are pinned

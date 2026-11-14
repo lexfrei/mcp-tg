@@ -98,6 +98,17 @@ type mockClient struct {
 	getSendAsCalls  int
 	resolvedQueries []string
 	lastStickerID   int64
+	// Group administration.
+	lastBan        [2]telegram.InputPeer
+	lastBanUntil   int
+	lastUnban      bool
+	inviteInfo     *telegram.InviteInfo
+	lastInviteLink string
+	lastForum      *bool
+	adminLog       []telegram.AdminLogEvent
+	lastAdminLog   telegram.AdminLogOpts
+	deletedTopic   int
+	photoDeleted   bool
 }
 
 // ResolvePeer answers with m.peer unless resolvePeerFn is set. Tools
@@ -673,6 +684,62 @@ func (m *mockClient) SetDefaultSendAs(
 	m.lastPeer = peer
 	m.lastSetSendAs = sendAs
 	m.setSendAsCalls++
+
+	return m.err
+}
+
+func (m *mockClient) BanMember(_ context.Context, group, user telegram.InputPeer, untilDate int, unban bool) error {
+	m.lastBan = [2]telegram.InputPeer{group, user}
+	m.lastBanUntil = untilDate
+	m.lastUnban = unban
+
+	return m.err
+}
+
+func (m *mockClient) CheckInvite(_ context.Context, link string) (*telegram.InviteInfo, error) {
+	m.lastInviteLink = link
+
+	return m.inviteInfo, m.err
+}
+
+func (m *mockClient) JoinByInvite(_ context.Context, link string) (*telegram.PeerInfo, error) {
+	m.lastInviteLink = link
+
+	return m.info, m.err
+}
+
+func (m *mockClient) UpgradeToSupergroup(_ context.Context, peer telegram.InputPeer) (*telegram.PeerInfo, error) {
+	m.lastPeer = peer
+
+	return m.info, m.err
+}
+
+func (m *mockClient) SetForum(_ context.Context, peer telegram.InputPeer, enabled bool) error {
+	m.lastPeer = peer
+	m.lastForum = &enabled
+
+	return m.err
+}
+
+func (m *mockClient) GetAdminLog(
+	_ context.Context, peer telegram.InputPeer, opts telegram.AdminLogOpts,
+) ([]telegram.AdminLogEvent, error) {
+	m.lastPeer = peer
+	m.lastAdminLog = opts
+
+	return m.adminLog, m.err
+}
+
+func (m *mockClient) DeleteChatPhoto(_ context.Context, peer telegram.InputPeer) error {
+	m.lastPeer = peer
+	m.photoDeleted = true
+
+	return m.err
+}
+
+func (m *mockClient) DeleteForumTopic(_ context.Context, peer telegram.InputPeer, topicID int) error {
+	m.lastPeer = peer
+	m.deletedTopic = topicID
 
 	return m.err
 }

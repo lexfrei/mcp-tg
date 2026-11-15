@@ -22,11 +22,15 @@ import (
 // scriptedAuth is a Telegram account that is not logged in and accepts one
 // phone and one code, unless statusErr makes it unreachable.
 type scriptedAuth struct {
-	authorized bool
-	statusErr  error
+	authorized       bool
+	statusErr        error
+	uncappedSeen     bool
+	sendCodeUncapped bool
 }
 
-func (s *scriptedAuth) Status(context.Context) (*auth.Status, error) {
+func (s *scriptedAuth) Status(ctx context.Context) (*auth.Status, error) {
+	s.uncappedSeen = floodWaitUncapped(ctx)
+
 	if s.statusErr != nil {
 		return nil, s.statusErr
 	}
@@ -34,7 +38,9 @@ func (s *scriptedAuth) Status(context.Context) (*auth.Status, error) {
 	return &auth.Status{Authorized: s.authorized}, nil
 }
 
-func (*scriptedAuth) SendCode(context.Context, string, auth.SendCodeOptions) (tg.AuthSentCodeClass, error) {
+func (s *scriptedAuth) SendCode(ctx context.Context, _ string, _ auth.SendCodeOptions) (tg.AuthSentCodeClass, error) {
+	s.sendCodeUncapped = floodWaitUncapped(ctx)
+
 	return &tg.AuthSentCode{PhoneCodeHash: "hash", Type: &tg.AuthSentCodeTypeApp{Length: 5}}, nil
 }
 
@@ -197,6 +203,33 @@ func TestSettleLogin_DecidesWhetherTheServerStarts(t *testing.T) {
 				t.Errorf("login done = %v, want %v", login.Done(), tc.wantDone)
 			}
 		})
+	}
+}
+
+// The startup login runs with the FLOOD_WAIT cap lifted, the headless path
+// included: both go through startupLogin.
+func TestStartupLogin_LiftsTheFloodWaitCap(t *testing.T) {
+	api := &scriptedAuth{authorized: true}
+	login := tgclient.NewLogin(api, tgclient.Credentials{}, slog.New(slog.DiscardHandler), func() {})
+
+	if err := startupLogin(context.Background(), login); err != nil {
+		t.Fatalf("startupLogin: %v", err)
+	}
+
+	if !api.uncappedSeen {
+		t.Error("the startup probe must run on a context that lifts the FLOOD_WAIT cap")
+	}
+
+	envAPI := &scriptedAuth{}
+	envLogin := tgclient.NewLogin(envAPI, tgclient.Credentials{Phone: "+15550100", Code: "12345"},
+		slog.New(slog.DiscardHandler), func() {})
+
+	if err := startupLogin(context.Background(), envLogin); err != nil {
+		t.Fatalf("startupLogin with env credentials: %v", err)
+	}
+
+	if !envAPI.sendCodeUncapped {
+		t.Error("the env-credential login must run on a context that lifts the FLOOD_WAIT cap")
 	}
 }
 

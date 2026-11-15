@@ -3,23 +3,32 @@ package tools
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/telegram/auth"
 	"github.com/gotd/td/tg"
+	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // pendingAuth is an account that always needs a phone and a code.
-type pendingAuth struct{ signedIn bool }
+type pendingAuth struct {
+	signedIn    bool
+	sendCodeErr error
+}
 
 func (p *pendingAuth) Status(context.Context) (*auth.Status, error) {
 	return &auth.Status{Authorized: p.signedIn}, nil
 }
 
-func (*pendingAuth) SendCode(context.Context, string, auth.SendCodeOptions) (tg.AuthSentCodeClass, error) {
+func (p *pendingAuth) SendCode(context.Context, string, auth.SendCodeOptions) (tg.AuthSentCodeClass, error) {
+	if p.sendCodeErr != nil {
+		return nil, p.sendCodeErr
+	}
+
 	return &tg.AuthSentCode{PhoneCodeHash: "hash", Type: &tg.AuthSentCodeTypeApp{Length: 5}}, nil
 }
 
@@ -154,6 +163,57 @@ func TestLoginGate_AdmitsOnceAuthorized(t *testing.T) {
 	result, admitErr := gate.Admit(ctx, callWithVersion("2026-07-28", nil))
 	if admitErr != nil || result != nil {
 		t.Fatalf("an authorized account must admit the call, got result=%v err=%v", result, admitErr)
+	}
+}
+
+// A FLOOD_WAIT on the login reaches the caller the way every tool's does: as
+// ErrFloodWait with a readable "retry after Ns", not a raw rpc error.
+func TestLoginGate_FloodWaitReadsAsARetryHint(t *testing.T) {
+	login := telegram.NewLogin(&pendingAuth{sendCodeErr: tgerr.New(420, "FLOOD_WAIT_3600")},
+		telegram.Credentials{}, slog.New(slog.DiscardHandler), func() {})
+	gate := NewLoginGate(login)
+	ctx := context.Background()
+
+	_, err := gate.Admit(ctx, callWithVersion("2026-07-28", nil))
+	if err != nil {
+		t.Fatalf("first admit: %v", err)
+	}
+
+	retry := callWithVersion("2026-07-28", &mcp.CallToolParamsRaw{
+		Name:         "tg_dialogs_list",
+		RequestState: string(telegram.LoginStepPhone),
+		InputResponses: mcp.InputResponseMap{
+			string(telegram.LoginStepPhone): &mcp.ElicitResult{
+				Action:  "accept",
+				Content: map[string]any{string(telegram.LoginStepPhone): "+15550100"},
+			},
+		},
+	})
+
+	_, err = gate.Admit(ctx, retry)
+	if !errors.Is(err, ErrFloodWait) {
+		t.Fatalf("a flooded sendCode must surface as ErrFloodWait, got: %v", err)
+	}
+
+	if !strings.Contains(err.Error(), "retry after 3600s") {
+		t.Errorf("the error must carry the retry hint, got: %q", err)
+	}
+}
+
+// The pre-2026-07-28 path wraps the flood the same way. An environment phone
+// makes the first Next send the code before anything is asked, so the session
+// is never used and a bare one is enough.
+func TestLoginGate_FloodWaitReadsAsARetryHintOnElicitation(t *testing.T) {
+	login := telegram.NewLogin(&pendingAuth{sendCodeErr: tgerr.New(420, "FLOOD_WAIT_3600")},
+		telegram.Credentials{Phone: "+15550100"}, slog.New(slog.DiscardHandler), func() {})
+	gate := NewLoginGate(login)
+
+	req := callWithVersion("2025-11-25", nil)
+	req.Session = &mcp.ServerSession{}
+
+	_, err := gate.Admit(context.Background(), req)
+	if !errors.Is(err, ErrFloodWait) {
+		t.Fatalf("a flooded sendCode must surface as ErrFloodWait, got: %v", err)
 	}
 }
 

@@ -36,7 +36,7 @@ stdio is the primary transport: one server process per MCP client, spawned by th
 
 To serve many MCP clients from a single process and a single Telegram connection, run the server as a headless HTTP-only daemon. Set `MCP_HTTP_ONLY=true` together with `MCP_HTTP_PORT`. In this mode the server skips the stdio transport entirely and listens only on HTTP, multiplexing every connecting client onto the same Telegram session — one MTProto connection and one writer of the stored session regardless of how many clients attach.
 
-Because all clients share that one MTProto connection, they also share its throughput: requests serialize through a single connection, and a FLOOD_WAIT triggered by one client's burst pauses the auto-retry for everyone until the server-specified delay elapses. A good trade for many lightly-used clients, less so for a few high-volume ones.
+Because all clients share that one MTProto connection, they also share its throughput: requests serialize through a single connection, and a FLOOD_WAIT triggered by one client's burst pauses the auto-retry for everyone until the server-specified delay elapses (up to 30 seconds; a longer delay is handed back to the caller). A good trade for many lightly-used clients, less so for a few high-volume ones.
 
 A headless daemon does not prompt: with many clients attached there is no one client to ask. Run `mcp-tg login` once, then start the daemon; it reuses the stored session. Environment credentials still work — a daemon given the phone, code and password logs in by itself at startup. Failing both, it exits with a message telling you to run `mcp-tg login`; it does not hang or silently fall back to plaintext.
 

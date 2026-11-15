@@ -3,9 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
@@ -110,5 +112,81 @@ func TestFloodWait_RetriesThenReturnsAfterExhaustion(t *testing.T) {
 	if got := strings.Count(buf.String(), "level=WARN"); got != maxFloodRetries-1 {
 		t.Errorf("expected %d WARN lines (one per retried attempt), got %d\n%s",
 			maxFloodRetries-1, got, buf.String())
+	}
+}
+
+// A delay above maxFloodSleep goes straight back to the caller: sleeping it
+// would hold a synchronous tool call for minutes or hours, while the tools
+// layer already turns the error into a readable "retry after Ns". The context
+// deadline makes a middleware that sleeps anyway fail fast instead of hanging.
+func TestFloodWait_DelayAboveTheCapIsReturnedAtOnce(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&buf, nil))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	next := &recordingInvoker{errs: []error{tgerr.New(420, "FLOOD_WAIT_3600")}}
+
+	err := invokeWithFloodWait(t, ctx, next, logger)
+
+	wait, isFlood := tgerr.AsFloodWait(err)
+	if !isFlood || wait != time.Hour {
+		t.Fatalf("a delay above the cap must surface as the raw flood error, got: %v", err)
+	}
+
+	if got := len(next.inputs); got != 1 {
+		t.Errorf("a delay above the cap must not be retried, got %d attempts", got)
+	}
+
+	if !strings.Contains(buf.String(), "retryAfter=1h0m0s") {
+		t.Errorf("the skipped wait must be logged with its retryAfter, got: %s", buf.String())
+	}
+}
+
+// The cap is inclusive: a delay equal to it is still waited out and retried.
+func TestFloodWait_DelayAtTheCapIsStillRetried(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	next := &recordingInvoker{errs: []error{
+		tgerr.New(420, fmt.Sprintf("FLOOD_WAIT_%d", int(maxFloodSleep/time.Second))),
+	}}
+
+	err := invokeWithFloodWait(t, ctx, next, slog.New(slog.DiscardHandler))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("a delay at the cap must enter the backoff (and see the cancelled context), got: %v", err)
+	}
+}
+
+// The login the server runs at startup keeps the server-named delay whatever
+// its length, because a capped FLOOD_WAIT there fails the start (see
+// withUncappedFloodWait). The probe is a users.getUsers call, not an auth.*
+// one, so the opt-out rides the context.
+func TestFloodWait_StartupLoginSleepsPastTheCap(t *testing.T) {
+	ctx, cancel := context.WithCancel(withUncappedFloodWait(context.Background()))
+	cancel()
+
+	next := &recordingInvoker{errs: []error{tgerr.New(420, "FLOOD_WAIT_3600")}}
+	handler := newFloodWaitMiddleware(slog.New(slog.DiscardHandler))(next)
+
+	err := handler(ctx, &tg.UsersGetUsersRequest{}, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("the startup login must enter the backoff past the cap, got: %v", err)
+	}
+}
+
+// A login driven from a tool call has a caller waiting on it, so its
+// sendCode gets the cap like any other request.
+func TestFloodWait_ToolCallLoginStepGetsTheCap(t *testing.T) {
+	next := &recordingInvoker{errs: []error{tgerr.New(420, "FLOOD_WAIT_3600")}}
+	handler := newFloodWaitMiddleware(slog.New(slog.DiscardHandler))(next)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	err := handler(ctx, &tg.AuthSendCodeRequest{}, nil)
+	if _, isFlood := tgerr.AsFloodWait(err); !isFlood || len(next.inputs) != 1 {
+		t.Fatalf("a tool-call sendCode above the cap must return at once, got %v after %d attempt(s)", err, len(next.inputs))
 	}
 }

@@ -199,11 +199,7 @@ func startHeadless(
 	login := newLogin(tgClient, cfg, health, authDone, logger)
 	server := newHeadlessServer(wrapper, cfg.DownloadDir, cfg.FileRoots, subscriptionBroker, authDone, health, logger)
 
-	authErr := login.Probe(ctx)
-	if authErr == nil && !login.Done() {
-		authErr = login.RunUnattended(ctx)
-	}
-
+	authErr := startupLogin(ctx, login)
 	if authErr != nil {
 		if loginWouldFix(authErr) {
 			return headlessLoginRequired(authErr)
@@ -296,10 +292,7 @@ func newLogin(
 // — but anything else is, since it says nothing about whether a login would
 // help.
 func settleLogin(ctx context.Context, login *tgclient.Login, logger *slog.Logger) error {
-	err := login.Probe(ctx)
-	if err == nil && !login.Done() {
-		err = login.RunUnattended(ctx)
-	}
+	err := startupLogin(ctx, login)
 
 	switch {
 	case err == nil:
@@ -312,6 +305,19 @@ func settleLogin(ctx context.Context, login *tgclient.Login, logger *slog.Logger
 	default:
 		return errors.Wrap(err, "logging in to Telegram")
 	}
+}
+
+// startupLogin probes the session and spends whatever credentials the
+// environment supplies, with the FLOOD_WAIT cap lifted (withUncappedFloodWait).
+func startupLogin(ctx context.Context, login *tgclient.Login) error {
+	ctx = withUncappedFloodWait(ctx)
+
+	err := login.Probe(ctx)
+	if err == nil && !login.Done() {
+		err = login.RunUnattended(ctx)
+	}
+
+	return err //nolint:wrapcheck // each caller wraps it in its own words.
 }
 
 // headlessLoginRequired turns a headless startup login failure into an

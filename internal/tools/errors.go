@@ -17,7 +17,8 @@ var ErrValidation = errors.New("validation error")
 var ErrTelegram = errors.New("telegram request error")
 
 // ErrFloodWait indicates Telegram rate-limited the request (FLOOD_WAIT) and the
-// auto-retry middleware exhausted its attempts without the call succeeding. The
+// auto-retry middleware either exhausted its attempts or declined to sleep a
+// delay above its cap. The
 // wrapped message carries a readable "retry after Ns" so the caller can back off
 // and retry later — the server stays alive; this is a surfaced rate-limit, not a
 // crash.
@@ -364,7 +365,8 @@ func wrapTelegramError(err error) error {
 		return nil
 	}
 
-	// FLOOD_WAIT reaches here only after the retry middleware gives up. Mark it
+	// FLOOD_WAIT reaches here once the retry middleware gives up or declines to
+	// sleep a delay above its cap. Mark it
 	// with the ErrFloodWait sentinel and a readable "retry after Ns" so a caller
 	// can back off, instead of a raw code or literal JSON.
 	if wait, ok := tgerr.AsFloodWait(err); ok {

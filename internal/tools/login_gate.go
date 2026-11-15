@@ -7,6 +7,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -89,7 +90,7 @@ func (gate *LoginGate) admitByInputRequest(ctx context.Context, req *mcp.CallToo
 
 	prompt, err := gate.login.Next(ctx, step, answer)
 	if err != nil {
-		return nil, err //nolint:wrapcheck // the flow's errors already say what went wrong.
+		return nil, loginErr(err)
 	}
 
 	if prompt == nil {
@@ -121,7 +122,7 @@ func (gate *LoginGate) admitByElicitation(ctx context.Context, req *mcp.CallTool
 	for step := telegram.LoginStep(""); ; {
 		prompt, err := gate.login.Next(ctx, step, answer)
 		if err != nil {
-			return nil, err //nolint:wrapcheck // the flow's errors already say what went wrong.
+			return nil, loginErr(err)
 		}
 
 		if prompt == nil {
@@ -211,4 +212,15 @@ func elicitParams(prompt *telegram.Prompt) *mcp.ElicitParams {
 			},
 		},
 	}
+}
+
+// loginErr passes the flow's errors through as they are, since they already
+// say what went wrong, except FLOOD_WAIT: that one gets the "retry after Ns"
+// wording every other tool gives it.
+func loginErr(err error) error {
+	if _, isFlood := tgerr.AsFloodWait(err); isFlood {
+		return wrapTelegramError(err)
+	}
+
+	return err
 }

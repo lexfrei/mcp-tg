@@ -416,6 +416,7 @@ var (
 
 var (
 	docsFloodAttempts = regexp.MustCompile(`up to (\d+) attempts in total`)
+	docsFloodCap      = regexp.MustCompile(`A delay longer than (\d+) seconds is not slept`)
 	docsDeadline      = regexp.MustCompile(`no answer within (\d+) seconds`)
 	licenseYear       = regexp.MustCompile(`Copyright \(c\) (\d{4})`)
 	mkdocsCopyright   = regexp.MustCompile(`(?m)^copyright:.*?(\d{4}(?:-\d{4})?) `)
@@ -466,6 +467,24 @@ func TestDocsRequestDeadline_MatchesTheCode(t *testing.T) {
 
 	if !strings.Contains(page, "check whether it took effect before repeating it") {
 		t.Errorf("%s must say a missed deadline asks for a check before a repeat", docsIndexPage)
+	}
+}
+
+// TestDocsFloodCap_MatchesTheMiddleware pins the longest in-call FLOOD_WAIT
+// sleep the docs promise against maxFloodSleep.
+func TestDocsFloodCap_MatchesTheMiddleware(t *testing.T) {
+	claim := docsFloodCap.FindStringSubmatch(readDocsPage(t, docsIndexPage))
+	if claim == nil {
+		t.Fatalf("%s no longer states the FLOOD_WAIT sleep cap", docsIndexPage)
+	}
+
+	documented, err := strconv.Atoi(claim[1])
+	if err != nil {
+		t.Fatalf("%s: unparseable cap %q: %v", docsIndexPage, claim[0], err)
+	}
+
+	if want := int(maxFloodSleep / time.Second); documented != want {
+		t.Errorf("%s claims a %ds FLOOD_WAIT cap, maxFloodSleep is %ds", docsIndexPage, documented, want)
 	}
 }
 

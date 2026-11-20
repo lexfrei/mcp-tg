@@ -18,7 +18,7 @@
 mkdocs==1.6.1
 
 # Material theme
-mkdocs-material==9.8.1
+mkdocs-material==9.8.2
 
 # Plugins
 mkdocs-git-revision-date-localized-plugin==1.7.0

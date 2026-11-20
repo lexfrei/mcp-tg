@@ -224,10 +224,22 @@ type Photo struct {
 }
 
 // Folder represents a Telegram chat folder (filter).
+//
+// Peers are the explicitly included chats and PinnedPeers the ones pinned
+// on top of the folder (also part of it). Includes and Excludes name the
+// rule-based parts: chat kinds the folder adds wholesale (contacts,
+// non_contacts, groups, broadcasts, bots) and kinds it hides (muted, read,
+// archived). Shared marks a folder shared by invite link (a chatlist).
 type Folder struct {
-	ID    int         `json:"id"`
-	Title string      `json:"title"`
-	Peers []InputPeer `json:"peers,omitempty"`
+	ID           int         `json:"id"`
+	Title        string      `json:"title"`
+	Emoticon     string      `json:"emoticon,omitempty"`
+	Peers        []InputPeer `json:"peers,omitempty"`
+	PinnedPeers  []InputPeer `json:"pinnedPeers,omitempty"`
+	ExcludePeers []InputPeer `json:"excludePeers,omitempty"`
+	Includes     []string    `json:"includes,omitempty"`
+	Excludes     []string    `json:"excludes,omitempty"`
+	Shared       bool        `json:"shared,omitempty"`
 }
 
 // ReactionUser is one peer's reaction to a message.

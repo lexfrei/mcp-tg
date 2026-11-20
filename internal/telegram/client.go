@@ -54,6 +54,11 @@ type MediaClient interface {
 	SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error)
 	DownloadMedia(ctx context.Context, peer InputPeer, msgID int, outputDir string) (string, error)
 	UploadFile(ctx context.Context, path string, opts UploadOpts) (*UploadedFile, error)
+	SendVoice(ctx context.Context, peer InputPeer, path string, opts *VoiceOpts) (*Message, error)
+	GetMediaInfo(ctx context.Context, peer InputPeer, msgID int) (*MediaInfo, error)
+	ViewMedia(ctx context.Context, peer InputPeer, msgID, maxBytes int) (*ViewedImage, error)
+	InlineQuery(ctx context.Context, bot, peer InputPeer, query, offset string) (*InlineResults, error)
+	SendInlineResult(ctx context.Context, peer InputPeer, queryID int64, resultID string, opts SendOpts) (*Message, error)
 }
 
 // DialogClient handles dialog listing and search.

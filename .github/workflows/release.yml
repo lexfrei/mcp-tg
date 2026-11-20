@@ -351,7 +351,7 @@ jobs:
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
-          version: "v2.20.2"
+          version: "v2.20.3"
           # One build at a time: the runner OOM-kills parallel links of this
           # dependency tree, and a killed process leaves no error to read.
           args: release --clean --parallelism 1

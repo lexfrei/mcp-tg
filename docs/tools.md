@@ -2,7 +2,7 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (80)
+## Tools (87)
 
 ### Messages (16)
 
@@ -23,15 +23,16 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_messages_get_scheduled` — List messages scheduled for later delivery
 - `tg_messages_delete_history` — Delete an entire chat history
 
-### Dialogs (5)
+### Dialogs (6)
 
 - `tg_dialogs_list` — List all dialogs
 - `tg_dialogs_search` — Search dialogs by query
 - `tg_dialogs_get_info` — Get chat/channel metadata
 - `tg_dialogs_pin` — Pin or unpin a dialog
 - `tg_dialogs_mark_unread` — Mark a dialog as unread or read
+- `tg_chats_search_public` — Search public channels, groups, bots and users beyond your own chats
 
-### Contacts & Users (10)
+### Contacts & Users (12)
 
 - `tg_contacts_get` — Get contact info
 - `tg_contacts_search` — Search contacts
@@ -43,6 +44,8 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_contacts_delete` — Delete a contact
 - `tg_contacts_get_statuses` — Get online statuses of all contacts
 - `tg_contacts_list_blocked` — List blocked users
+- `tg_contacts_list` — List every contact, with phone numbers
+- `tg_contacts_import` — Add contacts by phone number
 
 ### Groups (14)
 
@@ -81,12 +84,15 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_media_upload` — Upload a file
 - `tg_media_send_album` — Send a media album
 
-### Profile (4)
+### Profile (7)
 
 - `tg_profile_get` — Get own profile info
 - `tg_profile_set_name` — Update display name
 - `tg_profile_set_bio` — Update bio
 - `tg_profile_set_photo` — Set profile photo
+- `tg_privacy_get` — Read a privacy setting (see [Privacy](guides/privacy.md))
+- `tg_privacy_set` — Change a privacy setting, with always/never exceptions
+- `tg_profile_delete_photo` — Delete the current profile photo
 
 ### Forum Topics (4)
 
@@ -111,12 +117,13 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 - `tg_drafts_clear` — Clear a draft
 - `tg_messages_clear_all_drafts` — Clear all drafts across every chat
 
-### Folders (4)
+### Folders (5)
 
 - `tg_folders_list` — List chat folders
 - `tg_folders_create` — Create a folder
 - `tg_folders_edit` — Edit a folder
 - `tg_folders_delete` — Delete a folder
+- `tg_folders_reorder` — Set the order of chat folders
 
 ### Status (2)
 
@@ -133,7 +140,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 32 | Only reads data |
-| idempotent | 28 | Modifies state, safe to retry |
-| write | 11 | Creates new entities, not idempotent |
-| destructive | 9 | Deletes or removes things |
+| read-only | 35 | Only reads data |
+| idempotent | 30 | Modifies state, safe to retry |
+| write | 12 | Creates new entities, not idempotent |
+| destructive | 10 | Deletes or removes things |

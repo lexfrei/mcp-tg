@@ -47,3 +47,42 @@ func TestDialogsListHandler_Error(t *testing.T) {
 		t.Error("result.IsError should be true")
 	}
 }
+
+// limit sizes the wrapper's collections, so an unbounded one could crash the
+// process before the first request. Both tools that page dialogs cap it.
+func TestDialogsListHandlers_RejectALimitAboveTheCap(t *testing.T) {
+	limit := maxDialogsLimit + 1
+
+	_, _, err := NewDialogsListHandler(&mockClient{})(context.Background(), nil, DialogsListParams{Limit: &limit})
+	if !errors.Is(err, ErrLimitTooLarge) {
+		t.Errorf("tg_dialogs_list: err = %v, want ErrLimitTooLarge", err)
+	}
+
+	_, _, err = NewGroupsListHandler(&mockClient{})(context.Background(), nil, GroupsListParams{Limit: &limit})
+	if !errors.Is(err, ErrLimitTooLarge) {
+		t.Errorf("tg_groups_list: err = %v, want ErrLimitTooLarge", err)
+	}
+}
+
+func TestDialogsListHandler_AcceptsTheCap(t *testing.T) {
+	limit := maxDialogsLimit
+
+	_, _, err := NewDialogsListHandler(&mockClient{})(context.Background(), nil, DialogsListParams{Limit: &limit})
+	if err != nil {
+		t.Errorf("limit %d: unexpected error %v", limit, err)
+	}
+}
+
+// lastMessageDate is the cursor a caller pages with, so it must reach the item.
+func TestDialogsListHandler_ReportsLastMessageDate(t *testing.T) {
+	mock := &mockClient{dialogs: []telegram.Dialog{{Title: "Chat", LastMessageDate: 1700000000}}}
+
+	_, structured, err := NewDialogsListHandler(mock)(context.Background(), nil, DialogsListParams{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if got := structured.Dialogs[0].LastMessageDate; got != 1700000000 {
+		t.Errorf("LastMessageDate = %d, want 1700000000", got)
+	}
+}

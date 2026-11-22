@@ -197,17 +197,22 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 		limit = defaultLimit
 	}
 
+	// Sized by one server page, never by limit: limit comes from the caller,
+	// and sizing by it would allocate (or panic in makeslice) before the
+	// first request.
 	var (
-		dialogs    = make([]Dialog, 0, limit)
-		seen       = make(map[InputPeer]bool, limit)
+		dialogs    = make([]Dialog, 0, min(limit, warmDialogsPageLimit))
+		seen       = make(map[InputPeer]bool, min(limit, warmDialogsPageLimit))
 		offsetDate = opts.OffsetDate
 		offsetID   int
 		offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
 	)
 
 	for len(dialogs) < limit {
+		pageSize := min(limit-len(dialogs), warmDialogsPageLimit)
+
 		result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
-			Limit:      min(limit-len(dialogs), warmDialogsPageLimit),
+			Limit:      pageSize,
 			OffsetDate: offsetDate,
 			OffsetID:   offsetID,
 			OffsetPeer: offsetPeer,
@@ -221,8 +226,10 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 
 		added := appendNewDialogs(&dialogs, seen, page, limit)
 
+		// A page shorter than asked for is the end of the list; reading on
+		// would only fetch an empty one.
 		slice, ok := result.(*tg.MessagesDialogsSlice)
-		if !ok || added == 0 {
+		if !ok || added == 0 || len(slice.Dialogs) < pageSize {
 			break
 		}
 

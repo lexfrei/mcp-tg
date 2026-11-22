@@ -79,7 +79,7 @@ func FoldersCreateTool() *mcp.Tool {
 type FoldersEditParams struct {
 	FolderID int      `json:"folderId"        jsonschema:"ID of the folder to edit"`
 	Title    string   `json:"title"           jsonschema:"New title for the folder"`
-	Peers    []string `json:"peers,omitempty" jsonschema:"Full chat list: @usernames or numeric IDs. Omit to keep the current chats"`
+	Peers    []string `json:"peers,omitempty" jsonschema:"Full chat list, pinned chats included. Omit to keep the current chats"`
 }
 
 // FoldersEditResult is the output of the tg_folders_edit tool.
@@ -137,8 +137,10 @@ func NewFoldersEditHandler(client telegram.Client) mcp.ToolHandlerFor[FoldersEdi
 // FoldersEditTool returns the MCP tool definition for tg_folders_edit.
 func FoldersEditTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_folders_edit",
-		Description: "Edit a Telegram chat folder's title and chats; its chat-kind rules, excluded chats and emoticon are kept",
+		Name: "tg_folders_edit",
+		Description: "Edit a Telegram chat folder's title and chats; its chat-kind rules, excluded chats and emoticon are kept. " +
+			"peers replaces the whole chat list, the same list tg_folders_list returns in peers: " +
+			"a pinned chat stays pinned while it is listed, and a chat left out, pinned or not, is removed",
 		Annotations: idempotentAnnotations(),
 	}
 }

@@ -75,6 +75,11 @@ func retitled(current tg.TextWithEntities, title string) tg.TextWithEntities {
 	return tg.TextWithEntities{Text: title}
 }
 
+// splitFolderPeers turns the caller's full chat list into the filter's two
+// lists: a chat that was pinned and is still listed stays pinned, every
+// other listed chat goes to include, and a chat left out leaves both. The
+// account's own chat, which peers cannot name, is kept where it was.
+//
 //nolint:gocritic // unnamedResult: the pair is (pinned, include), named in the doc above.
 func splitFolderPeers(
 	pinned, included []tg.InputPeerClass, peers []InputPeer,

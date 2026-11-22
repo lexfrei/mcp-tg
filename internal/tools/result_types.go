@@ -1,6 +1,10 @@
 package tools
 
-import "github.com/lexfrei/mcp-tg/internal/telegram"
+import (
+	"slices"
+
+	"github.com/lexfrei/mcp-tg/internal/telegram"
+)
 
 // DialogItem is a structured dialog entry for JSON results.
 //
@@ -219,10 +223,13 @@ type UserItem struct {
 
 // FolderItem is a structured folder entry for JSON results.
 type FolderItem struct {
-	ID           int      `json:"id"`
-	Title        string   `json:"title"`
-	Emoticon     string   `json:"emoticon,omitempty"`
-	Peers        int      `json:"peerCount"`
+	ID       int    `json:"id"`
+	Title    string `json:"title"`
+	Emoticon string `json:"emoticon,omitempty"`
+	Peers    int    `json:"peerCount"`
+	// PeerList holds every chat the folder lists, the pinned ones first: it
+	// is the list tg_folders_edit takes back, so a read-edit-write round
+	// trip keeps them. PinnedPeers names which of them are pinned.
 	PeerList     []string `json:"peers,omitempty"`
 	PinnedPeers  []string `json:"pinnedPeers,omitempty"`
 	ExcludePeers []string `json:"excludePeers,omitempty"`
@@ -328,7 +335,7 @@ func folderToItem(fld *telegram.Folder) FolderItem {
 		Title:        fld.Title,
 		Emoticon:     fld.Emoticon,
 		Peers:        len(fld.Peers) + len(fld.PinnedPeers),
-		PeerList:     formatPeers(fld.Peers),
+		PeerList:     formatPeers(slices.Concat(fld.PinnedPeers, fld.Peers)),
 		PinnedPeers:  formatPeers(fld.PinnedPeers),
 		ExcludePeers: formatPeers(fld.ExcludePeers),
 		Includes:     fld.Includes,

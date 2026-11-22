@@ -1,9 +1,12 @@
 package telegram
 
 import (
+	"context"
 	"slices"
 	"testing"
 
+	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tg"
 )
 
@@ -113,5 +116,91 @@ func TestEditedFilter_NewPeersReplaceTheListOnly(t *testing.T) {
 
 	if len(edited.ExcludePeers) != 1 || !edited.Groups {
 		t.Error("excluded chats or rules lost when only the chat list changed")
+	}
+}
+
+// tg_folders_list reports pinned chats inside peers too, so a caller that
+// reads peers, edits and sends it back keeps them pinned. A pinned chat left
+// out of peers is removed from the folder: from both lists, not just unpinned.
+func TestEditedFilter_PinnedChatLeftOutLeavesTheFolder(t *testing.T) {
+	peers := []InputPeer{{Type: PeerUser, ID: 20, AccessHash: 200}}
+
+	edited, ok := editedFilter(ruleFolder(), "Work", peers).(*tg.DialogFilter)
+	if !ok {
+		t.Fatal("edited filter changed constructor")
+	}
+
+	if len(edited.PinnedPeers) != 0 {
+		t.Errorf("pinned = %+v, want the channel no longer pinned", edited.PinnedPeers)
+	}
+
+	for _, raw := range edited.IncludePeers {
+		if channel, isChannel := raw.(*tg.InputPeerChannel); isChannel && channel.ChannelID == 10 {
+			t.Errorf("include = %+v, the left-out channel moved into the include list", edited.IncludePeers)
+		}
+	}
+}
+
+// folderInvoker serves a fixed folder list and records every write.
+type folderInvoker struct {
+	filters []tg.DialogFilterClass
+	updates []*tg.MessagesUpdateDialogFilterRequest
+}
+
+func (f *folderInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	switch req := input.(type) {
+	case *tg.MessagesGetDialogFiltersRequest:
+		return encodeAndDecode(&tg.MessagesDialogFilters{Filters: f.filters}, output)
+	case *tg.MessagesUpdateDialogFilterRequest:
+		f.updates = append(f.updates, req)
+
+		return encodeAndDecode(&tg.BoolTrue{}, output)
+	default:
+		return errors.Wrapf(errUnexpectedRequest, "%T", input)
+	}
+}
+
+func TestEditFolder_UnknownIDWritesNothing(t *testing.T) {
+	invoker := &folderInvoker{filters: []tg.DialogFilterClass{ruleFolder()}}
+
+	err := newWrapperWithInvoker(invoker).EditFolder(t.Context(), 99, "Job", nil)
+	if !errors.Is(err, ErrFolderNotFound) {
+		t.Errorf("err = %v, want ErrFolderNotFound", err)
+	}
+
+	if len(invoker.updates) != 0 {
+		t.Errorf("sent %d updateDialogFilter request(s) for a missing folder, want none", len(invoker.updates))
+	}
+}
+
+// The filter written is the one read back, so a title-only edit carries the
+// rule flags and peer lists on the wire.
+func TestEditFolder_WritesTheReadBackFilter(t *testing.T) {
+	invoker := &folderInvoker{filters: []tg.DialogFilterClass{&tg.DialogFilterDefault{}, ruleFolder()}}
+
+	err := newWrapperWithInvoker(invoker).EditFolder(t.Context(), 7, "Job", nil)
+	if err != nil {
+		t.Fatalf("EditFolder: %v", err)
+	}
+
+	if len(invoker.updates) != 1 {
+		t.Fatalf("sent %d update(s), want 1", len(invoker.updates))
+	}
+
+	req := invoker.updates[0]
+
+	filter, ok := req.Filter.(*tg.DialogFilter)
+	if !ok || req.ID != 7 {
+		t.Fatalf("request = id %d filter %T, want id 7 and a dialogFilter", req.ID, req.Filter)
+	}
+
+	if filter.Title.Text != "Job" || !filter.Groups || !filter.Broadcasts || !filter.ExcludeMuted ||
+		!filter.ExcludeArchived || filter.Emoticon != "💼" {
+		t.Errorf("filter on the wire = %+v, want the new title and every rule kept", filter)
+	}
+
+	if len(filter.PinnedPeers) != 1 || len(filter.IncludePeers) != 2 || len(filter.ExcludePeers) != 1 {
+		t.Errorf("peer lists on the wire: pinned %d include %d exclude %d, want 1 2 1",
+			len(filter.PinnedPeers), len(filter.IncludePeers), len(filter.ExcludePeers))
 	}
 }

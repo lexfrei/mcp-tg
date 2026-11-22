@@ -114,16 +114,16 @@ func newServerErrorMiddleware(logger *slog.Logger, baseDelay time.Duration) tele
 // keeps, with no token the server could match a resend against, so a resend
 // landing after the first attempt was already applied leaves a duplicate
 // nothing in the protocol lets the client notice or undo — a second identical
-// chat or folder, a second entry in the profile-photo history, a second working
+// chat, a second entry in the profile-photo history, a second working
 // invite link beyond the one the caller was handed, which they never see and so
 // can never revoke.
 //
-// updateDialogFilter is not creation-only either: the same
-// request edits and deletes a folder too, and every call — a create included,
-// which picks a free id client-side — carries an explicit id, so they are
-// idempotent and lose the resend for nothing. Held back anyway,
-// because the type is what a switch can see, and what it costs them is a
-// resend on a call that states a final value.
+// updateDialogFilter is deliberately NOT here. It used to be, while a folder
+// create sent no id and the server picked one, so a resend could leave a
+// second folder. Every call now carries an explicit id — a create picks a
+// free one client-side — so a resend re-applies the same folder, and holding
+// the type back cost a create, an edit and a delete the resend, the
+// connection-loss resend and the request deadline for nothing.
 //
 // editExportedChatInvite is held back for a different reason again: a resend
 // leaves no duplicate, since the second attempt revokes an already-revoked
@@ -161,7 +161,6 @@ func safeToResend(input bin.Encoder) bool {
 	switch input.(type) {
 	case *tg.ChannelsCreateChannelRequest,
 		*tg.MessagesCreateChatRequest,
-		*tg.MessagesUpdateDialogFilterRequest,
 		*tg.PhotosUploadProfilePhotoRequest,
 		*tg.MessagesExportChatInviteRequest,
 		*tg.MessagesEditExportedChatInviteRequest:

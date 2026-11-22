@@ -29,7 +29,6 @@ func TestRequestDeadline_HeldBackRequestsWaitWithoutOne(t *testing.T) {
 	for _, input := range []bin.Encoder{
 		&tg.ChannelsCreateChannelRequest{},
 		&tg.MessagesCreateChatRequest{},
-		&tg.MessagesUpdateDialogFilterRequest{},
 		&tg.PhotosUploadProfilePhotoRequest{},
 		&tg.MessagesExportChatInviteRequest{},
 		&tg.MessagesEditExportedChatInviteRequest{},
@@ -73,5 +72,17 @@ func TestRequestDeadline_LoginStepsWaitWithoutOne(t *testing.T) {
 		if got := requestDeadline(input); got != 0 {
 			t.Errorf("%s: deadline %s, want none", requestName(input), got)
 		}
+	}
+}
+
+// Folder requests are resent like any idempotent call, so they get the
+// deadline too: without one a folder create, edit or delete on a half-dead
+// connection would wait forever.
+func TestRequestDeadline_FolderRequestsGetOne(t *testing.T) {
+	t.Parallel()
+
+	input := &tg.MessagesUpdateDialogFilterRequest{ID: 7}
+	if got := requestDeadline(input); got != requestTimeout {
+		t.Errorf("%s: deadline %s, want %s", requestName(input), got, requestTimeout)
 	}
 }

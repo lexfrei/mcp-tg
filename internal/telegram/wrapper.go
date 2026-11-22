@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -53,6 +54,10 @@ type Wrapper struct {
 	warmSF         singleflight.Group
 	cfg            atomic.Pointer[cachedServerConfig]
 	cfgSF          singleflight.Group
+	// folderMu serializes the folder read-then-write sequences: a create
+	// picks a free id from the list it read, and updateDialogFilter on an id
+	// another create took meanwhile is an edit, not an error.
+	folderMu sync.Mutex
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -1532,6 +1537,13 @@ func (w *Wrapper) GetFolders(ctx context.Context) ([]Folder, error) {
 
 // CreateFolder creates a new chat folder.
 func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
+	// Held across the list, the pick and the update: two overlapping creates
+	// would otherwise both take the same free id, and the second would
+	// replace the first while both report success. Another device can still
+	// race this, as it can the official clients; this process cannot.
+	w.folderMu.Lock()
+	defer w.folderMu.Unlock()
+
 	existing, err := w.api.MessagesGetDialogFilters(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "getting folders")
@@ -1571,6 +1583,11 @@ func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputP
 // kind — is sent unchanged; a request built from the title and peers
 // alone would silently wipe it.
 func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error {
+	// The edit is a read-back-then-write too; serialized with creates so
+	// neither writes from a list the other has already changed.
+	w.folderMu.Lock()
+	defer w.folderMu.Unlock()
+
 	current, err := w.rawFolder(ctx, folderID)
 	if err != nil {
 		return err

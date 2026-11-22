@@ -23,7 +23,7 @@ Uses [gotd/td](https://github.com/gotd/td) for MTProto protocol — this is a **
 | Progress | File uploads, media albums, message search |
 | Subscriptions | `resources/updated` on new messages in a subscribed chat |
 | Transports | stdio + Streamable HTTP |
-| KeepAlive | 30s ping interval |
+| HTTP session timeout | 1 hour with no client request |
 | Middleware | Auth guard, session guard, request logging, bool coercion |
 
 ## Telegram Protocol Features

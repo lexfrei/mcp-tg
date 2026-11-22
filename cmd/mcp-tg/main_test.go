@@ -345,6 +345,24 @@ func TestNewServerOptions_UsesThreadedLogger(t *testing.T) {
 	}
 }
 
+// The server must not ping its clients: go-sdk starts the keepalive before
+// version negotiation and keeps pinging 2026-07-28 clients, which reject the
+// ping and drop the stdio connection. Only this test stops it coming back.
+func TestNewServerOptions_SendsNoKeepalive(t *testing.T) {
+	opts := newServerOptions(testutil.NoopClient{}, tgclient.NewSubscriptionBroker(), discardLogger())
+	if opts.KeepAlive != 0 {
+		t.Errorf("KeepAlive = %v, want 0", opts.KeepAlive)
+	}
+}
+
+// With no keepalive, the session timeout is the only thing that closes an
+// HTTP session whose client went away without a DELETE.
+func TestStreamableHTTPOptions_SetASessionTimeout(t *testing.T) {
+	if opts := streamableHTTPOptions(); opts == nil || opts.SessionTimeout <= 0 {
+		t.Errorf("streamableHTTPOptions() = %+v, want a positive SessionTimeout", opts)
+	}
+}
+
 // A resource read returns one account's chat history; the SDK's default scope
 // would let an intermediary cache it for other users.
 func TestNewServerOptions_CacheScopeIsPrivate(t *testing.T) {

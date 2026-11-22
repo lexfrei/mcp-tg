@@ -37,6 +37,13 @@ const (
 	readHeaderTimeout = 10 * time.Second
 	shutdownTimeout   = 5 * time.Second
 	httpIdleTimeout   = 60 * time.Second
+	// httpSessionTimeout closes an HTTP session that sent no request for this
+	// long. With no keepalive it is the only thing that notices a client that
+	// went away without a DELETE. go-sdk pauses the timer only while a POST is
+	// in flight, NOT for an open GET stream, so a subscriber that only listens
+	// is closed too once it has been quiet this long; hence an hour, not the
+	// minute a liveness check would want.
+	httpSessionTimeout = time.Hour
 )
 
 var (
@@ -666,10 +673,16 @@ func newHTTPHandler(server *mcp.Server) http.Handler {
 		func(_ *http.Request) *mcp.Server {
 			return server
 		},
-		nil,
+		streamableHTTPOptions(),
 	)
 
 	return http.NewCrossOriginProtection().Handler(handler)
+}
+
+// streamableHTTPOptions sets the session timeout; every other field keeps the
+// SDK default, exactly as the nil options did.
+func streamableHTTPOptions() *mcp.StreamableHTTPOptions {
+	return &mcp.StreamableHTTPOptions{SessionTimeout: httpSessionTimeout}
 }
 
 func runHTTPServer(ctx context.Context, server *mcp.Server, addr string, logger *slog.Logger) error {

@@ -189,6 +189,8 @@ Secure by default: the session lives in the OS keychain via `github.com/lexfrei/
 - Default (`startStdio`): stdio is the primary transport, one process per client, plus an optional additional HTTP transport when `MCP_HTTP_PORT` is set. The login prompts through the connected client, so this mode can log in interactively.
 - Headless (`startHeadless`, requires `MCP_HTTP_ONLY=true` + `MCP_HTTP_PORT`): HTTP is the only transport, no stdio peer. One process and one Telegram connection serve many clients — the shared-daemon mode. It prompts nobody (there is no one client to ask), so it depends on a persisted session or env-var credentials and exits with `headlessLoginRequired` otherwise.
 
+The server sends no keepalive pings (`TestNewServerOptions_SendsNoKeepalive`): go-sdk starts them before version negotiation and keeps pinging `2026-07-28` clients, which reject the ping and drop stdio. Over HTTP that leaves `httpSessionTimeout` (`streamableHTTPOptions`) as the only thing that closes the session of a client that left without a DELETE. go-sdk v1.8 pauses that timer only while a POST is in flight, NOT for an open GET stream, so a listen-only subscriber is closed too once it has been quiet that long — which is why the timeout is an hour rather than a liveness-check minute.
+
 Both paths build the server through `buildServer`, which takes the `*tgclient.Login` and hands it to every tool via `tools.NewLoginGate`. Tests pass `nil` there and get unwrapped handlers.
 
 ### Resource subscriptions

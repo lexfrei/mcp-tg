@@ -24,9 +24,12 @@ func newResolver(settings *config.Proxy) (dcs.Resolver, error) {
 	}
 
 	if settings.Kind == config.ProxyMTProxy {
+		// gotd's error quotes the secret, and main logs this error, so its
+		// text is dropped. Config loading already checks the secret with the
+		// same parser; this is the second line.
 		resolver, err := dcs.MTProxy(settings.Addr, settings.Secret, dcs.MTProxyOptions{})
 		if err != nil {
-			return nil, errors.Wrap(err, "configuring MTProxy")
+			return nil, errors.Wrap(config.ErrInvalidProxy, "configuring MTProxy: gotd rejected the secret")
 		}
 
 		return resolver, nil

@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/lexfrei/mcp-tg/internal/config"
 )
@@ -24,6 +27,23 @@ func TestNewResolver_BuildsBothKinds(t *testing.T) {
 		resolver, err := newResolver(settings)
 		if err != nil || resolver == nil {
 			t.Errorf("%s: resolver = %v, err = %v", settings.Kind, resolver, err)
+		}
+	}
+}
+
+// A secret that slips past config loading must still not reach the log:
+// gotd's own error quotes it.
+func TestNewResolver_BadSecretStaysOutOfTheError(t *testing.T) {
+	secret := []byte{0xab, 0x12}
+
+	_, err := newResolver(&config.Proxy{Kind: config.ProxyMTProxy, Addr: "proxy.example.org:443", Secret: secret})
+	if !errors.Is(err, config.ErrInvalidProxy) {
+		t.Fatalf("err = %v, want ErrInvalidProxy", err)
+	}
+
+	for _, leak := range []string{string(secret), `\xab\x12`} {
+		if strings.Contains(err.Error(), leak) {
+			t.Errorf("the error carries the secret as %q: %v", leak, err)
 		}
 	}
 }

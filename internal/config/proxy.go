@@ -6,9 +6,11 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/mtproxy"
 )
 
 // Proxy kinds.
@@ -20,7 +22,8 @@ const (
 // ErrInvalidProxy is returned when TELEGRAM_PROXY cannot be parsed.
 var ErrInvalidProxy = errors.New(
 	"TELEGRAM_PROXY must be socks5://[user:password@]host:port, " +
-		"or an MTProxy link: tg://proxy?server=HOST&port=PORT&secret=SECRET (t.me/proxy?... works too)",
+		"or an MTProxy link: tg://proxy?server=HOST&port=PORT&secret=SECRET " +
+		"(https://t.me/proxy?... works too)",
 )
 
 // Proxy is the proxy every connection to Telegram goes through.
@@ -45,9 +48,9 @@ func parseProxy(raw string) (*Proxy, error) {
 		return nil, nil //nolint:nilnil // no proxy is the documented default.
 	}
 
-	link, err := url.Parse(raw)
+	link, err := parseURL(raw)
 	if err != nil {
-		return nil, errors.Wrap(ErrInvalidProxy, err.Error())
+		return nil, err
 	}
 
 	switch {
@@ -61,9 +64,32 @@ func parseProxy(raw string) (*Proxy, error) {
 	}
 }
 
+// parseURL parses the value without letting it into the error. url.Parse
+// quotes the whole raw value in its error, a SOCKS5 password included, and
+// main logs startup errors where the service managers keep them. Only the
+// parser's own reason is safe to pass on.
+func parseURL(raw string) (*url.URL, error) {
+	link, err := url.Parse(raw)
+	if err == nil {
+		return link, nil
+	}
+
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		return nil, errors.Wrap(ErrInvalidProxy, urlErr.Err.Error())
+	}
+
+	return nil, ErrInvalidProxy
+}
+
 func parseSOCKS5(link *url.URL) (*Proxy, error) {
 	if link.Port() == "" || link.Hostname() == "" {
 		return nil, errors.Wrap(ErrInvalidProxy, "socks5 proxy needs host and port")
+	}
+
+	err := validatePort(link.Port())
+	if err != nil {
+		return nil, err
 	}
 
 	proxy := &Proxy{Kind: ProxySOCKS5, Addr: link.Host}
@@ -82,6 +108,11 @@ func parseMTProxy(query url.Values) (*Proxy, error) {
 		return nil, errors.Wrap(ErrInvalidProxy, "an MTProxy link needs server, port and secret")
 	}
 
+	err := validatePort(port)
+	if err != nil {
+		return nil, err
+	}
+
 	decoded, err := decodeSecret(secret)
 	if err != nil {
 		return nil, err
@@ -94,14 +125,34 @@ func parseMTProxy(query url.Values) (*Proxy, error) {
 // URL-safe base64 of the "ee" fake-TLS secrets.
 func decodeSecret(secret string) ([]byte, error) {
 	decoded, err := hex.DecodeString(secret)
-	if err == nil {
-		return decoded, nil
+	if err != nil {
+		decoded, err = base64.RawURLEncoding.DecodeString(strings.TrimRight(secret, "="))
 	}
 
-	decoded, err = base64.RawURLEncoding.DecodeString(strings.TrimRight(secret, "="))
 	if err == nil {
-		return decoded, nil
+		return decoded, checkSecret(decoded)
 	}
 
 	return nil, errors.Wrap(ErrInvalidProxy, "the secret is neither hex nor base64")
+}
+
+// checkSecret runs the secret through gotd's own parser, so a secret gotd
+// would refuse fails here rather than at the first dial. gotd's error quotes
+// the secret, so only the reason is kept.
+func checkSecret(secret []byte) error {
+	_, err := mtproxy.ParseSecret(secret)
+	if err != nil {
+		return errors.Wrap(ErrInvalidProxy, "the secret is not a valid MTProxy secret (16 bytes, optionally tagged)")
+	}
+
+	return nil
+}
+
+func validatePort(port string) error {
+	number, err := strconv.Atoi(port)
+	if err != nil || number < 1 || number > maxPort {
+		return errors.Wrap(ErrInvalidProxy, "the port must be a number from 1 to 65535")
+	}
+
+	return nil
 }

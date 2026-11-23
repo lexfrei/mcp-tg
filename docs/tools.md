@@ -2,9 +2,9 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (80)
+## Tools (90)
 
-### Messages (16)
+### Messages (20)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
@@ -22,6 +22,10 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_messages_get_reactions` — List who reacted to a message
 - `tg_messages_get_scheduled` — List messages scheduled for later delivery
 - `tg_messages_delete_history` — Delete an entire chat history
+- `tg_messages_get_link` — Get the t.me link of a message in a channel or supergroup
+- `tg_messages_get_read_by` — List who read one of your own messages in a small group
+- `tg_messages_unpin_all` — Unpin every pinned message in a chat or forum topic
+- `tg_messages_send_contact` — Send a contact card
 
 ### Dialogs (5)
 
@@ -74,12 +78,20 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_chats_get_send_as` — List the identities this account may post under in a supergroup or channel
 - `tg_chats_set_send_as` — Set the identity this account posts under by default in a supergroup or channel
 
-### Media & Files (4)
+### Media & Files (7)
 
 - `tg_messages_send_file` — Send a file with caption
 - `tg_media_download` — Download media from a message
 - `tg_media_upload` — Upload a file
 - `tg_media_send_album` — Send a media album
+- `tg_media_send_voice` — Send an audio file as a voice message, or a video as a round video note
+- `tg_media_get_info` — Describe a message's media without downloading it
+- `tg_media_view` — Return a message's photo, image or thumbnail as image content the model can see
+
+### Inline Bots (2)
+
+- `tg_inline_query` — Ask an inline bot (@gif, @vid, @wiki, ...) for results
+- `tg_inline_send` — Send one inline-bot result to the chat it was made for
 
 ### Profile (4)
 
@@ -105,11 +117,12 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 
 `stickerFileId` is a **decimal string**, not a JSON number. The MCP SDK unmarshals tool arguments into `map[string]any` to apply schema defaults, then re-marshals them, so every JSON number round-trips through `float64`. A sticker document id needs 63 bits and a `float64` mantissa holds 53, which silently corrupts it — `5181593617004757506` arrives as `5181593617004758000`. Quote the id and it survives.
 
-### Drafts (3)
+### Drafts (4)
 
 - `tg_drafts_set` — Set a draft message
 - `tg_drafts_clear` — Clear a draft
 - `tg_messages_clear_all_drafts` — Clear all drafts across every chat
+- `tg_drafts_list` — List the drafts saved in every chat
 
 ### Folders (4)
 
@@ -133,7 +146,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 32 | Only reads data |
-| idempotent | 28 | Modifies state, safe to retry |
-| write | 11 | Creates new entities, not idempotent |
+| read-only | 38 | Only reads data |
+| idempotent | 29 | Modifies state, safe to retry |
+| write | 14 | Creates new entities, not idempotent |
 | destructive | 9 | Deletes or removes things |

@@ -46,6 +46,10 @@ type MessageClient interface {
 	PinMessage(ctx context.Context, peer InputPeer, msgID int, unpin bool) error
 	SendReaction(ctx context.Context, peer InputPeer, msgID int, opts ReactionOpts) error
 	MarkRead(ctx context.Context, peer InputPeer, maxID int) error
+	UnpinAllMessages(ctx context.Context, peer InputPeer, topicID int) error
+	GetMessageLink(ctx context.Context, peer InputPeer, msgID int, thread bool) (string, error)
+	GetMessageReadBy(ctx context.Context, peer InputPeer, msgID int) ([]ReadReceipt, error)
+	SendContact(ctx context.Context, peer InputPeer, contact Contact, opts SendOpts) (*Message, error)
 }
 
 // MediaClient handles file and media operations.
@@ -54,6 +58,11 @@ type MediaClient interface {
 	SendAlbum(ctx context.Context, peer InputPeer, paths []string, caption string, opts SendOpts) ([]Message, error)
 	DownloadMedia(ctx context.Context, peer InputPeer, msgID int, outputDir string) (string, error)
 	UploadFile(ctx context.Context, path string, opts UploadOpts) (*UploadedFile, error)
+	SendVoice(ctx context.Context, peer InputPeer, path string, opts *VoiceOpts) (*Message, error)
+	GetMediaInfo(ctx context.Context, peer InputPeer, msgID int) (*MediaInfo, error)
+	ViewMedia(ctx context.Context, peer InputPeer, msgID, maxBytes int) (*ViewedImage, error)
+	InlineQuery(ctx context.Context, bot, peer InputPeer, query, offset string) (*InlineResults, error)
+	SendInlineResult(ctx context.Context, peer InputPeer, queryID int64, resultID string, opts SendOpts) (*Message, error)
 }
 
 // DialogClient handles dialog listing and search.
@@ -137,6 +146,7 @@ type DraftClient interface {
 	SetDraft(ctx context.Context, peer InputPeer, text string, replyTo int) error
 	ClearDraft(ctx context.Context, peer InputPeer) error
 	ClearAllDrafts(ctx context.Context) error
+	GetAllDrafts(ctx context.Context) ([]Draft, error)
 }
 
 // FolderClient handles chat folder operations.

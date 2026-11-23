@@ -344,3 +344,27 @@ func (NoopClient) SendContact(
 func (NoopClient) GetAllDrafts(_ context.Context) ([]telegram.Draft, error) {
 	return nil, nil
 }
+
+func (NoopClient) GetMessageButtons(_ context.Context, _ telegram.InputPeer, _ int) ([]telegram.MessageButton, error) {
+	return nil, nil
+}
+
+func (NoopClient) PressButton(_ context.Context, _ telegram.InputPeer, _, _, _ int) (*telegram.ButtonPress, error) {
+	return &telegram.ButtonPress{}, nil
+}
+
+func (NoopClient) GetBotInfo(_ context.Context, _ telegram.InputPeer) (*telegram.BotInfo, error) {
+	return &telegram.BotInfo{}, nil
+}
+
+func (NoopClient) SendPoll(_ context.Context, _ telegram.InputPeer, _ *telegram.PollOpts) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) GetPoll(_ context.Context, _ telegram.InputPeer, _ int) (*telegram.Poll, error) {
+	return &telegram.Poll{}, nil
+}
+
+func (NoopClient) VotePoll(_ context.Context, _ telegram.InputPeer, _ int, _ []int) error {
+	return nil
+}

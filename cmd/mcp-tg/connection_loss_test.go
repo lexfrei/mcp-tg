@@ -173,6 +173,7 @@ func TestConnectionLoss_DoesNotResendCreatingRequests(t *testing.T) {
 		"chat":          &tg.MessagesCreateChatRequest{Title: "example"},
 		"profile photo": &tg.PhotosUploadProfilePhotoRequest{},
 		"invite link":   &tg.MessagesExportChatInviteRequest{Peer: &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1}},
+		"button press":  &tg.MessagesGetBotCallbackAnswerRequest{Peer: &tg.InputPeerUser{UserID: 1, AccessHash: 1}},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer

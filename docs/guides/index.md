@@ -54,4 +54,12 @@ The behaviour behind the [tool reference](../tools.md): the shapes tools return,
 
     [:octicons-arrow-right-24: Reactions](reactions.md)
 
+-   :material-robot:{ .lg .middle } **Bots and Polls**
+
+    ---
+
+    Pressing a bot's buttons, creating and voting in polls, and reading a bot's command menu.
+
+    [:octicons-arrow-right-24: Bots and Polls](bots.md)
+
 </div>

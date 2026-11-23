@@ -19,6 +19,10 @@ var ErrMessageLinkUnsupported = errors.New(
 	"message links exist only for channels and supergroups; private chats and basic groups have none",
 )
 
+// ErrUnexpectedDraftsReply is returned when messages.getAllDrafts answers
+// with an envelope that carries no update list.
+var ErrUnexpectedDraftsReply = errors.New("unexpected reply to messages.getAllDrafts")
+
 // ErrUnpinIncomplete is returned when the server still reports pinned
 // messages after maxUnpinRounds batches.
 var ErrUnpinIncomplete = errors.New("messages are still pinned after the maximum number of unpin rounds")
@@ -89,8 +93,11 @@ func (w *Wrapper) GetMessageReadBy(ctx context.Context, peer InputPeer, msgID in
 // UnpinAllMessages unpins every pinned message in a chat, or in one forum
 // topic when topicID is set.
 func (w *Wrapper) UnpinAllMessages(ctx context.Context, peer InputPeer, topicID int) error {
+	// Set on any non-zero value, not just a positive one: a negative id the
+	// server rejects, where leaving the field unset would widen a
+	// topic-scoped unpin to the whole chat.
 	req := &tg.MessagesUnpinAllMessagesRequest{Peer: InputPeerToTG(peer)}
-	if topicID > 0 {
+	if topicID != 0 {
 		req.SetTopMsgID(topicID)
 	}
 
@@ -115,12 +122,15 @@ func (w *Wrapper) GetAllDrafts(ctx context.Context) ([]Draft, error) {
 		return nil, errors.Wrap(err, "getting drafts")
 	}
 
-	updates, ok := result.(*tg.Updates)
+	// The drafts arrive as updateDraftMessage entries in an Updates
+	// envelope, in either of its two forms. Any other shape is an error, not
+	// an empty list: "0 drafts" would be a silent wrong answer.
+	updates, users, chats, ok := unwrapUpdates(result)
 	if !ok {
-		return nil, nil
+		return nil, errors.Wrapf(ErrUnexpectedDraftsReply, "%T", result)
 	}
 
-	return draftsFromUpdates(updates), nil
+	return draftsFromUpdates(updates, users, chats), nil
 }
 
 // SendContact sends a contact card.
@@ -155,13 +165,13 @@ func (w *Wrapper) SendContact(ctx context.Context, peer InputPeer, contact Conta
 	return messageFromUpdate(result, peer, randID, nil), nil
 }
 
-func draftsFromUpdates(updates *tg.Updates) []Draft {
-	users := buildUserRefs(updates.Users)
-	chats := buildChatRefs(updates.Chats)
+func draftsFromUpdates(updates []tg.UpdateClass, rawUsers []tg.UserClass, rawChats []tg.ChatClass) []Draft {
+	users := buildUserRefs(rawUsers)
+	chats := buildChatRefs(rawChats)
 
 	var drafts []Draft
 
-	for _, update := range updates.Updates {
+	for _, update := range updates {
 		draftUpdate, ok := update.(*tg.UpdateDraftMessage)
 		if !ok {
 			continue

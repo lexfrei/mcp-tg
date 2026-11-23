@@ -2,9 +2,9 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (104)
+## Tools (105)
 
-### Messages (20)
+### Messages (21)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
@@ -26,6 +26,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_messages_get_read_by` — List who read one of your own messages in a small group
 - `tg_messages_unpin_all` — Unpin every pinned message in a chat or forum topic
 - `tg_messages_send_contact` — Send a contact card
+- `tg_messages_wait` — Wait for a new message in a chat (optional sender filter; returns the arrivals oldest first)
 
 ### Dialogs (5)
 
@@ -163,7 +164,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 43 | Only reads data |
+| read-only | 44 | Only reads data |
 | idempotent | 32 | Modifies state, safe to retry |
 | write | 16 | Creates new entities, not idempotent |
 | destructive | 13 | Deletes or removes things |

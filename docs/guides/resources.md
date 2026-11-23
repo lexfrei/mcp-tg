@@ -18,6 +18,14 @@ Two known limitations:
 - A client that drops abnormally (a crash, or network loss past the keep-alive) without unsubscribing leaves a stale watch entry that only a daemon restart clears. Delivery stays correct — the SDK's own registry is authoritative, so nothing is sent to the dead session — but the stale entries accumulate with reconnect churn over the daemon's lifetime (not capped by the set of chats), and each orphaned chat then costs a lookup plus a zero-subscriber log line on every later message. The SDK exposes no session-closed hook to prune it.
 - The account's own outgoing messages (sent through this server) do not fire the notification: the self-send echo carries no peer. A message arriving from another device does fire it.
 
+### Waiting without a subscription
+
+Not every client acts on `resources/updated` — some never subscribe at all — and an agent usually wants something narrower anyway: send a message, then block until the reply arrives. `tg_messages_wait` does that as an ordinary tool call. It returns as soon as a message newer than `afterMessageId` lands in the chat (by default, newer than the chat's newest message when the call starts), oldest first, or reports `timedOut: true` after `timeoutSeconds` (default 60, at most 300). Pass the returned `lastMessageId` back as `afterMessageId` to keep waiting. One call reads the newest 100 messages: if more than that arrived since `afterMessageId`, the result carries `truncated: true` and holds only the newest 100, and the older ones have to be paged with `tg_messages_list`. A truncated page ends the wait even when `from` or the own-message filter rejects every message on it: the result then has `count: 0` and `truncated: true`, and its `lastMessageId` is the newest message on the page, so passing it back waits past the page.
+
+After sending, always pass the sent message's ID as `afterMessageId`. A bot can answer within a few hundred milliseconds — in a live test @BotFather's reply landed before the wait call even started — and the default baseline would then be the reply itself, so the wait would run to its timeout with the answer already in the chat.
+
+It is woken by the same update stream as subscriptions, and re-reads the chat every 15 seconds as well, so a gap in that stream costs a short delay rather than a missed message. Reads are at least 2 seconds apart however busy the chat is, so a wait in an active group costs one history read per 2 seconds, not one per message. Messages the account sent itself — from this server or another device — do not end the wait unless `includeOwn` is set; `from` narrows it further to one sender. "Sent itself" means sent as the account's own user: an unsigned post in a channel the account owns, or a message sent as a channel with `sendAs`, is from the channel, not from the account, and does end the wait.
+
 ## Prompts
 
 - `reply_to_message` — Fetch context around a message for composing replies

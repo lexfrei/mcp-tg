@@ -11,8 +11,8 @@ import (
 
 // DialogsListParams defines the parameters for the tg_dialogs_list tool.
 type DialogsListParams struct {
-	Limit      *int `json:"limit,omitempty"      jsonschema:"Maximum number of dialogs to return (default 100)"`
-	OffsetDate *int `json:"offsetDate,omitempty" jsonschema:"Unix timestamp for pagination (pass last dialog date)"`
+	Limit      *int `json:"limit,omitempty"      jsonschema:"Maximum number of dialogs to return (default 100, at most 1000, paged past 100)"`
+	OffsetDate *int `json:"offsetDate,omitempty" jsonschema:"Unix timestamp for pagination: the last dialog's lastMessageDate."`
 }
 
 // DialogsListResult is the output of the tg_dialogs_list tool.
@@ -32,7 +32,7 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 	) (*mcp.CallToolResult, DialogsListResult, error) {
 		limit := deref(params.Limit)
 
-		limitErr := validateLimit(limit)
+		limitErr := validateDialogsLimit(limit)
 		if limitErr != nil {
 			return &mcp.CallToolResult{IsError: true}, DialogsListResult{},
 				validationErr(limitErr)
@@ -67,11 +67,34 @@ func NewDialogsListHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsLis
 	}
 }
 
+// maxDialogsLimit caps the limit of the tools that page the dialog list. The
+// wrapper pages past the server's 100, so the cap bounds the round-trips one
+// call makes, the same way maxMessagesListLimit does.
+const maxDialogsLimit = 1000
+
+// validateDialogsLimit rejects a negative limit and one above the cap.
+func validateDialogsLimit(limit int) error {
+	err := validateLimit(limit)
+	if err != nil {
+		return err
+	}
+
+	if limit > maxDialogsLimit {
+		return ErrLimitTooLarge
+	}
+
+	return nil
+}
+
 // DialogsListTool returns the MCP tool definition for tg_dialogs_list.
 func DialogsListTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_dialogs_list",
-		Description: "List all Telegram dialogs (chats, groups, channels)",
+		Name: "tg_dialogs_list",
+		Description: "List all Telegram dialogs (chats, groups, channels). " +
+			"Page with offsetDate set to the last dialog's lastMessageDate; the cursor is a timestamp alone, " +
+			"so dialogs whose last message falls in that same second can be skipped or repeated between pages. " +
+			"Pinned dialogs come first whatever their date: when limit is not above the number of pinned chats, " +
+			"the last item can be an old pinned chat, and paging from it skips every newer unpinned dialog.",
 		Annotations: readOnlyAnnotations(),
 	}
 }

@@ -11,7 +11,7 @@ import (
 
 // GroupsListParams defines the parameters for the tg_groups_list tool.
 type GroupsListParams struct {
-	Limit *int `json:"limit,omitempty" jsonschema:"Maximum number of groups to return (default 100)"`
+	Limit *int `json:"limit,omitempty" jsonschema:"Maximum number of groups to return (default 100, at most 1000)"`
 }
 
 // GroupsListResult is the output of the tg_groups_list tool.
@@ -31,7 +31,7 @@ func NewGroupsListHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsListP
 	) (*mcp.CallToolResult, GroupsListResult, error) {
 		limit := deref(params.Limit)
 
-		limitErr := validateLimit(limit)
+		limitErr := validateDialogsLimit(limit)
 		if limitErr != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsListResult{},
 				validationErr(limitErr)

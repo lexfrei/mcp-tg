@@ -63,9 +63,10 @@ var ErrQueryRequired = errors.New("query is required")
 // ErrNegativeLimit is returned when a numeric limit parameter is negative.
 var ErrNegativeLimit = errors.New("numeric limits must not be negative")
 
-// ErrLimitTooLarge is returned when a tg_messages_list limit exceeds the
-// auto-pagination cap. messages_list fetches beyond one server page by
-// paging internally; the cap bounds the round-trips a single call makes.
+// ErrLimitTooLarge is returned when a limit exceeds the auto-pagination cap
+// of tg_messages_list, tg_dialogs_list or tg_groups_list. Those tools fetch
+// beyond one server page by paging internally; the cap bounds the
+// round-trips a single call makes.
 var ErrLimitTooLarge = errors.New("limit must not exceed 1000")
 
 // ErrTitleRequired is returned when a title parameter is missing.

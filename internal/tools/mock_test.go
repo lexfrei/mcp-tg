@@ -15,25 +15,29 @@ type mockClient struct {
 	getMessagesFn  func(ids []int) []telegram.Message
 	// getMessagesErrFn fails a GetMessages call based on the request,
 	// so a test can model a server that rejects an over-long id list.
-	getMessagesErrFn  func(ids []int) error
-	getHistoryFn      func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
-	resolvePeerFn     func(identifier string) (telegram.InputPeer, error)
-	message           *telegram.Message
-	total             int
-	historyHasMore    bool
-	dialogs           []telegram.Dialog
-	user              *telegram.User
-	users             []telegram.User
-	group             *telegram.GroupInfo
-	info              *telegram.PeerInfo
-	infos             []telegram.PeerInfo
-	photos            []telegram.Photo
-	topics            []telegram.ForumTopic
-	topic             *telegram.ForumTopic
-	sets              []telegram.StickerSet
-	setFull           *telegram.StickerSetFull
-	folders           []telegram.Folder
-	folder            *telegram.Folder
+	getMessagesErrFn func(ids []int) error
+	getHistoryFn     func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
+	resolvePeerFn    func(identifier string) (telegram.InputPeer, error)
+	message          *telegram.Message
+	total            int
+	historyHasMore   bool
+	dialogs          []telegram.Dialog
+	user             *telegram.User
+	users            []telegram.User
+	group            *telegram.GroupInfo
+	info             *telegram.PeerInfo
+	infos            []telegram.PeerInfo
+	photos           []telegram.Photo
+	topics           []telegram.ForumTopic
+	topic            *telegram.ForumTopic
+	sets             []telegram.StickerSet
+	setFull          *telegram.StickerSetFull
+	folders          []telegram.Folder
+	folder           *telegram.Folder
+	// editFolderPeers is the peer list the last EditFolder got: nil keeps
+	// the folder's chats, an empty non-nil list empties it.
+	editFolderPeers   []telegram.InputPeer
+	editFolderCalls   int
 	uploaded          *telegram.UploadedFile
 	reactions         []telegram.ReactionUser
 	statuses          []telegram.ContactStatus
@@ -535,7 +539,10 @@ func (m *mockClient) CreateFolder(_ context.Context, _ string, _ []telegram.Inpu
 	return m.folder, m.err
 }
 
-func (m *mockClient) EditFolder(_ context.Context, _ int, _ string, _ []telegram.InputPeer) error {
+func (m *mockClient) EditFolder(_ context.Context, _ int, _ string, peers []telegram.InputPeer) error {
+	m.editFolderCalls++
+	m.editFolderPeers = peers
+
 	return m.err
 }
 

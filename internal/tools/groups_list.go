@@ -60,9 +60,11 @@ func NewGroupsListHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsListP
 
 		return nil, GroupsListResult{
 			Count: len(groups),
-			// hasMore is computed from the underlying dialog page size,
-			// not the filtered groups count: a full dialog page may
-			// contain more groups beyond it.
+			// hasMore is computed from the dialog page, not the filtered
+			// groups count: a full dialog page may have more groups beyond
+			// it. Under TELEGRAM_ALLOWED_PEERS the page is the allowed
+			// dialogs, which the PeerAllowlist reads on to fill, so a short
+			// one still means the list ended.
 			HasMore: hasMorePage(len(dialogs), limit),
 			Groups:  groups,
 			Output:  buf.String(),

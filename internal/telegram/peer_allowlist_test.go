@@ -19,6 +19,12 @@ type allowlistFake struct {
 	resolved  []string
 	dialogs   []Dialog
 	failOnce  map[string]bool
+	// paged, when set, makes GetDialogs serve it the way the wrapper does:
+	// newest first, at most 100 per call, older than OffsetDate.
+	paged        []Dialog
+	dialogCalls  []DialogOpts
+	contactUsers []User
+	statuses     []ContactStatus
 }
 
 var errFakeUnknownUsername = errors.New("USERNAME_NOT_OCCUPIED")
@@ -44,8 +50,51 @@ func (fake *allowlistFake) ResolvePeer(_ context.Context, identifier string) (In
 	return resolveByID(numID), nil
 }
 
-func (fake *allowlistFake) GetDialogs(context.Context, DialogOpts) ([]Dialog, error) {
-	return fake.dialogs, nil
+func (fake *allowlistFake) GetDialogs(_ context.Context, opts DialogOpts) ([]Dialog, error) {
+	fake.dialogCalls = append(fake.dialogCalls, opts)
+
+	if fake.paged == nil {
+		return fake.dialogs, nil
+	}
+
+	var page []Dialog
+
+	for _, dialog := range fake.paged {
+		if len(page) == min(opts.Limit, allowlistDialogsPage) {
+			break
+		}
+
+		if opts.OffsetDate == 0 || dialog.LastMessage.Date < opts.OffsetDate {
+			page = append(page, dialog)
+		}
+	}
+
+	return page, nil
+}
+
+func (fake *allowlistFake) SearchContacts(context.Context, string, int) ([]User, error) {
+	return fake.contactUsers, nil
+}
+
+func (fake *allowlistFake) GetBlockedContacts(context.Context, int) ([]User, error) {
+	return fake.contactUsers, nil
+}
+
+func (fake *allowlistFake) GetContactStatuses(context.Context) ([]ContactStatus, error) {
+	return fake.statuses, nil
+}
+
+// pagedDialogs builds count user dialogs, newest first, one second apart.
+func pagedDialogs(count int) []Dialog {
+	dialogs := make([]Dialog, count)
+	for idx := range dialogs {
+		dialogs[idx] = Dialog{
+			Peer:        InputPeer{Type: PeerUser, ID: int64(1000 + idx)},
+			LastMessage: &Message{Date: 100000 - idx},
+		}
+	}
+
+	return dialogs
 }
 
 func (fake *allowlistFake) GetCommonChats(context.Context, InputPeer) ([]PeerInfo, error) {
@@ -175,5 +224,73 @@ func TestPeerAllowlist_RefusesAccountWideOperations(t *testing.T) {
 		if !errors.Is(err, ErrAccountWideDisabled) {
 			t.Errorf("%s = %v, want ErrAccountWideDisabled", name, err)
 		}
+	}
+}
+
+// The contact tools return users the caller never named, so they are
+// filtered like the dialog listings.
+func TestPeerAllowlist_FiltersContactListings(t *testing.T) {
+	fake := newAllowlistFake()
+	fake.contactUsers = []User{{ID: 100, FirstName: "friend"}, {ID: 999, FirstName: "other"}}
+	fake.statuses = []ContactStatus{{UserID: 100}, {UserID: 999}}
+	list := NewPeerAllowlist(fake, []string{"@friend"})
+
+	for name, call := range map[string]func() ([]User, error){
+		"SearchContacts":     func() ([]User, error) { return list.SearchContacts(context.Background(), "x", 10) },
+		"GetBlockedContacts": func() ([]User, error) { return list.GetBlockedContacts(context.Background(), 10) },
+	} {
+		users, err := call()
+		if err != nil || len(users) != 1 || users[0].ID != 100 {
+			t.Errorf("%s = %+v, %v; want only user 100", name, users, err)
+		}
+	}
+
+	statuses, err := list.GetContactStatuses(context.Background())
+	if err != nil || len(statuses) != 1 || statuses[0].UserID != 100 {
+		t.Errorf("GetContactStatuses = %+v, %v; want only user 100", statuses, err)
+	}
+}
+
+// An allowed chat past the first source page must still be listed: the
+// decorator reads on until it has a full page of allowed dialogs or the
+// source runs out.
+func TestPeerAllowlist_DialogsReadPastTheFirstSourcePage(t *testing.T) {
+	fake := newAllowlistFake()
+	fake.paged = pagedDialogs(250)
+	// Position 150, on the second source page.
+	list := NewPeerAllowlist(fake, []string{"1149"})
+
+	dialogs, err := list.GetDialogs(context.Background(), DialogOpts{Limit: 100})
+	if err != nil {
+		t.Fatalf("GetDialogs: %v", err)
+	}
+
+	if len(dialogs) != 1 || dialogs[0].Peer.ID != 1149 {
+		t.Fatalf("dialogs = %+v, want the allowed user 1149", dialogs)
+	}
+
+	// 100 + 100 + 50: the walk ends where the source does.
+	if len(fake.dialogCalls) != 3 {
+		t.Errorf("source calls = %d, want 3", len(fake.dialogCalls))
+	}
+
+	if next := fake.dialogCalls[1].OffsetDate; next != 100000-99 {
+		t.Errorf("second page offsetDate = %d, want the first page's last date %d", next, 100000-99)
+	}
+}
+
+// Once the page holds limit allowed dialogs, nothing more is read.
+func TestPeerAllowlist_DialogsStopAtTheLimit(t *testing.T) {
+	fake := newAllowlistFake()
+	fake.paged = pagedDialogs(250)
+	list := NewPeerAllowlist(fake, []string{"1000", "1001", "1200"})
+
+	dialogs, err := list.GetDialogs(context.Background(), DialogOpts{Limit: 2})
+	if err != nil {
+		t.Fatalf("GetDialogs: %v", err)
+	}
+
+	if len(dialogs) != 2 || len(fake.dialogCalls) != 1 {
+		t.Errorf("dialogs = %d over %d call(s), want 2 from one call", len(dialogs), len(fake.dialogCalls))
 	}
 }

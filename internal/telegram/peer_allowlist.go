@@ -21,7 +21,7 @@ var ErrAccountWideDisabled = errors.New("this operation spans every chat and is 
 // Every tool, resource, prompt and subscription turns its peer argument into
 // an InputPeer through ResolvePeer, so refusing there covers all of them at
 // once. The listings that return peers the caller never named (dialogs,
-// common chats) are filtered instead, and the few operations that can only
+// common chats, contacts, the block list) are filtered instead, and the few operations that can only
 // act on the whole account (global search, clearing every draft, folders)
 // are refused outright.
 //
@@ -99,14 +99,104 @@ func (list *PeerAllowlist) Allows(ctx context.Context, peer InputPeer) (bool, er
 	return ok, nil
 }
 
-// GetDialogs returns only the dialogs on the list.
+// allowlistDialogsPage is how many dialogs the decorator asks the wrapped
+// client for per call: the server's page size, whatever the caller's limit.
+const allowlistDialogsPage = 100
+
+// allowlistDialogsMaxPages bounds the source pages one GetDialogs reads, so
+// a list whose allowed chats are all near the end costs a bounded scan.
+const allowlistDialogsMaxPages = 50
+
+// GetDialogs returns only the dialogs on the list, read on page after page
+// until it holds opts.Limit of them or the dialog list ends. Filtering one
+// source page would hand the caller a short page: the tools read that as
+// the end of the list, and an allowed chat past the first page would look
+// absent.
 func (list *PeerAllowlist) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error) {
-	dialogs, err := list.Client.GetDialogs(ctx, opts)
-	if err != nil {
-		return nil, errors.Wrap(err, "listing dialogs")
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = defaultLimit
 	}
 
-	return filterAllowed(ctx, list, dialogs, func(dialog *Dialog) InputPeer { return dialog.Peer })
+	page := opts
+	page.Limit = allowlistDialogsPage
+
+	kept := make([]Dialog, 0, min(limit, allowlistDialogsPage))
+	seen := make(map[peerKey]bool)
+
+	for range allowlistDialogsMaxPages {
+		dialogs, err := list.Client.GetDialogs(ctx, page)
+		if err != nil {
+			return nil, errors.Wrap(err, "listing dialogs")
+		}
+
+		kept, err = list.appendAllowedDialogs(ctx, kept, seen, dialogs, limit)
+		if err != nil {
+			return nil, err
+		}
+
+		next, more := nextDialogsOffset(dialogs, page)
+		if len(kept) >= limit || !more {
+			break
+		}
+
+		page.OffsetDate = next
+	}
+
+	return kept, nil
+}
+
+// nextDialogsOffset returns the cursor for the page after dialogs, and
+// whether there is one: a short page is the end of the list, and a page
+// whose last dialog has no date, or the date the page was read at, cannot
+// move the cursor.
+func nextDialogsOffset(dialogs []Dialog, page DialogOpts) (int, bool) {
+	if len(dialogs) < page.Limit {
+		return 0, false
+	}
+
+	last := dialogs[len(dialogs)-1].LastMessage
+	if last == nil || last.Date == 0 || last.Date == page.OffsetDate {
+		return 0, false
+	}
+
+	return last.Date, true
+}
+
+// SearchContacts returns only the matching contacts on the list.
+func (list *PeerAllowlist) SearchContacts(ctx context.Context, query string, limit int) ([]User, error) {
+	users, err := list.Client.SearchContacts(ctx, query, limit)
+	if err != nil {
+		return nil, errors.Wrap(err, "searching contacts")
+	}
+
+	return filterAllowed(ctx, list, users, userPeer)
+}
+
+// GetBlockedContacts returns only the blocked users on the list.
+func (list *PeerAllowlist) GetBlockedContacts(ctx context.Context, limit int) ([]User, error) {
+	users, err := list.Client.GetBlockedContacts(ctx, limit)
+	if err != nil {
+		return nil, errors.Wrap(err, "listing blocked users")
+	}
+
+	return filterAllowed(ctx, list, users, userPeer)
+}
+
+// GetContactStatuses returns only the statuses of contacts on the list.
+func (list *PeerAllowlist) GetContactStatuses(ctx context.Context) ([]ContactStatus, error) {
+	statuses, err := list.Client.GetContactStatuses(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "getting contact statuses")
+	}
+
+	return filterAllowed(ctx, list, statuses, func(status *ContactStatus) InputPeer {
+		return InputPeer{Type: PeerUser, ID: status.UserID}
+	})
+}
+
+func userPeer(user *User) InputPeer {
+	return InputPeer{Type: PeerUser, ID: user.ID}
 }
 
 // SearchDialogs returns only the matching dialogs on the list.
@@ -158,6 +248,31 @@ func (*PeerAllowlist) EditFolder(context.Context, int, string, []InputPeer) erro
 // DeleteFolder is refused along with the rest of the folder surface.
 func (*PeerAllowlist) DeleteFolder(context.Context, int) error {
 	return ErrAccountWideDisabled
+}
+
+// appendAllowedDialogs appends the allowed dialogs of a source page not seen
+// on an earlier one (the cursor is a timestamp, so pages can overlap), up to
+// limit.
+func (list *PeerAllowlist) appendAllowedDialogs(
+	ctx context.Context, kept []Dialog, seen map[peerKey]bool, dialogs []Dialog, limit int,
+) ([]Dialog, error) {
+	allowed, err := filterAllowed(ctx, list, dialogs, func(dialog *Dialog) InputPeer { return dialog.Peer })
+	if err != nil {
+		return nil, err
+	}
+
+	for _, dialog := range allowed {
+		key := peerKey{typ: dialog.Peer.Type, id: dialog.Peer.ID}
+		if len(kept) >= limit || seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		kept = append(kept, dialog)
+	}
+
+	return kept, nil
 }
 
 func (list *PeerAllowlist) resolveEntriesLocked(ctx context.Context) error {

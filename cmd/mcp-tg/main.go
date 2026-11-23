@@ -650,6 +650,37 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.ContactsDeleteTool(), tools.NewContactsDeleteHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesDeleteHistoryTool(), tools.NewMessagesDeleteHistoryHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesClearAllDraftsTool(), tools.NewMessagesClearAllDraftsHandler(client))
+
+	// Media extras and inline bots.
+	tools.AddTool(server, registry, gate, tools.MediaSendVoiceTool(), tools.NewMediaSendVoiceHandler(client, fileRoots))
+	tools.AddTool(server, registry, gate, tools.MediaGetInfoTool(), tools.NewMediaGetInfoHandler(client))
+	tools.AddTool(server, registry, gate, tools.MediaViewTool(), tools.NewMediaViewHandler(client))
+	tools.AddTool(server, registry, gate, tools.InlineQueryTool(), tools.NewInlineQueryHandler(client))
+	tools.AddTool(server, registry, gate, tools.InlineSendTool(), tools.NewInlineSendHandler(client))
+
+	// Message utilities.
+	tools.AddTool(server, registry, gate, tools.MessagesGetLinkTool(), tools.NewMessagesGetLinkHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesGetReadByTool(), tools.NewMessagesGetReadByHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesUnpinAllTool(), tools.NewMessagesUnpinAllHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesSendContactTool(), tools.NewMessagesSendContactHandler(client))
+	tools.AddTool(server, registry, gate, tools.DraftsListTool(), tools.NewDraftsListHandler(client))
+	// Bots: keyboards, polls, bot info.
+	tools.AddTool(server, registry, gate, tools.MessagesGetButtonsTool(), tools.NewMessagesGetButtonsHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesPressButtonTool(), tools.NewMessagesPressButtonHandler(client))
+	tools.AddTool(server, registry, gate, tools.PollsCreateTool(), tools.NewPollsCreateHandler(client))
+	tools.AddTool(server, registry, gate, tools.PollsGetTool(), tools.NewPollsGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.PollsVoteTool(), tools.NewPollsVoteHandler(client))
+	tools.AddTool(server, registry, gate, tools.BotsGetInfoTool(), tools.NewBotsGetInfoHandler(client))
+
+	// Group administration.
+	tools.AddTool(server, registry, gate, tools.GroupsBanTool(), tools.NewGroupsBanHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsInviteCheckTool(), tools.NewGroupsInviteCheckHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsJoinInviteTool(), tools.NewGroupsJoinInviteHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsUpgradeTool(), tools.NewGroupsUpgradeHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsSetForumTool(), tools.NewGroupsSetForumHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsAdminLogTool(), tools.NewGroupsAdminLogHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsDeletePhotoTool(), tools.NewChatsDeletePhotoHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsDeleteTool(), tools.NewTopicsDeleteHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

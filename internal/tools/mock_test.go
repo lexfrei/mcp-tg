@@ -15,25 +15,29 @@ type mockClient struct {
 	getMessagesFn  func(ids []int) []telegram.Message
 	// getMessagesErrFn fails a GetMessages call based on the request,
 	// so a test can model a server that rejects an over-long id list.
-	getMessagesErrFn  func(ids []int) error
-	getHistoryFn      func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
-	resolvePeerFn     func(identifier string) (telegram.InputPeer, error)
-	message           *telegram.Message
-	total             int
-	historyHasMore    bool
-	dialogs           []telegram.Dialog
-	user              *telegram.User
-	users             []telegram.User
-	group             *telegram.GroupInfo
-	info              *telegram.PeerInfo
-	infos             []telegram.PeerInfo
-	photos            []telegram.Photo
-	topics            []telegram.ForumTopic
-	topic             *telegram.ForumTopic
-	sets              []telegram.StickerSet
-	setFull           *telegram.StickerSetFull
-	folders           []telegram.Folder
-	folder            *telegram.Folder
+	getMessagesErrFn func(ids []int) error
+	getHistoryFn     func(peer telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error)
+	resolvePeerFn    func(identifier string) (telegram.InputPeer, error)
+	message          *telegram.Message
+	total            int
+	historyHasMore   bool
+	dialogs          []telegram.Dialog
+	user             *telegram.User
+	users            []telegram.User
+	group            *telegram.GroupInfo
+	info             *telegram.PeerInfo
+	infos            []telegram.PeerInfo
+	photos           []telegram.Photo
+	topics           []telegram.ForumTopic
+	topic            *telegram.ForumTopic
+	sets             []telegram.StickerSet
+	setFull          *telegram.StickerSetFull
+	folders          []telegram.Folder
+	folder           *telegram.Folder
+	// editFolderPeers is the peer list the last EditFolder got: nil keeps
+	// the folder's chats, an empty non-nil list empties it.
+	editFolderPeers   []telegram.InputPeer
+	editFolderCalls   int
 	uploaded          *telegram.UploadedFile
 	reactions         []telegram.ReactionUser
 	statuses          []telegram.ContactStatus
@@ -98,6 +102,47 @@ type mockClient struct {
 	getSendAsCalls  int
 	resolvedQueries []string
 	lastStickerID   int64
+	// Media extras.
+	lastVoicePath   string
+	lastVoiceOpts   telegram.VoiceOpts
+	mediaInfo       *telegram.MediaInfo
+	viewed          *telegram.ViewedImage
+	lastViewLimit   int
+	inlineResults   *telegram.InlineResults
+	lastInlineBot   telegram.InputPeer
+	lastInlineQuery string
+	lastQueryID     int64
+	lastResultID    string
+
+	// Message utilities.
+	messageLink   string
+	lastThread    bool
+	readReceipts  []telegram.ReadReceipt
+	unpinAllTopic int
+	unpinAllCalls int
+	drafts        []telegram.Draft
+	lastContact   telegram.Contact
+
+	// Bot keyboards and polls.
+	buttons      []telegram.MessageButton
+	press        *telegram.ButtonPress
+	lastPress    [2]int
+	botInfo      *telegram.BotInfo
+	poll         *telegram.Poll
+	lastPollOpts *telegram.PollOpts
+	lastVote     []int
+
+	// Group administration.
+	lastBan        [2]telegram.InputPeer
+	lastBanUntil   int
+	lastUnban      bool
+	inviteInfo     *telegram.InviteInfo
+	lastInviteLink string
+	lastForum      *bool
+	adminLog       []telegram.AdminLogEvent
+	lastAdminLog   telegram.AdminLogOpts
+	deletedTopic   int
+	photoDeleted   bool
 }
 
 // ResolvePeer answers with m.peer unless resolvePeerFn is set. Tools
@@ -535,7 +580,10 @@ func (m *mockClient) CreateFolder(_ context.Context, _ string, _ []telegram.Inpu
 	return m.folder, m.err
 }
 
-func (m *mockClient) EditFolder(_ context.Context, _ int, _ string, _ []telegram.InputPeer) error {
+func (m *mockClient) EditFolder(_ context.Context, _ int, _ string, peers []telegram.InputPeer) error {
+	m.editFolderCalls++
+	m.editFolderPeers = peers
+
 	return m.err
 }
 
@@ -673,6 +721,188 @@ func (m *mockClient) SetDefaultSendAs(
 	m.lastPeer = peer
 	m.lastSetSendAs = sendAs
 	m.setSendAsCalls++
+
+	return m.err
+}
+
+func (m *mockClient) SendVoice(
+	_ context.Context, peer telegram.InputPeer, path string, opts *telegram.VoiceOpts,
+) (*telegram.Message, error) {
+	m.lastPeer = peer
+	m.lastVoicePath = path
+	m.lastVoiceOpts = *opts
+
+	return m.message, m.err
+}
+
+func (m *mockClient) GetMediaInfo(_ context.Context, peer telegram.InputPeer, _ int) (*telegram.MediaInfo, error) {
+	m.lastPeer = peer
+
+	return m.mediaInfo, m.err
+}
+
+func (m *mockClient) ViewMedia(
+	_ context.Context, peer telegram.InputPeer, _, maxBytes int,
+) (*telegram.ViewedImage, error) {
+	m.lastPeer = peer
+	m.lastViewLimit = maxBytes
+
+	return m.viewed, m.err
+}
+
+func (m *mockClient) InlineQuery(
+	_ context.Context, bot, peer telegram.InputPeer, query, _ string,
+) (*telegram.InlineResults, error) {
+	m.lastInlineBot = bot
+	m.lastPeer = peer
+	m.lastInlineQuery = query
+
+	return m.inlineResults, m.err
+}
+
+func (m *mockClient) SendInlineResult(
+	_ context.Context, peer telegram.InputPeer, queryID int64, resultID string, opts telegram.SendOpts,
+) (*telegram.Message, error) {
+	m.lastPeer = peer
+	m.lastQueryID = queryID
+	m.lastResultID = resultID
+	m.lastSendOpts = opts
+
+	return m.message, m.err
+}
+
+func (m *mockClient) UnpinAllMessages(_ context.Context, peer telegram.InputPeer, topicID int) error {
+	m.lastPeer = peer
+	m.unpinAllTopic = topicID
+	m.unpinAllCalls++
+
+	return m.err
+}
+
+func (m *mockClient) GetMessageLink(_ context.Context, peer telegram.InputPeer, _ int, thread bool) (string, error) {
+	m.lastPeer = peer
+	m.lastThread = thread
+
+	return m.messageLink, m.err
+}
+
+func (m *mockClient) GetMessageReadBy(_ context.Context, peer telegram.InputPeer, _ int) ([]telegram.ReadReceipt, error) {
+	m.lastPeer = peer
+
+	return m.readReceipts, m.err
+}
+
+func (m *mockClient) SendContact(
+	_ context.Context, peer telegram.InputPeer, contact telegram.Contact, opts telegram.SendOpts,
+) (*telegram.Message, error) {
+	m.lastPeer = peer
+	m.lastContact = contact
+	m.lastSendOpts = opts
+
+	return m.message, m.err
+}
+
+func (m *mockClient) GetAllDrafts(_ context.Context) ([]telegram.Draft, error) {
+	return m.drafts, m.err
+}
+
+func (m *mockClient) GetMessageButtons(
+	_ context.Context, peer telegram.InputPeer, _ int,
+) ([]telegram.MessageButton, error) {
+	m.lastPeer = peer
+
+	return m.buttons, m.err
+}
+
+func (m *mockClient) PressButton(
+	_ context.Context, peer telegram.InputPeer, _, row, column int,
+) (*telegram.ButtonPress, error) {
+	m.lastPeer = peer
+	m.lastPress = [2]int{row, column}
+
+	return m.press, m.err
+}
+
+func (m *mockClient) GetBotInfo(_ context.Context, peer telegram.InputPeer) (*telegram.BotInfo, error) {
+	m.lastPeer = peer
+
+	return m.botInfo, m.err
+}
+
+func (m *mockClient) SendPoll(
+	_ context.Context, peer telegram.InputPeer, opts *telegram.PollOpts,
+) (*telegram.Message, error) {
+	m.lastPeer = peer
+	m.lastPollOpts = opts
+
+	return m.message, m.err
+}
+
+func (m *mockClient) GetPoll(_ context.Context, peer telegram.InputPeer, _ int) (*telegram.Poll, error) {
+	m.lastPeer = peer
+
+	return m.poll, m.err
+}
+
+func (m *mockClient) VotePoll(_ context.Context, peer telegram.InputPeer, _ int, indexes []int) error {
+	m.lastPeer = peer
+	m.lastVote = indexes
+
+	return m.err
+}
+
+func (m *mockClient) BanMember(_ context.Context, group, user telegram.InputPeer, untilDate int, unban bool) error {
+	m.lastBan = [2]telegram.InputPeer{group, user}
+	m.lastBanUntil = untilDate
+	m.lastUnban = unban
+
+	return m.err
+}
+
+func (m *mockClient) CheckInvite(_ context.Context, link string) (*telegram.InviteInfo, error) {
+	m.lastInviteLink = link
+
+	return m.inviteInfo, m.err
+}
+
+func (m *mockClient) JoinByInvite(_ context.Context, link string) (*telegram.PeerInfo, error) {
+	m.lastInviteLink = link
+
+	return m.info, m.err
+}
+
+func (m *mockClient) UpgradeToSupergroup(_ context.Context, peer telegram.InputPeer) (*telegram.PeerInfo, error) {
+	m.lastPeer = peer
+
+	return m.info, m.err
+}
+
+func (m *mockClient) SetForum(_ context.Context, peer telegram.InputPeer, enabled bool) error {
+	m.lastPeer = peer
+	m.lastForum = &enabled
+
+	return m.err
+}
+
+func (m *mockClient) GetAdminLog(
+	_ context.Context, peer telegram.InputPeer, opts telegram.AdminLogOpts,
+) ([]telegram.AdminLogEvent, error) {
+	m.lastPeer = peer
+	m.lastAdminLog = opts
+
+	return m.adminLog, m.err
+}
+
+func (m *mockClient) DeleteChatPhoto(_ context.Context, peer telegram.InputPeer) error {
+	m.lastPeer = peer
+	m.photoDeleted = true
+
+	return m.err
+}
+
+func (m *mockClient) DeleteForumTopic(_ context.Context, peer telegram.InputPeer, topicID int) error {
+	m.lastPeer = peer
+	m.deletedTopic = topicID
 
 	return m.err
 }

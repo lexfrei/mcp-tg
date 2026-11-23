@@ -296,3 +296,109 @@ func (NoopClient) GetSendAs(_ context.Context, _ telegram.InputPeer) ([]telegram
 func (NoopClient) SetDefaultSendAs(_ context.Context, _ telegram.InputPeer, _ *telegram.InputPeer) error {
 	return nil
 }
+
+func (NoopClient) SendVoice(
+	_ context.Context, _ telegram.InputPeer, _ string, _ *telegram.VoiceOpts,
+) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) GetMediaInfo(_ context.Context, _ telegram.InputPeer, _ int) (*telegram.MediaInfo, error) {
+	return &telegram.MediaInfo{}, nil
+}
+
+func (NoopClient) ViewMedia(_ context.Context, _ telegram.InputPeer, _, _ int) (*telegram.ViewedImage, error) {
+	return &telegram.ViewedImage{MimeType: "image/jpeg"}, nil
+}
+
+func (NoopClient) InlineQuery(
+	_ context.Context, _, _ telegram.InputPeer, _, _ string,
+) (*telegram.InlineResults, error) {
+	return &telegram.InlineResults{}, nil
+}
+
+func (NoopClient) SendInlineResult(
+	_ context.Context, _ telegram.InputPeer, _ int64, _ string, _ telegram.SendOpts,
+) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) UnpinAllMessages(_ context.Context, _ telegram.InputPeer, _ int) error {
+	return nil
+}
+
+func (NoopClient) GetMessageLink(_ context.Context, _ telegram.InputPeer, _ int, _ bool) (string, error) {
+	return "", nil
+}
+
+func (NoopClient) GetMessageReadBy(_ context.Context, _ telegram.InputPeer, _ int) ([]telegram.ReadReceipt, error) {
+	return nil, nil
+}
+
+func (NoopClient) SendContact(
+	_ context.Context, _ telegram.InputPeer, _ telegram.Contact, _ telegram.SendOpts,
+) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) GetAllDrafts(_ context.Context) ([]telegram.Draft, error) {
+	return nil, nil
+}
+
+func (NoopClient) GetMessageButtons(_ context.Context, _ telegram.InputPeer, _ int) ([]telegram.MessageButton, error) {
+	return nil, nil
+}
+
+func (NoopClient) PressButton(_ context.Context, _ telegram.InputPeer, _, _, _ int) (*telegram.ButtonPress, error) {
+	return &telegram.ButtonPress{}, nil
+}
+
+func (NoopClient) GetBotInfo(_ context.Context, _ telegram.InputPeer) (*telegram.BotInfo, error) {
+	return &telegram.BotInfo{}, nil
+}
+
+func (NoopClient) SendPoll(_ context.Context, _ telegram.InputPeer, _ *telegram.PollOpts) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) GetPoll(_ context.Context, _ telegram.InputPeer, _ int) (*telegram.Poll, error) {
+	return &telegram.Poll{}, nil
+}
+
+func (NoopClient) VotePoll(_ context.Context, _ telegram.InputPeer, _ int, _ []int) error {
+	return nil
+}
+
+func (NoopClient) BanMember(_ context.Context, _, _ telegram.InputPeer, _ int, _ bool) error {
+	return nil
+}
+
+func (NoopClient) CheckInvite(_ context.Context, _ string) (*telegram.InviteInfo, error) {
+	return &telegram.InviteInfo{}, nil
+}
+
+func (NoopClient) JoinByInvite(_ context.Context, _ string) (*telegram.PeerInfo, error) {
+	return &telegram.PeerInfo{}, nil
+}
+
+func (NoopClient) UpgradeToSupergroup(_ context.Context, _ telegram.InputPeer) (*telegram.PeerInfo, error) {
+	return &telegram.PeerInfo{}, nil
+}
+
+func (NoopClient) SetForum(_ context.Context, _ telegram.InputPeer, _ bool) error {
+	return nil
+}
+
+func (NoopClient) GetAdminLog(
+	_ context.Context, _ telegram.InputPeer, _ telegram.AdminLogOpts,
+) ([]telegram.AdminLogEvent, error) {
+	return nil, nil
+}
+
+func (NoopClient) DeleteChatPhoto(_ context.Context, _ telegram.InputPeer) error {
+	return nil
+}
+
+func (NoopClient) DeleteForumTopic(_ context.Context, _ telegram.InputPeer, _ int) error {
+	return nil
+}

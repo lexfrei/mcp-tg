@@ -54,6 +54,21 @@ func alreadyDoneCalls() map[string]alreadyDoneCall {
 
 			return res, out.Output, err
 		},
+		"tg_groups_set_forum": func(c telegram.Client) (*mcp.CallToolResult, string, error) {
+			res, out, err := NewGroupsSetForumHandler(c)(ctx, nil, GroupsSetForumParams{Peer: "@grp", Enabled: true})
+
+			return res, out.Output, err
+		},
+		"tg_chats_delete_photo": func(c telegram.Client) (*mcp.CallToolResult, string, error) {
+			res, out, err := NewChatsDeletePhotoHandler(c)(ctx, nil, ChatsDeletePhotoParams{Peer: "@grp"})
+
+			return res, out.Output, err
+		},
+		"tg_groups_join_invite": func(c telegram.Client) (*mcp.CallToolResult, string, error) {
+			res, out, err := NewGroupsJoinInviteHandler(c)(ctx, nil, GroupsJoinInviteParams{Link: "+abc"})
+
+			return res, out.Output, err
+		},
 		"tg_topics_edit": func(c telegram.Client) (*mcp.CallToolResult, string, error) {
 			res, out, err := NewTopicsEditHandler(c)(ctx, nil, TopicsEditParams{Peer: "@grp", TopicID: 7, Title: "Same"})
 
@@ -89,6 +104,15 @@ func TestAlreadyDone_RefusalStatingThePostconditionIsSuccess(t *testing.T) {
 		{"tg_chats_set_description", "CHAT_NOT_MODIFIED", "Description for @grp already matches"},
 		{"tg_chats_set_permissions", "CHAT_NOT_MODIFIED", "Chat permissions for @grp already match"},
 		{"tg_topics_edit", "TOPIC_NOT_MODIFIED", `Topic 7 in @grp already has the title "Same"`},
+		{"tg_groups_set_forum", "CHAT_NOT_MODIFIED", "Forum topics are on in @grp"},
+		{"tg_chats_delete_photo", "CHAT_NOT_MODIFIED", "@grp has no chat photo"},
+		// The invite read-back fails in this harness too, so the reply names
+		// the link; TestGroupsJoinInvite_AlreadyMemberNamesTheChat covers the rest.
+		{"tg_groups_join_invite", "USER_ALREADY_PARTICIPANT", "Already a member of the chat behind +abc"},
+		{
+			"tg_groups_join_invite", "INVITE_REQUEST_SENT",
+			"A join request for +abc is pending; an admin of the chat has to approve it",
+		},
 	}
 
 	calls := alreadyDoneCalls()
@@ -130,6 +154,9 @@ func TestAlreadyDone_OtherRefusalsStillFail(t *testing.T) {
 		{"tg_chats_set_description", "CHAT_ADMIN_REQUIRED"},
 		{"tg_chats_set_permissions", "CHAT_ABOUT_NOT_MODIFIED"},
 		{"tg_topics_edit", "CHAT_NOT_MODIFIED"},
+		{"tg_groups_set_forum", "CHAT_ADMIN_REQUIRED"},
+		{"tg_chats_delete_photo", "USER_ALREADY_PARTICIPANT"},
+		{"tg_groups_join_invite", "CHAT_NOT_MODIFIED"},
 	}
 
 	calls := alreadyDoneCalls()

@@ -679,8 +679,6 @@ func newHTTPHandler(server *mcp.Server) http.Handler {
 	return http.NewCrossOriginProtection().Handler(handler)
 }
 
-// streamableHTTPOptions sets the session timeout; every other field keeps the
-// SDK default, exactly as the nil options did.
 func streamableHTTPOptions() *mcp.StreamableHTTPOptions {
 	return &mcp.StreamableHTTPOptions{SessionTimeout: httpSessionTimeout}
 }

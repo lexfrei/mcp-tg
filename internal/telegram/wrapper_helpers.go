@@ -543,9 +543,13 @@ func buildDialogs(
 			continue
 		}
 
+		folderID, _ := dialog.GetFolderID()
+
 		entry := Dialog{
 			UnreadCount:     dialog.UnreadCount,
 			LastMessageDate: findMessageDate(messages, dialog.Peer, dialog.TopMessage),
+			Archived:        folderID == warmArchiveFolderID,
+			Pinned:          dialog.Pinned,
 		}
 		fillDialogPeer(&entry, dialog.Peer, chatMap, userMap)
 

@@ -29,7 +29,8 @@ const (
 	warmDialogsThrottle = 60 * time.Second
 	// warmArchiveFolderID is the peer folder holding archived dialogs.
 	// messages.getDialogs returns one folder per call and omits archived
-	// chats when folder_id is unset, so the archive needs its own pass.
+	// chats when folder_id is unset, so the archive needs its own pass —
+	// in the warm, and when tg_dialogs_list is asked for the archive.
 	warmArchiveFolderID = 1
 )
 
@@ -201,22 +202,18 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 	// and sizing by it would allocate (or panic in makeslice) before the
 	// first request.
 	var (
-		dialogs    = make([]Dialog, 0, min(limit, warmDialogsPageLimit))
-		seen       = make(map[InputPeer]bool, min(limit, warmDialogsPageLimit))
-		offsetDate = opts.OffsetDate
-		offsetID   int
-		offsetPeer tg.InputPeerClass = &tg.InputPeerEmpty{}
+		dialogs = make([]Dialog, 0, min(limit, warmDialogsPageLimit))
+		seen    = make(map[InputPeer]bool, min(limit, warmDialogsPageLimit))
+		cursor  = dialogOffset{date: opts.OffsetDate, peer: &tg.InputPeerEmpty{}}
 	)
 
-	for len(dialogs) < limit {
-		pageSize := min(limit-len(dialogs), warmDialogsPageLimit)
+	// warmDialogsMaxPages is a safety bound only: the cursor checks below
+	// end every walk that behaves.
+	for pages := 0; len(dialogs) < limit && pages < warmDialogsMaxPages; pages++ {
+		pageSize := archivePageSize(opts.Archived, limit-len(dialogs))
+		req := dialogsRequest(cursor, pageSize, opts.Archived)
 
-		result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
-			Limit:      pageSize,
-			OffsetDate: offsetDate,
-			OffsetID:   offsetID,
-			OffsetPeer: offsetPeer,
-		})
+		result, err := w.api.MessagesGetDialogs(ctx, req)
 		if err != nil {
 			return nil, errors.Wrap(err, "getting dialogs")
 		}
@@ -224,31 +221,85 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 		page := extractDialogs(result)
 		w.cacheDialogPeers(page)
 
-		added := appendNewDialogs(&dialogs, seen, page, limit)
+		if opts.Archived {
+			page = archivedOnly(page)
+		}
 
-		// A page shorter than asked for is the end of the list; reading on
-		// would only fetch an empty one.
+		appendNewDialogs(&dialogs, seen, page, limit)
+
+		// The walk ends on the RAW page, never on what survived the filter:
+		// an archive page can hold only the main list's pinned dialogs and
+		// filter to nothing while archived ones follow. A page shorter than
+		// asked for is the end of the list, and a cursor that did not move
+		// would fetch the same page again.
 		slice, ok := result.(*tg.MessagesDialogsSlice)
-		if !ok || added == 0 || len(slice.Dialogs) < pageSize {
+		if !ok || len(slice.Dialogs) < pageSize {
 			break
 		}
 
 		next, ok := w.nextDialogOffset(slice)
-		if !ok {
+		if !ok || sameDialogOffset(next, cursor) {
 			break
 		}
 
-		offsetDate, offsetID, offsetPeer = next.date, next.id, next.peer
+		cursor = next
 	}
 
 	return dialogs, nil
 }
 
-// appendNewDialogs appends the page's dialogs not already in seen, up to
-// limit, and reports how many it added.
-func appendNewDialogs(dialogs *[]Dialog, seen map[InputPeer]bool, page []Dialog, limit int) int {
-	added := 0
+// archivePageSize is how many dialogs to ask for when want are still
+// missing. An archive request always asks for a full server page and lets
+// appendNewDialogs cut it to the limit: the server puts the main list's
+// pinned dialogs ahead of an archive page, and a small page made only of
+// them would take the next cursor from a chat outside the archive, skipping
+// the archived chats newer than it.
+func archivePageSize(archived bool, want int) int {
+	if archived {
+		return warmDialogsPageLimit
+	}
 
+	return min(want, warmDialogsPageLimit)
+}
+
+// sameDialogOffset reports whether two cursors point at the same place.
+func sameDialogOffset(left, right dialogOffset) bool {
+	return left.date == right.date && left.id == right.id && left.peer.String() == right.peer.String()
+}
+
+func dialogsRequest(cursor dialogOffset, limit int, archived bool) *tg.MessagesGetDialogsRequest {
+	req := &tg.MessagesGetDialogsRequest{
+		Limit:      limit,
+		OffsetDate: cursor.date,
+		OffsetID:   cursor.id,
+		OffsetPeer: cursor.peer,
+	}
+	if archived {
+		req.SetFolderID(warmArchiveFolderID)
+	}
+
+	return req
+}
+
+// archivedOnly drops the main list's pinned dialogs, which the server
+// returns ahead of an archive page as well (seen on a live account with an
+// empty archive), keeping only dialogs the server itself files under the
+// archive folder.
+func archivedOnly(page []Dialog) []Dialog {
+	kept := page[:0]
+
+	for _, dlg := range page {
+		if dlg.Archived {
+			kept = append(kept, dlg)
+		}
+	}
+
+	return kept
+}
+
+// appendNewDialogs appends the page's dialogs not already in seen, up to
+// limit.
+func appendNewDialogs(dialogs *[]Dialog, seen map[InputPeer]bool, page []Dialog, limit int) {
 	for _, dlg := range page {
 		if len(*dialogs) >= limit {
 			break
@@ -262,10 +313,7 @@ func appendNewDialogs(dialogs *[]Dialog, seen map[InputPeer]bool, page []Dialog,
 		seen[key] = true
 
 		*dialogs = append(*dialogs, dlg)
-		added++
 	}
-
-	return added
 }
 
 // SearchDialogs searches dialogs by query.

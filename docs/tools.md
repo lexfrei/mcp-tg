@@ -2,9 +2,9 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (97)
+## Tools (112)
 
-### Messages (20)
+### Messages (21)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
@@ -26,6 +26,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_messages_get_read_by` — List who read one of your own messages in a small group
 - `tg_messages_unpin_all` — Unpin every pinned message in a chat or forum topic
 - `tg_messages_send_contact` — Send a contact card
+- `tg_messages_wait` — Wait for a new message in a chat (optional sender filter; returns the arrivals oldest first)
 
 ### Dialogs (6)
 
@@ -51,7 +52,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_contacts_list` — List every contact, with phone numbers
 - `tg_contacts_import` — Add contacts by phone number
 
-### Groups (14)
+### Groups (20)
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
@@ -67,8 +68,14 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_groups_members_list` — List group members
 - `tg_groups_admin_set` — Promote or demote an admin with specific rights
 - `tg_groups_slowmode` — Set the slowmode delay
+- `tg_groups_ban` — Ban a user from a channel or supergroup, or lift the ban
+- `tg_groups_invite_check` — Preview the chat behind an invite link without joining
+- `tg_groups_join_invite` — Join a group or channel by its private invite link
+- `tg_groups_upgrade` — Upgrade a basic group to a supergroup
+- `tg_groups_set_forum` — Turn forum topics on or off
+- `tg_groups_admin_log` — Read recent admin actions in a channel or supergroup
 
-### Chat Management (10)
+### Chat Management (11)
 
 - `tg_chats_create` — Create a new group or channel
 - `tg_chats_archive` — Archive or unarchive a chat
@@ -80,6 +87,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_chats_set_permissions` — Set default permissions
 - `tg_chats_get_send_as` — List the identities this account may post under in a supergroup or channel
 - `tg_chats_set_send_as` — Set the identity this account posts under by default in a supergroup or channel
+- `tg_chats_delete_photo` — Remove a group or channel photo
 
 ### Media & Files (7)
 
@@ -106,12 +114,13 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_privacy_set` — Change a privacy setting, with always/never exceptions
 - `tg_profile_delete_photo` — Delete the current profile photo
 
-### Forum Topics (4)
+### Forum Topics (5)
 
 - `tg_topics_list` — List forum topics
 - `tg_topics_search` — Search forum topics
 - `tg_topics_create` — Create a forum topic
 - `tg_topics_edit` — Rename a forum topic
+- `tg_topics_delete` — Delete a forum topic with all its messages
 
 ### Stickers (3)
 
@@ -143,6 +152,15 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 - `tg_typing_send` — Send typing indicator
 - `tg_online_status_set` — Set online/offline status
 
+### Bots & Polls (6)
+
+- `tg_messages_get_buttons` — List a message's inline or reply keyboard buttons
+- `tg_messages_press_button` — Press a button: a bot callback, a link, or a reply-keyboard text
+- `tg_polls_create` — Send a poll or quiz
+- `tg_polls_get` — Read a poll's options and results
+- `tg_polls_vote` — Vote in a poll, or retract the vote
+- `tg_bots_get_info` — Get a bot's description and command menu
+
 ### Server (1)
 
 - `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
@@ -153,7 +171,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 41 | Only reads data |
-| idempotent | 31 | Modifies state, safe to retry |
-| write | 15 | Creates new entities, not idempotent |
-| destructive | 10 | Deletes or removes things |
+| read-only | 47 | Only reads data |
+| idempotent | 34 | Modifies state, safe to retry |
+| write | 17 | Creates new entities, not idempotent |
+| destructive | 14 | Deletes or removes things |

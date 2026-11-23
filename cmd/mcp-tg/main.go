@@ -247,7 +247,7 @@ func buildServer(
 	broker.SetNotifier(newResourceUpdater(server))
 
 	boolFields := tools.BoolFieldRegistry{}
-	registerTools(server, client, boolFields, tools.NewLoginGate(login), downloadDir, fileRoots)
+	registerTools(server, client, broker, boolFields, tools.NewLoginGate(login), downloadDir, fileRoots)
 	resources.Register(server, client)
 	prompts.Register(server, client)
 	server.AddReceivingMiddleware(receivingMiddlewares(opts.Logger, boolFields, authDone, health)...)
@@ -556,8 +556,8 @@ func newServerOptions(
 }
 
 func registerTools(
-	server *mcp.Server, client tgclient.Client, registry tools.BoolFieldRegistry, gate *tools.LoginGate,
-	downloadDir string, fileRoots []string,
+	server *mcp.Server, client tgclient.Client, listener tools.MessageListener, registry tools.BoolFieldRegistry,
+	gate *tools.LoginGate, downloadDir string, fileRoots []string,
 ) {
 	tools.AddTool(server, registry, gate, tools.ServerVersionTool(),
 		tools.NewServerVersionHandler(version, revision, runtime.Version()))
@@ -577,6 +577,7 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.MessagesReactTool(), tools.NewMessagesReactHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesMarkReadTool(), tools.NewMessagesMarkReadHandler(client))
 	tools.AddTool(server, registry, gate, tools.MessagesTranscribeAudioTool(), tools.NewMessagesTranscribeAudioHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesWaitTool(), tools.NewMessagesWaitHandler(client, listener))
 
 	// Phase 2: Contacts, Users, Groups, Chat management tools.
 	tools.AddTool(server, registry, gate, tools.ContactsGetTool(), tools.NewContactsGetHandler(client))
@@ -673,6 +674,24 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.ContactsListTool(), tools.NewContactsListHandler(client))
 	tools.AddTool(server, registry, gate, tools.ContactsImportTool(), tools.NewContactsImportHandler(client))
 	tools.AddTool(server, registry, gate, tools.FoldersReorderTool(), tools.NewFoldersReorderHandler(client))
+
+	// Bots: keyboards, polls, bot info.
+	tools.AddTool(server, registry, gate, tools.MessagesGetButtonsTool(), tools.NewMessagesGetButtonsHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesPressButtonTool(), tools.NewMessagesPressButtonHandler(client))
+	tools.AddTool(server, registry, gate, tools.PollsCreateTool(), tools.NewPollsCreateHandler(client))
+	tools.AddTool(server, registry, gate, tools.PollsGetTool(), tools.NewPollsGetHandler(client))
+	tools.AddTool(server, registry, gate, tools.PollsVoteTool(), tools.NewPollsVoteHandler(client))
+	tools.AddTool(server, registry, gate, tools.BotsGetInfoTool(), tools.NewBotsGetInfoHandler(client))
+
+	// Group administration.
+	tools.AddTool(server, registry, gate, tools.GroupsBanTool(), tools.NewGroupsBanHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsInviteCheckTool(), tools.NewGroupsInviteCheckHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsJoinInviteTool(), tools.NewGroupsJoinInviteHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsUpgradeTool(), tools.NewGroupsUpgradeHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsSetForumTool(), tools.NewGroupsSetForumHandler(client))
+	tools.AddTool(server, registry, gate, tools.GroupsAdminLogTool(), tools.NewGroupsAdminLogHandler(client))
+	tools.AddTool(server, registry, gate, tools.ChatsDeletePhotoTool(), tools.NewChatsDeletePhotoHandler(client))
+	tools.AddTool(server, registry, gate, tools.TopicsDeleteTool(), tools.NewTopicsDeleteHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

@@ -39,7 +39,7 @@ func TestRegisterTools(t *testing.T) {
 
 	client := testutil.NoopClient{}
 	registry := tools.BoolFieldRegistry{}
-	registerTools(server, client, registry, nil, "/tmp/mcp-tg/downloads", nil)
+	registerTools(server, client, tgclient.NewSubscriptionBroker(), registry, nil, "/tmp/mcp-tg/downloads", nil)
 
 	// Sample several tools spread across registration phases. If any of
 	// these is missing, someone registered the tool via mcp.AddTool instead

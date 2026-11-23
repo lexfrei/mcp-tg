@@ -29,7 +29,8 @@ const (
 	warmDialogsThrottle = 60 * time.Second
 	// warmArchiveFolderID is the peer folder holding archived dialogs.
 	// messages.getDialogs returns one folder per call and omits archived
-	// chats when folder_id is unset, so the archive needs its own pass.
+	// chats when folder_id is unset, so the archive needs its own pass —
+	// in the warm, and when tg_dialogs_list is asked for the archive.
 	warmArchiveFolderID = 1
 )
 
@@ -187,26 +188,132 @@ func (w *Wrapper) GetSelf(ctx context.Context) (*User, error) {
 	return nil, errors.New("self user not found in response")
 }
 
-// GetDialogs returns a list of dialogs.
+// GetDialogs returns a list of dialogs. The server caps one page at 100
+// dialogs, so a larger Limit is fetched page by page, following the same
+// date/id/peer cursor as the cache warm, until Limit is reached or the
+// list ends. A dialog seen on an earlier page is not repeated.
 func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultLimit
 	}
 
-	result, err := w.api.MessagesGetDialogs(ctx, &tg.MessagesGetDialogsRequest{
-		Limit:      limit,
-		OffsetDate: opts.OffsetDate,
-		OffsetPeer: &tg.InputPeerEmpty{},
-	})
-	if err != nil {
-		return nil, errors.Wrap(err, "getting dialogs")
+	// Sized by one server page, never by limit: limit comes from the caller,
+	// and sizing by it would allocate (or panic in makeslice) before the
+	// first request.
+	var (
+		dialogs = make([]Dialog, 0, min(limit, warmDialogsPageLimit))
+		seen    = make(map[InputPeer]bool, min(limit, warmDialogsPageLimit))
+		cursor  = dialogOffset{date: opts.OffsetDate, peer: &tg.InputPeerEmpty{}}
+	)
+
+	// warmDialogsMaxPages is a safety bound only: the cursor checks below
+	// end every walk that behaves.
+	for pages := 0; len(dialogs) < limit && pages < warmDialogsMaxPages; pages++ {
+		pageSize := archivePageSize(opts.Archived, limit-len(dialogs))
+		req := dialogsRequest(cursor, pageSize, opts.Archived)
+
+		result, err := w.api.MessagesGetDialogs(ctx, req)
+		if err != nil {
+			return nil, errors.Wrap(err, "getting dialogs")
+		}
+
+		page := extractDialogs(result)
+		w.cacheDialogPeers(page)
+
+		if opts.Archived {
+			page = archivedOnly(page)
+		}
+
+		appendNewDialogs(&dialogs, seen, page, limit)
+
+		// The walk ends on the RAW page, never on what survived the filter:
+		// an archive page can hold only the main list's pinned dialogs and
+		// filter to nothing while archived ones follow. A page shorter than
+		// asked for is the end of the list, and a cursor that did not move
+		// would fetch the same page again.
+		slice, ok := result.(*tg.MessagesDialogsSlice)
+		if !ok || len(slice.Dialogs) < pageSize {
+			break
+		}
+
+		next, ok := w.nextDialogOffset(slice)
+		if !ok || sameDialogOffset(next, cursor) {
+			break
+		}
+
+		cursor = next
 	}
 
-	dialogs := extractDialogs(result)
-	w.cacheDialogPeers(dialogs)
-
 	return dialogs, nil
+}
+
+// archivePageSize is how many dialogs to ask for when want are still
+// missing. An archive request always asks for a full server page and lets
+// appendNewDialogs cut it to the limit: the server puts the main list's
+// pinned dialogs ahead of an archive page, and a small page made only of
+// them would take the next cursor from a chat outside the archive, skipping
+// the archived chats newer than it.
+func archivePageSize(archived bool, want int) int {
+	if archived {
+		return warmDialogsPageLimit
+	}
+
+	return min(want, warmDialogsPageLimit)
+}
+
+// sameDialogOffset reports whether two cursors point at the same place.
+func sameDialogOffset(left, right dialogOffset) bool {
+	return left.date == right.date && left.id == right.id && left.peer.String() == right.peer.String()
+}
+
+func dialogsRequest(cursor dialogOffset, limit int, archived bool) *tg.MessagesGetDialogsRequest {
+	req := &tg.MessagesGetDialogsRequest{
+		Limit:      limit,
+		OffsetDate: cursor.date,
+		OffsetID:   cursor.id,
+		OffsetPeer: cursor.peer,
+	}
+	if archived {
+		req.SetFolderID(warmArchiveFolderID)
+	}
+
+	return req
+}
+
+// archivedOnly drops the main list's pinned dialogs, which the server
+// returns ahead of an archive page as well (seen on a live account with an
+// empty archive), keeping only dialogs the server itself files under the
+// archive folder.
+func archivedOnly(page []Dialog) []Dialog {
+	kept := page[:0]
+
+	for _, dlg := range page {
+		if dlg.Archived {
+			kept = append(kept, dlg)
+		}
+	}
+
+	return kept
+}
+
+// appendNewDialogs appends the page's dialogs not already in seen, up to
+// limit.
+func appendNewDialogs(dialogs *[]Dialog, seen map[InputPeer]bool, page []Dialog, limit int) {
+	for _, dlg := range page {
+		if len(*dialogs) >= limit {
+			break
+		}
+
+		key := InputPeer{Type: dlg.Peer.Type, ID: dlg.Peer.ID}
+		if seen[key] {
+			continue
+		}
+
+		seen[key] = true
+
+		*dialogs = append(*dialogs, dlg)
+	}
 }
 
 // SearchDialogs searches dialogs by query.
@@ -1552,22 +1659,21 @@ func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputP
 	return w.findFolderByTitle(ctx, title, peers)
 }
 
-// EditFolder updates an existing chat folder.
+// EditFolder updates an existing chat folder's title and, when peers is
+// non-nil, the chats it holds. updateDialogFilter replaces the whole
+// filter, so the current one is read back first and everything else it
+// carries — chat-kind rules, excluded chats, emoticon, a shared folder's
+// kind — is sent unchanged; a request built from the title and peers
+// alone would silently wipe it.
 func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error {
-	includePeers := make([]tg.InputPeerClass, len(peers))
-	for idx, peer := range peers {
-		includePeers[idx] = InputPeerToTG(peer)
+	current, err := w.rawFolder(ctx, folderID)
+	if err != nil {
+		return err
 	}
 
-	filter := tg.DialogFilter{
-		ID:           folderID,
-		Title:        tg.TextWithEntities{Text: title},
-		IncludePeers: includePeers,
-	}
-
-	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+	_, err = w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
 		ID:     folderID,
-		Filter: &filter,
+		Filter: editedFilter(current, title, peers),
 	})
 
 	return errors.Wrap(err, "editing folder")
@@ -2393,7 +2499,7 @@ func (w *Wrapper) nextDialogOffset(slice *tg.MessagesDialogsSlice) (dialogOffset
 
 	return dialogOffset{
 		id:   last.TopMessage,
-		date: findMessageDate(slice.Messages, last.TopMessage),
+		date: findMessageDate(slice.Messages, last.Peer, last.TopMessage),
 		peer: inputPeer,
 	}, true
 }
@@ -2411,14 +2517,26 @@ func peerClassTypeID(p tg.PeerClass) (PeerType, int64, bool) {
 	}
 }
 
-func findMessageDate(messages []tg.MessageClass, messageID int) int {
+// findMessageDate returns the date of a dialog's top message. Message
+// IDs are numbered per chat, so the match is on the chat as well as the
+// ID, and service messages (a member joined, the group was created) count:
+// they are often a quiet chat's newest message.
+func findMessageDate(messages []tg.MessageClass, peer tg.PeerClass, messageID int) int {
 	for _, raw := range messages {
-		if msg, ok := raw.(*tg.Message); ok && msg.ID == messageID {
-			return msg.Date
+		msg, ok := raw.AsNotEmpty()
+		if ok && msg.GetID() == messageID && sameTGPeer(msg.GetPeerID(), peer) {
+			return msg.GetDate()
 		}
 	}
 
 	return 0
+}
+
+func sameTGPeer(left, right tg.PeerClass) bool {
+	leftType, leftID, leftOK := peerClassTypeID(left)
+	rightType, rightID, rightOK := peerClassTypeID(right)
+
+	return leftOK && rightOK && leftType == rightType && leftID == rightID
 }
 
 // searchGlobalPage converts an MTProto search response into one result
@@ -2497,9 +2615,9 @@ func (w *Wrapper) findFolderByTitle(ctx context.Context, title string, peers []I
 		return &Folder{Title: title, Peers: peers}, nil //nolint:nilerr // best-effort: return without ID if listing fails.
 	}
 
-	for _, folder := range folders {
-		if folder.Title == title {
-			return &Folder{ID: folder.ID, Title: title, Peers: peers}, nil
+	for idx := range folders {
+		if folders[idx].Title == title {
+			return &Folder{ID: folders[idx].ID, Title: title, Peers: peers}, nil
 		}
 	}
 

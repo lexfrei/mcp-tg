@@ -141,6 +141,50 @@ func TestEditedFilter_PinnedChatLeftOutLeavesTheFolder(t *testing.T) {
 	}
 }
 
+// peers: [] empties the folder: both lists end up empty except for Saved
+// Messages, which peers cannot name.
+func TestEditedFilter_EmptyListEmptiesTheFolder(t *testing.T) {
+	edited, ok := editedFilter(ruleFolder(), "Work", []InputPeer{}).(*tg.DialogFilter)
+	if !ok {
+		t.Fatal("edited filter changed constructor")
+	}
+
+	if len(edited.PinnedPeers) != 0 {
+		t.Errorf("pinned = %+v, want none", edited.PinnedPeers)
+	}
+
+	if len(edited.IncludePeers) != 1 {
+		t.Fatalf("include = %+v, want only Saved Messages", edited.IncludePeers)
+	}
+
+	if _, self := edited.IncludePeers[0].(*tg.InputPeerSelf); !self {
+		t.Errorf("include[0] = %#v, want Saved Messages kept", edited.IncludePeers[0])
+	}
+}
+
+// A chat already in the folder is sent back as the filter holds it, so a
+// resolution without an access hash cannot break the edit.
+func TestEditedFilter_KeptChatReusesTheFiltersPeer(t *testing.T) {
+	peers := []InputPeer{{Type: PeerUser, ID: 20}}
+
+	edited, ok := editedFilter(ruleFolder(), "Work", peers).(*tg.DialogFilter)
+	if !ok {
+		t.Fatal("edited filter changed constructor")
+	}
+
+	for _, raw := range edited.IncludePeers {
+		if user, isUser := raw.(*tg.InputPeerUser); isUser && user.UserID == 20 {
+			if user.AccessHash != 200 {
+				t.Errorf("user 20 hash = %d, want the filter's 200", user.AccessHash)
+			}
+
+			return
+		}
+	}
+
+	t.Errorf("include = %+v, want user 20 kept", edited.IncludePeers)
+}
+
 // folderInvoker serves a fixed folder list and records every write.
 type folderInvoker struct {
 	filters []tg.DialogFilterClass

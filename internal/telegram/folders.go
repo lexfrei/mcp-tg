@@ -101,17 +101,35 @@ func splitFolderPeers(
 	}
 
 	include := make([]tg.InputPeerClass, 0, len(peers)+1)
+	current := make(map[InputPeer]tg.InputPeerClass, len(included))
 
 	for _, raw := range included {
-		if _, self := folderPeerKey(raw); self {
+		key, self := folderPeerKey(raw)
+		if self {
 			include = append(include, raw)
+
+			continue
 		}
+
+		current[key] = raw
 	}
 
+	// A chat already in the folder goes back as the filter holds it, with
+	// the access hash the server issued, rather than as a fresh resolution
+	// that can come back without one on a cold cache.
 	for _, peer := range peers {
-		if !isPinned[InputPeer{Type: peer.Type, ID: peer.ID}] {
-			include = append(include, InputPeerToTG(peer))
+		key := InputPeer{Type: peer.Type, ID: peer.ID}
+		if isPinned[key] {
+			continue
 		}
+
+		if raw, ok := current[key]; ok {
+			include = append(include, raw)
+
+			continue
+		}
+
+		include = append(include, InputPeerToTG(peer))
 	}
 
 	return keptPinned, include

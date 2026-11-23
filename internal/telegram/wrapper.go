@@ -210,7 +210,7 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 	// warmDialogsMaxPages is a safety bound only: the cursor checks below
 	// end every walk that behaves.
 	for pages := 0; len(dialogs) < limit && pages < warmDialogsMaxPages; pages++ {
-		pageSize := min(limit-len(dialogs), warmDialogsPageLimit)
+		pageSize := archivePageSize(opts.Archived, limit-len(dialogs))
 		req := dialogsRequest(cursor, pageSize, opts.Archived)
 
 		result, err := w.api.MessagesGetDialogs(ctx, req)
@@ -246,6 +246,20 @@ func (w *Wrapper) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, er
 	}
 
 	return dialogs, nil
+}
+
+// archivePageSize is how many dialogs to ask for when want are still
+// missing. An archive request always asks for a full server page and lets
+// appendNewDialogs cut it to the limit: the server puts the main list's
+// pinned dialogs ahead of an archive page, and a small page made only of
+// them would take the next cursor from a chat outside the archive, skipping
+// the archived chats newer than it.
+func archivePageSize(archived bool, want int) int {
+	if archived {
+		return warmDialogsPageLimit
+	}
+
+	return min(want, warmDialogsPageLimit)
 }
 
 // sameDialogOffset reports whether two cursors point at the same place.

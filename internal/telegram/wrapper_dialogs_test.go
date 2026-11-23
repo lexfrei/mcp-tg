@@ -176,12 +176,16 @@ func TestGetDialogs_ShortPageEndsTheWalk(t *testing.T) {
 type scriptedDialogsInvoker struct {
 	replies  []func() (tg.MessagesDialogsClass, error)
 	requests int
+	limits   []int
 }
 
 func (s *scriptedDialogsInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
-	if _, ok := input.(*tg.MessagesGetDialogsRequest); !ok || s.requests >= len(s.replies) {
+	req, ok := input.(*tg.MessagesGetDialogsRequest)
+	if !ok || s.requests >= len(s.replies) {
 		return errUnexpectedRequest
 	}
+
+	s.limits = append(s.limits, req.Limit)
 
 	reply, err := s.replies[s.requests]()
 	s.requests++
@@ -294,18 +298,18 @@ func TestGetDialogs_ArchivedDropsTheMainListsPinned(t *testing.T) {
 	}
 }
 
-// A page that held only the main list's pinned dialogs filters to nothing,
-// and must not end the walk: the archived dialogs come on the next page.
-func TestGetDialogs_ArchivedReadsPastAPageOfPinnedOnly(t *testing.T) {
-	pinned := dialogsPage(0, 1)
+// A full page that filters to nothing must not end the walk: the archived
+// dialogs come on the next page.
+func TestGetDialogs_ArchivedReadsPastAPageFilteredToNothing(t *testing.T) {
+	unfiled := dialogsPage(0, warmDialogsPageLimit)
 
-	archived := dialogsPage(1, 1)
+	archived := dialogsPage(warmDialogsPageLimit, 1)
 	for _, dlg := range archived.Dialogs {
 		dlg.(*tg.Dialog).SetFolderID(warmArchiveFolderID)
 	}
 
 	invoker := &scriptedDialogsInvoker{replies: []func() (tg.MessagesDialogsClass, error){
-		func() (tg.MessagesDialogsClass, error) { return pinned, nil },
+		func() (tg.MessagesDialogsClass, error) { return unfiled, nil },
 		func() (tg.MessagesDialogsClass, error) { return archived, nil },
 	}}
 
@@ -314,16 +318,15 @@ func TestGetDialogs_ArchivedReadsPastAPageOfPinnedOnly(t *testing.T) {
 		t.Fatalf("GetDialogs: %v", err)
 	}
 
-	if len(dialogs) != 1 || dialogs[0].Peer.ID != 2 {
-		t.Errorf("dialogs = %+v, want the archived user 2 from the second page", dialogs)
+	if len(dialogs) != 1 || dialogs[0].Peer.ID != warmDialogsPageLimit+1 {
+		t.Errorf("dialogs = %+v, want the archived user from the second page", dialogs)
 	}
 }
 
 // A cursor that does not move would ask for the same page forever: here a
-// full page of the main list's pinned dialog, filtered out of the archive,
-// comes back on every request.
+// full page of dialogs outside the archive comes back on every request.
 func TestGetDialogs_StopsWhenTheCursorDoesNotAdvance(t *testing.T) {
-	same := func() (tg.MessagesDialogsClass, error) { return dialogsPage(0, 1), nil }
+	same := func() (tg.MessagesDialogsClass, error) { return dialogsPage(0, warmDialogsPageLimit), nil }
 	invoker := &scriptedDialogsInvoker{replies: []func() (tg.MessagesDialogsClass, error){same, same, same}}
 
 	dialogs, err := newWrapperWithInvoker(invoker).GetDialogs(t.Context(), DialogOpts{Limit: 1, Archived: true})
@@ -333,5 +336,45 @@ func TestGetDialogs_StopsWhenTheCursorDoesNotAdvance(t *testing.T) {
 
 	if len(dialogs) != 0 || invoker.requests != 2 {
 		t.Errorf("dialogs = %d, requests = %d; want none and a stop after the repeated page", len(dialogs), invoker.requests)
+	}
+}
+
+// A small archive limit still asks for a full page: a short page made only
+// of the main list's pinned chats would take the next cursor from one of
+// them and skip the archived chats newer than it.
+func TestGetDialogs_ArchivedAsksForAFullPage(t *testing.T) {
+	invoker := &scriptedDialogsInvoker{replies: []func() (tg.MessagesDialogsClass, error){
+		func() (tg.MessagesDialogsClass, error) { return dialogsPage(0, 2), nil },
+	}}
+
+	_, err := newWrapperWithInvoker(invoker).GetDialogs(t.Context(), DialogOpts{Limit: 1, Archived: true})
+	if err != nil {
+		t.Fatalf("GetDialogs: %v", err)
+	}
+
+	if len(invoker.limits) != 1 || invoker.limits[0] != warmDialogsPageLimit {
+		t.Errorf("request limits = %v, want one request for %d", invoker.limits, warmDialogsPageLimit)
+	}
+}
+
+// Full pages that the archive filter empties, each with a new cursor, end
+// only at the page bound.
+func TestGetDialogs_ArchivedStopsAtThePageBound(t *testing.T) {
+	replies := make([]func() (tg.MessagesDialogsClass, error), 0, warmDialogsMaxPages+1)
+	for idx := range warmDialogsMaxPages + 1 {
+		replies = append(replies, func() (tg.MessagesDialogsClass, error) {
+			return dialogsPage(idx*warmDialogsPageLimit, warmDialogsPageLimit), nil
+		})
+	}
+
+	invoker := &scriptedDialogsInvoker{replies: replies}
+
+	dialogs, err := newWrapperWithInvoker(invoker).GetDialogs(t.Context(), DialogOpts{Limit: 1, Archived: true})
+	if err != nil {
+		t.Fatalf("GetDialogs: %v", err)
+	}
+
+	if len(dialogs) != 0 || invoker.requests != warmDialogsMaxPages {
+		t.Errorf("dialogs = %d, requests = %d; want none after %d requests", len(dialogs), invoker.requests, warmDialogsMaxPages)
 	}
 }

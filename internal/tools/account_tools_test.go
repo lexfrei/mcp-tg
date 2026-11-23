@@ -180,3 +180,31 @@ func TestPrivacySet_RejectsExceptionsThatAreNotResolvedUsers(t *testing.T) {
 		}
 	}
 }
+
+// phone_discovery takes only everybody and contacts; the other two are
+// refused before any request.
+func TestPrivacySet_PhoneDiscoveryRejectsValuesItDoesNotTake(t *testing.T) {
+	for _, value := range []string{telegram.PrivacyCloseFriends, telegram.PrivacyNobody} {
+		mock := &mockClient{}
+
+		result, _, err := NewPrivacySetHandler(mock)(context.Background(), nil,
+			PrivacySetParams{Key: "phone_discovery", Value: value})
+		if !errors.Is(err, ErrPrivacyValueNotOffered) || result == nil || !result.IsError {
+			t.Errorf("%s: err = %v, want ErrPrivacyValueNotOffered", value, err)
+		}
+
+		if mock.lastPrivacyUpdate != nil {
+			t.Errorf("%s: the request was sent", value)
+		}
+	}
+
+	for _, value := range []string{telegram.PrivacyEverybody, telegram.PrivacyContacts} {
+		mock := &mockClient{}
+
+		_, _, err := NewPrivacySetHandler(mock)(context.Background(), nil,
+			PrivacySetParams{Key: "phone_discovery", Value: value})
+		if err != nil || mock.lastPrivacyUpdate == nil || mock.lastPrivacyUpdate.Value != value {
+			t.Errorf("%s: err = %v, update = %+v; want it sent", value, err, mock.lastPrivacyUpdate)
+		}
+	}
+}

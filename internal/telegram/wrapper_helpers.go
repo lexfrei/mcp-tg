@@ -629,7 +629,8 @@ func dialogsFromSearch(result *tg.ContactsFound) []Dialog {
 	dialogs := make([]Dialog, 0, len(result.Chats)+len(result.Users))
 
 	for _, ch := range result.Chats {
-		if c, ok := ch.(*tg.Channel); ok {
+		switch c := ch.(type) {
+		case *tg.Channel:
 			dialogs = append(dialogs, Dialog{
 				Peer: InputPeer{
 					Type:       PeerChannel,
@@ -640,6 +641,14 @@ func dialogsFromSearch(result *tg.ContactsFound) []Dialog {
 				Username:  c.Username,
 				IsChannel: !c.Megagroup,
 				IsGroup:   c.Megagroup,
+			})
+		case *tg.Chat:
+			// A basic group the account is in: tg_chats_search_public lists
+			// it from the same reply, so this search must not drop it.
+			dialogs = append(dialogs, Dialog{
+				Peer:    InputPeer{Type: PeerChat, ID: c.ID},
+				Title:   c.Title,
+				IsGroup: true,
 			})
 		}
 	}

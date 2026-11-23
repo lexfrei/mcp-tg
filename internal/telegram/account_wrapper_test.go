@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"bytes"
 	"context"
 	"testing"
 
@@ -10,14 +11,17 @@ import (
 )
 
 // accountInvoker answers the account requests with scripted replies and
-// counts the requests that would change something.
+// records the requests that would change something, decoded from the wire
+// bytes, so a test sees what the server would get.
 type accountInvoker struct {
-	search   *tg.ContactsFound
-	contacts *tg.ContactsContacts
-	imported *tg.ContactsImportedContacts
-	privacy  *tg.AccountPrivacyRules
-	photos   tg.PhotosPhotosClass
-	writes   int
+	search       *tg.ContactsFound
+	contacts     *tg.ContactsContacts
+	imported     *tg.ContactsImportedContacts
+	privacy      *tg.AccountPrivacyRules
+	photos       tg.PhotosPhotosClass
+	writes       int
+	setPrivacy   []*tg.AccountSetPrivacyRequest
+	deletePhotos []*tg.PhotosDeletePhotosRequest
 }
 
 func (a *accountInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
@@ -32,13 +36,34 @@ func (a *accountInvoker) Invoke(_ context.Context, input bin.Encoder, output bin
 		return encodeAndDecode(a.privacy, output)
 	case *tg.PhotosGetUserPhotosRequest:
 		return encodeAndDecode(a.photos, output)
-	case *tg.AccountSetPrivacyRequest, *tg.PhotosDeletePhotosRequest:
+	case *tg.AccountSetPrivacyRequest:
 		a.writes++
 
-		return errors.Wrapf(errUnexpectedRequest, "%T", input)
+		decoded := &tg.AccountSetPrivacyRequest{}
+		a.setPrivacy = append(a.setPrivacy, decoded)
+
+		return a.decodeWrite(input, decoded, &tg.AccountPrivacyRules{}, output)
+	case *tg.PhotosDeletePhotosRequest:
+		a.writes++
+
+		decoded := &tg.PhotosDeletePhotosRequest{}
+		a.deletePhotos = append(a.deletePhotos, decoded)
+
+		return a.decodeWrite(input, decoded, &tg.LongVector{}, output)
 	default:
 		return errors.Wrapf(errUnexpectedRequest, "%T", input)
 	}
+}
+
+// decodeWrite round-trips a write request through its wire encoding into
+// decoded and answers it with reply.
+func (a *accountInvoker) decodeWrite(input bin.Encoder, decoded bin.Decoder, reply bin.Encoder, output bin.Decoder) error {
+	err := encodeAndDecode(input, decoded)
+	if err != nil {
+		return err
+	}
+
+	return encodeAndDecode(reply, output)
 }
 
 func searchUser(id int64, bot bool) *tg.User {
@@ -166,5 +191,167 @@ func TestDeleteProfilePhoto_NoPhotoDeletesNothing(t *testing.T) {
 	err := newWrapperWithInvoker(invoker).DeleteProfilePhoto(t.Context())
 	if !errors.Is(err, ErrNoProfilePhoto) || invoker.writes != 0 {
 		t.Errorf("err = %v, writes = %d; want ErrNoProfilePhoto and none", err, invoker.writes)
+	}
+}
+
+// The delete must address photos[0] with its access hash and file
+// reference: an InputPhoto with the ID alone is refused by the server.
+func TestDeleteProfilePhoto_SendsTheCurrentPhoto(t *testing.T) {
+	invoker := &accountInvoker{photos: &tg.PhotosPhotos{Photos: []tg.PhotoClass{
+		&tg.Photo{ID: 11, AccessHash: 22, FileReference: []byte{1, 2, 3}},
+		&tg.Photo{ID: 33, AccessHash: 44, FileReference: []byte{4}},
+	}}}
+
+	err := newWrapperWithInvoker(invoker).DeleteProfilePhoto(t.Context())
+	if err != nil {
+		t.Fatalf("DeleteProfilePhoto: %v", err)
+	}
+
+	if len(invoker.deletePhotos) != 1 || len(invoker.deletePhotos[0].ID) != 1 {
+		t.Fatalf("requests = %+v, want one delete of one photo", invoker.deletePhotos)
+	}
+
+	photo, ok := invoker.deletePhotos[0].ID[0].(*tg.InputPhoto)
+	if !ok {
+		t.Fatalf("photo = %T, want *tg.InputPhoto", invoker.deletePhotos[0].ID[0])
+	}
+
+	if photo.ID != 11 || photo.AccessHash != 22 || !bytes.Equal(photo.FileReference, []byte{1, 2, 3}) {
+		t.Errorf("photo = %+v, want photos[0]: id 11, hash 22, file reference 010203", photo)
+	}
+}
+
+// Each name must reach the server as its own InputPrivacyKey — a name mapped
+// onto another key would silently change a different setting — and the rules
+// must be the ones privacyRules builds, exceptions included.
+func TestSetPrivacy_SendsTheKeyAndRules(t *testing.T) {
+	wantKeys := map[string]tg.InputPrivacyKeyClass{
+		"last_seen":       &tg.InputPrivacyKeyStatusTimestamp{},
+		"phone_number":    &tg.InputPrivacyKeyPhoneNumber{},
+		"phone_discovery": &tg.InputPrivacyKeyAddedByPhone{},
+		"profile_photo":   &tg.InputPrivacyKeyProfilePhoto{},
+		"bio":             &tg.InputPrivacyKeyAbout{},
+		"birthday":        &tg.InputPrivacyKeyBirthday{},
+		"forwards":        &tg.InputPrivacyKeyForwards{},
+		"group_invites":   &tg.InputPrivacyKeyChatInvite{},
+		"calls":           &tg.InputPrivacyKeyPhoneCall{},
+		"voice_messages":  &tg.InputPrivacyKeyVoiceMessages{},
+	}
+
+	if keys := PrivacyKeys(); len(keys) != len(wantKeys) {
+		t.Fatalf("PrivacyKeys = %v, the table below covers %d", keys, len(wantKeys))
+	}
+
+	for _, key := range PrivacyKeys() {
+		want, ok := wantKeys[key]
+		if !ok {
+			t.Errorf("%s: missing from the expected keys", key)
+
+			continue
+		}
+
+		update := &PrivacyUpdate{
+			Key: key, Value: PrivacyContacts,
+			AllowUsers:    []InputPeer{{Type: PeerUser, ID: 7, AccessHash: 70}},
+			DisallowUsers: []InputPeer{{Type: PeerUser, ID: 8, AccessHash: 80}},
+		}
+
+		invoker := &accountInvoker{}
+
+		err := newWrapperWithInvoker(invoker).SetPrivacy(t.Context(), update)
+		if err != nil || len(invoker.setPrivacy) != 1 {
+			t.Fatalf("%s: err = %v, requests = %d; want one request", key, err, len(invoker.setPrivacy))
+		}
+
+		sent := invoker.setPrivacy[0]
+		if sent.Key.TypeID() != want.TypeID() {
+			t.Errorf("%s: key = %T, want %T", key, sent.Key, want)
+		}
+
+		wantRules, err := privacyRules(update)
+		if err != nil {
+			t.Fatalf("%s: privacyRules: %v", key, err)
+		}
+
+		if got, want := encodeRules(t, sent.Rules), encodeRules(t, wantRules); !bytes.Equal(got, want) {
+			t.Errorf("%s: rules = %+v, want %+v", key, sent.Rules, wantRules)
+		}
+	}
+}
+
+func encodeRules(t *testing.T, rules []tg.InputPrivacyRuleClass) []byte {
+	t.Helper()
+
+	var buf bin.Buffer
+
+	for _, rule := range rules {
+		err := rule.Encode(&buf)
+		if err != nil {
+			t.Fatalf("encode %T: %v", rule, err)
+		}
+	}
+
+	return buf.Raw()
+}
+
+// Basic groups and channels are separate ID spaces: a chat and a channel
+// sharing an ID must each come back as itself.
+func TestSearchPublic_MatchesChatHitsOnTypeAndID(t *testing.T) {
+	invoker := &accountInvoker{search: &tg.ContactsFound{
+		Results: []tg.PeerClass{&tg.PeerChannel{ChannelID: 5}, &tg.PeerChat{ChatID: 5}},
+		Chats: []tg.ChatClass{
+			&tg.Chat{ID: 5, Title: "group", Photo: &tg.ChatPhotoEmpty{}},
+			&tg.Channel{ID: 5, AccessHash: 50, Title: "channel", Broadcast: true, Photo: &tg.ChatPhotoEmpty{}},
+		},
+	}}
+
+	infos, err := newWrapperWithInvoker(invoker).SearchPublic(t.Context(), "x", 10)
+	if err != nil {
+		t.Fatalf("SearchPublic: %v", err)
+	}
+
+	if len(infos) != 2 {
+		t.Fatalf("infos = %+v, want the channel and the group", infos)
+	}
+
+	if infos[0].Peer.Type != PeerChannel || infos[0].Title != "channel" || infos[0].Peer.AccessHash != 50 {
+		t.Errorf("first = %+v, want the channel with its access hash", infos[0])
+	}
+
+	if infos[1].Peer.Type != PeerChat || infos[1].Title != "group" {
+		t.Errorf("second = %+v, want the basic group", infos[1])
+	}
+}
+
+// tg_dialogs_search promises every chat the search answers with, so a basic
+// group in the reply must not be dropped.
+func TestSearchDialogs_KeepsBasicGroups(t *testing.T) {
+	invoker := &accountInvoker{search: &tg.ContactsFound{
+		Chats: []tg.ChatClass{
+			&tg.Chat{ID: 5, Title: "group", Photo: &tg.ChatPhotoEmpty{}},
+			&tg.Channel{ID: 6, AccessHash: 60, Title: "news", Broadcast: true, Photo: &tg.ChatPhotoEmpty{}},
+		},
+		Users: []tg.UserClass{searchUser(7, false)},
+	}}
+
+	dialogs, err := newWrapperWithInvoker(invoker).SearchDialogs(t.Context(), "x")
+	if err != nil {
+		t.Fatalf("SearchDialogs: %v", err)
+	}
+
+	var group *Dialog
+
+	for idx := range dialogs {
+		if dialogs[idx].Peer.Type == PeerChat {
+			group = &dialogs[idx]
+		}
+	}
+
+	if len(dialogs) != 3 || group == nil {
+		t.Fatalf("dialogs = %+v, want the group, the channel and the user", dialogs)
+	}
+
+	if group.Peer.ID != 5 || group.Title != "group" || !group.IsGroup || group.IsChannel {
+		t.Errorf("group = %+v, want basic group 5 titled group", group)
 	}
 }

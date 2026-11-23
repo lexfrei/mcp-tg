@@ -114,6 +114,10 @@ var ErrPrivacyExceptionUnresolved = errors.New(
 		"read the setting with tg_privacy_get first, or pass an @username",
 )
 
+// ErrPrivacyValueNotOffered is returned for a value a setting does not take:
+// phone_discovery is only everybody or contacts.
+var ErrPrivacyValueNotOffered = errors.New("this setting does not take that value")
+
 // PrivacySetParams defines the parameters for the tg_privacy_set tool.
 type PrivacySetParams struct {
 	Key           string   `json:"key"                     jsonschema:"Which setting, as in tg_privacy_get"`
@@ -151,6 +155,14 @@ func NewPrivacySetHandler(client telegram.Client) mcp.ToolHandlerFor[PrivacySetP
 func privacyUpdate(ctx context.Context, client telegram.Client, params *PrivacySetParams) (*telegram.PrivacyUpdate, error) {
 	if params.Key == "" {
 		return nil, validationErr(ErrPrivacyKeyRequired)
+	}
+
+	// The server refuses these anyway; refusing them here names the values
+	// the setting does take, and spends no request.
+	if params.Key == "phone_discovery" &&
+		(params.Value == telegram.PrivacyCloseFriends || params.Value == telegram.PrivacyNobody) {
+		return nil, validationErr(errors.Wrapf(ErrPrivacyValueNotOffered,
+			"phone_discovery takes everybody or contacts, not %q", params.Value))
 	}
 
 	allow, err := resolvePrivacyUsers(ctx, client, params.AllowUsers, "allowUsers")

@@ -413,8 +413,10 @@ func peerInfoFrom(peer InputPeer, chats []tg.ChatClass, users []tg.UserClass) (P
 	}
 
 	for _, class := range chats {
+		// Basic groups and channels are separate ID spaces: the type must
+		// match too, or a chat and a channel sharing an ID swap places.
 		info, ok := searchChatInfo(class)
-		if ok && info.Peer.ID == peer.ID {
+		if ok && info.Peer.Type == peer.Type && info.Peer.ID == peer.ID {
 			return info, true
 		}
 	}

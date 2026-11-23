@@ -10,7 +10,7 @@ The `key` names the setting:
 | --- | --- |
 | `last_seen` | See your last-seen time and online status |
 | `phone_number` | See your phone number |
-| `phone_discovery` | Find you by your phone number (only `everybody` or `contacts`) |
+| `phone_discovery` | Find you by your phone number (only `everybody` or `contacts`; the other two values are refused before the request) |
 | `profile_photo` | See your profile photos |
 | `bio` | See your bio |
 | `birthday` | See your birthday |

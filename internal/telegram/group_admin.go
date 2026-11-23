@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -51,8 +52,16 @@ type InviteInfo struct {
 }
 
 // AdminLogEvent is one entry of a channel's or supergroup's admin log.
+//
+// ID is a decimal string, not a number: event IDs are 64-bit, and a client
+// that parses JSON numbers as float64 (JavaScript's JSON.parse) rounds one
+// above 2^53, so a maxId copied from it would page from the wrong event.
+// The field is a string rather than an int64 with the ",string" option
+// because the tool's output schema is inferred from the Go type, and go-sdk
+// validates every result against it: ",string" would advertise an integer
+// and fail each result that carries a string.
 type AdminLogEvent struct {
-	ID     int64  `json:"id"`
+	ID     string `json:"id"`
 	Date   int    `json:"date"`
 	UserID int64  `json:"userId"`
 	Action string `json:"action"`
@@ -203,7 +212,7 @@ func (w *Wrapper) GetAdminLog(ctx context.Context, peer InputPeer, opts AdminLog
 	events := make([]AdminLogEvent, 0, len(result.Events))
 	for _, event := range result.Events {
 		events = append(events, AdminLogEvent{
-			ID:     event.ID,
+			ID:     strconv.FormatInt(event.ID, 10),
 			Date:   event.Date,
 			UserID: event.UserID,
 			Action: adminLogActionName(event.Action),
@@ -327,28 +336,18 @@ func firstChat(updates tg.UpdatesClass) (*PeerInfo, bool) {
 }
 
 // migratedChannel finds the supergroup a basic group was migrated into. The
-// envelope carries the old chat with migrated_to naming the new channel; when
-// it does not, the last channel in the envelope is taken.
+// envelope carries the old chat with migrated_to naming the new channel, and
+// only that channel is taken: when it is missing from the envelope, another
+// channel there is not the new supergroup, and reporting (and caching) it
+// would send the caller to the wrong chat. Only an envelope whose old chat
+// names no successor falls back to the last channel in it.
 func migratedChannel(updates tg.UpdatesClass, chatID int64) (*PeerInfo, bool) {
 	_, _, chats, ok := unwrapUpdates(updates)
 	if !ok {
 		return nil, false
 	}
 
-	var target int64
-
-	for _, chat := range chats {
-		old, isChat := chat.(*tg.Chat)
-		if !isChat || old.ID != chatID {
-			continue
-		}
-
-		if moved, set := old.GetMigratedTo(); set {
-			if channel, isChannel := moved.(*tg.InputChannel); isChannel {
-				target = channel.ChannelID
-			}
-		}
-	}
+	target := migratedTo(chats, chatID)
 
 	var fallback *PeerInfo
 
@@ -366,7 +365,29 @@ func migratedChannel(updates tg.UpdatesClass, chatID int64) (*PeerInfo, bool) {
 		fallback = info
 	}
 
+	if target != 0 {
+		return nil, false
+	}
+
 	return fallback, fallback != nil
+}
+
+// migratedTo returns the channel ID the old chat's migrated_to names, or 0.
+func migratedTo(chats []tg.ChatClass, chatID int64) int64 {
+	for _, chat := range chats {
+		old, isChat := chat.(*tg.Chat)
+		if !isChat || old.ID != chatID {
+			continue
+		}
+
+		if moved, set := old.GetMigratedTo(); set {
+			if channel, isChannel := moved.(*tg.InputChannel); isChannel {
+				return channel.ChannelID
+			}
+		}
+	}
+
+	return 0
 }
 
 func chatPeerInfo(chat tg.ChatClass) (*PeerInfo, bool) {

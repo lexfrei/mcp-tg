@@ -3,7 +3,9 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -58,6 +60,10 @@ func ChatsDeletePhotoTool() *mcp.Tool {
 	}
 }
 
+// ErrTopicIDOutOfRange is returned when topicId does not fit the 32-bit field
+// Telegram encodes it in.
+var ErrTopicIDOutOfRange = errors.New("topicId must not exceed 2147483647")
+
 // TopicsDeleteParams defines the parameters for the tg_topics_delete tool.
 type TopicsDeleteParams struct {
 	Peer    string `json:"peer"    jsonschema:"Forum supergroup: @username, t.me/ link, or numeric ID"`
@@ -92,6 +98,12 @@ func deleteTopic(ctx context.Context, client telegram.Client, params *TopicsDele
 
 	if params.TopicID <= 0 {
 		return validationErr(ErrTopicIDRequired)
+	}
+
+	// top_msg_id is a 32-bit int on the wire: a larger value would wrap
+	// into another topic's ID (4294967297 becomes 1) and delete that one.
+	if params.TopicID > math.MaxInt32 {
+		return validationErr(ErrTopicIDOutOfRange)
 	}
 
 	peer, err := client.ResolvePeer(ctx, params.Peer)

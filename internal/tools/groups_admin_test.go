@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 
@@ -79,7 +80,7 @@ func TestGroupsSetForum(t *testing.T) {
 
 func TestGroupsAdminLog_DefaultsLimitAndFormats(t *testing.T) {
 	mock := &mockClient{peer: channelPeerFor(1), adminLog: []telegram.AdminLogEvent{
-		{ID: 3, Date: 1700000000, UserID: 5, Action: "change_title", Detail: "A → B"},
+		{ID: "3", Date: 1700000000, UserID: 5, Action: "change_title", Detail: "A → B"},
 	}}
 
 	_, result, err := NewGroupsAdminLogHandler(mock)(context.Background(), nil,
@@ -130,6 +131,7 @@ func TestGroupsAdminLog_RejectsBadPaging(t *testing.T) {
 		"limit above 100":    {GroupsAdminLogParams{Peer: "@team", Limit: 101}, ErrAdminLogLimit},
 		"negative limit":     {GroupsAdminLogParams{Peer: "@team", Limit: -1}, ErrNegativeLimit},
 		"maxId not a number": {GroupsAdminLogParams{Peer: "@team", MaxID: "12x"}, ErrAdminLogMaxID},
+		"negative maxId":     {GroupsAdminLogParams{Peer: "@team", MaxID: "-1"}, ErrAdminLogMaxID},
 	} {
 		mock := &mockClient{peer: channelPeerFor(1)}
 
@@ -174,38 +176,103 @@ func (*alreadyMemberClient) JoinByInvite(context.Context, string) (*telegram.Pee
 }
 
 // The wrapper's input refusals are validation errors, not Telegram failures.
+// Each sentinel groupErr admits has a row, so dropping one fails a test.
 func TestGroupTools_InputRefusalsAreValidationErrors(t *testing.T) {
-	for name, call := range map[string]func(*mockClient) error{
-		"set_forum": func(m *mockClient) error {
-			_, _, err := NewGroupsSetForumHandler(m)(context.Background(), nil, GroupsSetForumParams{Peer: "@x"})
+	setForum := func(m *mockClient) error {
+		_, _, err := NewGroupsSetForumHandler(m)(context.Background(), nil, GroupsSetForumParams{Peer: "@x"})
 
-			return err
-		},
+		return err
+	}
+	upgrade := func(m *mockClient) error {
+		_, _, err := NewGroupsUpgradeHandler(m)(context.Background(), nil, GroupsUpgradeParams{Peer: "@x"})
+
+		return err
+	}
+	adminLog := func(m *mockClient) error {
+		_, _, err := NewGroupsAdminLogHandler(m)(context.Background(), nil, GroupsAdminLogParams{Peer: "@x"})
+
+		return err
+	}
+	deletePhoto := func(m *mockClient) error {
+		_, _, err := NewChatsDeletePhotoHandler(m)(context.Background(), nil, ChatsDeletePhotoParams{Peer: "@x"})
+
+		return err
+	}
+
+	for name, tc := range map[string]struct {
+		call     func(*mockClient) error
+		sentinel error
+	}{
+		"set_forum, channel only":    {setForum, telegram.ErrChannelOnly},
+		"admin_log, channel only":    {adminLog, telegram.ErrChannelOnly},
+		"upgrade, basic group only":  {upgrade, telegram.ErrBasicGroupOnly},
+		"delete_photo, not a group":  {deletePhoto, telegram.ErrNotAGroup},
+		"upgrade, channel only":      {upgrade, telegram.ErrChannelOnly},
+		"delete_photo, channel only": {deletePhoto, telegram.ErrChannelOnly},
+	} {
+		mock := &mockClient{
+			resolvePeerFn: func(string) (telegram.InputPeer, error) { return channelPeerFor(1), nil },
+			err:           tc.sentinel,
+		}
+
+		err := tc.call(mock)
+		if !errors.Is(err, ErrValidation) || !errors.Is(err, tc.sentinel) {
+			t.Errorf("%s: err = %v, want %v as a validation error", name, err, tc.sentinel)
+		}
+	}
+}
+
+// An upgrade or join whose reply left the chat out did go through: the text
+// must say so, not start with "failed to", since an upgrade cannot be redone.
+func TestGroupTools_AppliedButUnnamedIsNotReportedAsAFailure(t *testing.T) {
+	for name, call := range map[string]func(*mockClient) error{
 		"upgrade": func(m *mockClient) error {
 			_, _, err := NewGroupsUpgradeHandler(m)(context.Background(), nil, GroupsUpgradeParams{Peer: "@x"})
 
 			return err
 		},
-		"admin_log": func(m *mockClient) error {
-			_, _, err := NewGroupsAdminLogHandler(m)(context.Background(), nil, GroupsAdminLogParams{Peer: "@x"})
-
-			return err
-		},
-		"delete_photo": func(m *mockClient) error {
-			_, _, err := NewChatsDeletePhotoHandler(m)(context.Background(), nil, ChatsDeletePhotoParams{Peer: "@x"})
+		"join_invite": func(m *mockClient) error {
+			_, _, err := NewGroupsJoinInviteHandler(m)(context.Background(), nil, GroupsJoinInviteParams{Link: "+abc"})
 
 			return err
 		},
 	} {
 		mock := &mockClient{
-			resolvePeerFn: func(string) (telegram.InputPeer, error) { return channelPeerFor(1), nil },
-			err:           telegram.ErrChannelOnly,
+			resolvePeerFn: func(string) (telegram.InputPeer, error) {
+				return telegram.InputPeer{Type: telegram.PeerChat, ID: 7}, nil
+			},
+			err: errors.Wrap(telegram.ErrNoChatInReply, "the group was upgraded"),
 		}
 
 		err := call(mock)
-		if !errors.Is(err, ErrValidation) {
-			t.Errorf("%s: err = %v, want a validation error", name, err)
+		if !errors.Is(err, telegram.ErrNoChatInReply) || !errors.Is(err, ErrTelegram) ||
+			strings.Contains(err.Error(), "failed to") {
+			t.Errorf("%s: err = %q, want ErrNoChatInReply without a \"failed to\" prefix", name, err)
 		}
+	}
+}
+
+// untilDate and topicId are 32-bit on the wire; a larger value would wrap
+// into another date or another topic, so it is refused before any request.
+func TestGroupTools_RejectValuesOutsideInt32(t *testing.T) {
+	mock := &mockClient{peer: channelPeerFor(1)}
+
+	for name, untilDate := range map[string]int{"above int32": math.MaxInt32 + 1, "negative": -1} {
+		_, _, err := NewGroupsBanHandler(mock)(context.Background(), nil,
+			GroupsBanParams{Group: "@team", User: "@spammer", UntilDate: untilDate})
+		if !errors.Is(err, ErrUntilDateOutOfRange) || !errors.Is(err, ErrValidation) {
+			t.Errorf("ban untilDate %s: err = %v, want ErrUntilDateOutOfRange", name, err)
+		}
+	}
+
+	_, _, err := NewTopicsDeleteHandler(mock)(context.Background(), nil,
+		TopicsDeleteParams{Peer: "@team", TopicID: 4294967297})
+	if !errors.Is(err, ErrTopicIDOutOfRange) || !errors.Is(err, ErrValidation) {
+		t.Errorf("topicId 4294967297: err = %v, want ErrTopicIDOutOfRange", err)
+	}
+
+	if mock.lastBan[0] != (telegram.InputPeer{}) || mock.deletedTopic != 0 {
+		t.Errorf("an out-of-range value reached the client: ban %+v, topic %d", mock.lastBan, mock.deletedTopic)
 	}
 }
 

@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -19,6 +20,10 @@ var ErrAdminLogLimit = errors.New("limit must not exceed 100")
 
 // ErrAdminLogMaxID is returned when maxId is not a decimal event ID.
 var ErrAdminLogMaxID = errors.New("maxId must be an event ID as a decimal string")
+
+// ErrUntilDateOutOfRange is returned when tg_groups_ban's untilDate does not
+// fit the 32-bit field Telegram encodes it in, where it would wrap.
+var ErrUntilDateOutOfRange = errors.New("untilDate must be a Unix time between 0 and 2147483647")
 
 // ErrInviteLinkRequired is returned when an invite tool gets no link.
 var ErrInviteLinkRequired = errors.New("link is required")
@@ -43,6 +48,12 @@ func NewGroupsBanHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsBanPar
 		_ *mcp.CallToolRequest,
 		params GroupsBanParams,
 	) (*mcp.CallToolResult, GroupsBanResult, error) {
+		// until_date is a 32-bit int on the wire: a larger value would wrap
+		// into a different (possibly past) date.
+		if params.UntilDate < 0 || params.UntilDate > math.MaxInt32 {
+			return &mcp.CallToolResult{IsError: true}, GroupsBanResult{}, validationErr(ErrUntilDateOutOfRange)
+		}
+
 		target, err := resolveGroupMember(ctx, client, params.Group, params.User)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsBanResult{}, err
@@ -215,7 +226,7 @@ func NewGroupsJoinInviteHandler(
 
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsJoinInviteResult{},
-				telegramErr("failed to join by invite link", err)
+				groupErr("failed to join by invite link", err)
 		}
 
 		return nil, GroupsJoinInviteResult{
@@ -430,11 +441,19 @@ func adminLogOpts(params *GroupsAdminLogParams) (telegram.AdminLogOpts, error) {
 
 // groupErr reports a failed group operation. The wrapper's channel-only and
 // basic-group-only refusals are about the input, raised before any request,
-// so they are validation errors, not Telegram failures.
+// so they are validation errors, not Telegram failures. ErrNoChatInReply is
+// not a failure of the operation: the upgrade or join went through and only
+// the reply left the chat out, so it gets no "failed to" prefix — that text
+// is what has to stop a retry of an upgrade that cannot be repeated.
 func groupErr(msg string, err error) error {
 	if errors.Is(err, telegram.ErrChannelOnly) || errors.Is(err, telegram.ErrBasicGroupOnly) ||
 		errors.Is(err, telegram.ErrNotAGroup) {
 		return validationErr(err)
+	}
+
+	if errors.Is(err, telegram.ErrNoChatInReply) {
+		//nolint:wrapcheck // Mark adds a sentinel category; the wrapper's text already says what happened.
+		return errors.Mark(err, ErrTelegram)
 	}
 
 	return telegramErr(msg, err)
@@ -455,7 +474,7 @@ func formatAdminLog(events []telegram.AdminLogEvent) string {
 	fmt.Fprintf(&buf, "%d event(s)", len(events))
 
 	for _, event := range events {
-		fmt.Fprintf(&buf, "\n[%d] %s %s: %s", event.ID, formatTimestamp(event.Date),
+		fmt.Fprintf(&buf, "\n[%s] %s %s: %s", event.ID, formatTimestamp(event.Date),
 			formatPeerRef("", "", telegram.InputPeer{Type: telegram.PeerUser, ID: event.UserID}), event.Action)
 
 		if event.Detail != "" {

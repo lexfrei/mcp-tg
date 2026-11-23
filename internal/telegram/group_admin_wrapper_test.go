@@ -2,6 +2,8 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/cockroachdb/errors"
@@ -143,7 +145,7 @@ func TestGetAdminLog_MapsTheEvents(t *testing.T) {
 		t.Fatalf("GetAdminLog: %v", err)
 	}
 
-	want := AdminLogEvent{ID: 9007199254740993, Date: 1700000000, UserID: 20, Action: "change_title", Detail: "A → B"}
+	want := AdminLogEvent{ID: "9007199254740993", Date: 1700000000, UserID: 20, Action: "change_title", Detail: "A → B"}
 	if len(events) != 1 || events[0] != want {
 		t.Errorf("events = %+v, want %+v", events, want)
 	}
@@ -187,6 +189,51 @@ func TestUpgradeToSupergroup_FindsTheChannelAndCachesIt(t *testing.T) {
 		if cached, ok := wrap.cache.Lookup(PeerChannel, 30); !ok || cached.AccessHash != 3 {
 			t.Errorf("%s: cache = %+v (%v), want the new supergroup's hash", name, cached, ok)
 		}
+	}
+}
+
+// The event ID goes out as the exact decimal string: a JSON number above 2^53
+// is rounded by a client that parses numbers as float64, and the maxId copied
+// from it would page from the wrong event.
+func TestAdminLogEvent_IDSerializesAsTheExactDecimalString(t *testing.T) {
+	invoker := &groupInvoker{adminLog: &tg.ChannelsAdminLogResults{Events: []tg.ChannelAdminLogEvent{{
+		ID: 1<<53 + 1, Action: &tg.ChannelAdminLogEventActionChangeTitle{},
+	}}}}
+
+	events, err := newWrapperWithInvoker(invoker).GetAdminLog(t.Context(), adminGroup, AdminLogOpts{Limit: 10})
+	if err != nil {
+		t.Fatalf("GetAdminLog: %v", err)
+	}
+
+	out, err := json.Marshal(events[0])
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if !strings.Contains(string(out), `"id":"9007199254740993"`) {
+		t.Errorf("event = %s, want id as the string \"9007199254740993\"", out)
+	}
+}
+
+// migrated_to names the new supergroup; when the envelope does not carry
+// that channel, another channel in it must not be taken for it (or cached).
+func TestUpgradeToSupergroup_MissingNamedChannelIsAnError(t *testing.T) {
+	old := &tg.Chat{ID: 7, Title: "Old", Photo: &tg.ChatPhotoEmpty{}}
+	old.SetMigratedTo(&tg.InputChannel{ChannelID: 30, AccessHash: 3})
+
+	envelope := &tg.Updates{Chats: []tg.ChatClass{
+		old,
+		&tg.Channel{ID: 99, AccessHash: 9, Title: "Other", Megagroup: true, Photo: &tg.ChatPhotoEmpty{}},
+	}}
+	wrap := newWrapperWithInvoker(&groupInvoker{migrate: envelope})
+
+	info, err := wrap.UpgradeToSupergroup(t.Context(), InputPeer{Type: PeerChat, ID: 7})
+	if !errors.Is(err, ErrNoChatInReply) {
+		t.Errorf("info = %+v, err = %v; want ErrNoChatInReply", info, err)
+	}
+
+	if cached, ok := wrap.cache.Lookup(PeerChannel, 99); ok {
+		t.Errorf("channel 99 was cached as the new supergroup: %+v", cached)
 	}
 }
 

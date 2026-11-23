@@ -37,6 +37,10 @@ type Poll struct {
 	Quiz           bool         `json:"quiz,omitempty"`
 	MultipleChoice bool         `json:"multipleChoice,omitempty"`
 	PublicVoters   bool         `json:"publicVoters,omitempty"`
+	// VoteUnknown is set when Telegram sent min results, which leave out
+	// which options this account chose: no option being chosen then says
+	// nothing about the account's vote.
+	VoteUnknown bool `json:"voteUnknown,omitempty"`
 }
 
 // PollOpts describes a poll to create. CorrectOption is the zero-based index
@@ -178,6 +182,7 @@ func convertPoll(media *tg.MessageMediaPoll) *Poll {
 		Quiz:           media.Poll.Quiz,
 		MultipleChoice: media.Poll.MultipleChoice,
 		PublicVoters:   media.Poll.PublicVoters,
+		VoteUnknown:    media.Results.Min,
 		Options:        make([]PollOption, 0, len(media.Poll.Answers)),
 	}
 

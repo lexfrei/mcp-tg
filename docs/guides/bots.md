@@ -16,7 +16,7 @@ What a bot attaches to a message — a keyboard, a poll — is not part of the m
 
 The press reads the message again first, so it uses the keyboard as it is now: a bot that edited its buttons since you listed them gets the current callback data, and a button that moved is reported as missing rather than pressing whatever now sits at that position. A callback button marked `requiresPassword` (bot ownership transfer and the like) is refused, because it would need the account's 2FA password.
 
-A callback press is never resent automatically after a Telegram server error. Nothing in the request lets the bot tell a resend from a second press, so a resend could confirm an order twice. If the press fails with a server error, check whether the bot acted before pressing again.
+A callback press is never resent by this server: not after a Telegram server error, not after a dropped connection, and it gets no 30-second response deadline either, so on a half-dead connection it waits for the MCP client to give up. Nothing in the request lets the bot tell a resend from a second press, so a resend could confirm an order twice. One resend is out of this server's hands: when Telegram resets the session, the client library sends every request still pending again, a press included. If a press fails — a server error, a lost connection, or `BOT_RESPONSE_TIMEOUT` (the bot got the press and did not answer in time) — check whether the bot acted before pressing again.
 
 Most bots answer a press by editing the message or sending a new one: `tg_messages_get` on the same ID shows an edit, `tg_messages_list` shows the new message.
 

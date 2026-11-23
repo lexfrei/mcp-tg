@@ -120,7 +120,7 @@ func (w *Wrapper) PressButton(ctx context.Context, peer InputPeer, msgID, row, c
 			return nil, ErrButtonNotFound
 		}
 
-		return w.pressReply(ctx, peer, btn)
+		return w.pressReply(ctx, peer, btn, extractTopicID(raw.ReplyTo))
 	default:
 		return nil, ErrNoButtons
 	}
@@ -191,12 +191,15 @@ func (w *Wrapper) pressInline(
 	}
 }
 
-func (w *Wrapper) pressReply(ctx context.Context, peer InputPeer, btn *tg.KeyboardButton) (*ButtonPress, error) {
+// pressReply sends the button's text into the topic of the message that
+// carries the keyboard: without it, a press in a forum topic would post to
+// General.
+func (w *Wrapper) pressReply(ctx context.Context, peer InputPeer, btn *tg.KeyboardButton, topicID int) (*ButtonPress, error) {
 	if _, plain := btn.Type.(*tg.ButtonTypeDefault); !plain && btn.Type != nil {
 		return nil, errors.Wrapf(ErrButtonUnsupported, "kind %s", ButtonKindRequest)
 	}
 
-	msg, err := w.SendMessage(ctx, peer, btn.Text, SendOpts{ParseMode: ParseModePlain})
+	msg, err := w.SendMessage(ctx, peer, btn.Text, SendOpts{ParseMode: ParseModePlain, TopicID: topicID})
 	if err != nil {
 		return nil, err
 	}

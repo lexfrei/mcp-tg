@@ -104,8 +104,9 @@ func MessagesPressButtonTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name: "tg_messages_press_button",
 		Description: "Press a button of a Telegram message. A callback button returns the bot's answer; " +
-			"a link button returns its URL without opening it; a reply-keyboard button sends its text",
-		Annotations: writeAnnotations(),
+			"a link button returns its URL without opening it; a reply-keyboard button sends its text. " +
+			"A press is whatever the bot makes of it, deleting things included, so it is marked destructive",
+		Annotations: destructiveAnnotations(),
 	}
 }
 

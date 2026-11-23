@@ -19,7 +19,7 @@ var ErrPollQuestionRequired = errors.New("question is required")
 var ErrPollTooFewOptions = errors.New("a poll needs at least 2 options")
 
 // ErrQuizCorrectOption is returned when a quiz's correctOption is not one of its options.
-var ErrQuizCorrectOption = errors.New("correctOption must be the index of one of the options")
+var ErrQuizCorrectOption = errors.New("a quiz needs correctOption, the index of one of the options")
 
 // ErrQuizMultipleChoice is returned for a quiz that also allows several answers.
 var ErrQuizMultipleChoice = errors.New("a quiz has exactly one correct answer and cannot be multiple choice")
@@ -31,7 +31,7 @@ type PollsCreateParams struct {
 	Options        []string `json:"options"                  jsonschema:"Answer options, at least 2"`
 	MultipleChoice *bool    `json:"multipleChoice,omitempty" jsonschema:"Allow choosing several options (default false)"`
 	Quiz           *bool    `json:"quiz,omitempty"           jsonschema:"Make it a quiz with one correct answer (default false)"`
-	CorrectOption  int      `json:"correctOption,omitempty"  jsonschema:"Zero-based index of the correct option (quiz only)"`
+	CorrectOption  *int     `json:"correctOption,omitempty"  jsonschema:"Zero-based index of the correct option (required for a quiz)"`
 	PublicVoters   *bool    `json:"publicVoters,omitempty"   jsonschema:"Show who voted for what (default false: anonymous)"`
 	ClosePeriod    int      `json:"closePeriod,omitempty"    jsonschema:"Close the poll automatically after this many seconds"`
 }
@@ -94,13 +94,19 @@ func pollOptsFromParams(params *PollsCreateParams) (*telegram.PollOpts, error) {
 		Options:        params.Options,
 		MultipleChoice: deref(params.MultipleChoice),
 		Quiz:           deref(params.Quiz),
-		CorrectOption:  params.CorrectOption,
+		CorrectOption:  deref(params.CorrectOption),
 		PublicVoters:   deref(params.PublicVoters),
 		ClosePeriod:    params.ClosePeriod,
 	}
 
 	if opts.Quiz && opts.MultipleChoice {
 		return nil, ErrQuizMultipleChoice
+	}
+
+	// An omitted correctOption must not read as 0: the quiz would go out
+	// with its first option marked correct and nothing would say so.
+	if opts.Quiz && params.CorrectOption == nil {
+		return nil, ErrQuizCorrectOption
 	}
 
 	if opts.Quiz && (opts.CorrectOption < 0 || opts.CorrectOption >= len(opts.Options)) {
@@ -225,6 +231,10 @@ func formatPoll(poll *telegram.Poll) string {
 	}
 
 	buf.WriteString(")")
+
+	if poll.VoteUnknown {
+		buf.WriteString("\nThis read does not show your vote; read the poll again to see it")
+	}
 
 	for _, option := range poll.Options {
 		fmt.Fprintf(&buf, "\n[%d] %s — %d", option.Index, option.Text, option.Voters)

@@ -77,7 +77,12 @@ func TestPollsCreate_Validation(t *testing.T) {
 		"no question": {PollsCreateParams{Peer: "@x", Options: []string{"a", "b"}}, ErrPollQuestionRequired},
 		"one option":  {PollsCreateParams{Peer: "@x", Question: "q", Options: []string{"a"}}, ErrPollTooFewOptions},
 		"quiz bad index": {
-			PollsCreateParams{Peer: "@x", Question: "q", Options: []string{"a", "b"}, Quiz: new(true), CorrectOption: 2},
+			PollsCreateParams{Peer: "@x", Question: "q", Options: []string{"a", "b"}, Quiz: new(true), CorrectOption: new(2)},
+			ErrQuizCorrectOption,
+		},
+		// An omitted index must not read as 0 and mark the first option correct.
+		"quiz without correctOption": {
+			PollsCreateParams{Peer: "@x", Question: "q", Options: []string{"a", "b"}, Quiz: new(true)},
 			ErrQuizCorrectOption,
 		},
 		"quiz multiple": {
@@ -164,5 +169,22 @@ func TestBotsGetInfo(t *testing.T) {
 
 	if !strings.Contains(result.Output, "/today — Forecast for today") || result.Description != "Weather bot" {
 		t.Errorf("result = %+v", result)
+	}
+}
+
+// BOT_RESPONSE_TIMEOUT means the bot got the press, so the explanation must
+// steer the caller away from pressing again blindly.
+func TestExplainMTProtoCode_BotResponseTimeout(t *testing.T) {
+	got := explainMTProtoCode("rpc error code 400: BOT_RESPONSE_TIMEOUT")
+	if !strings.Contains(got, "may already have acted") || !strings.Contains(got, "before pressing again") {
+		t.Errorf("explanation = %q, want it to warn against a blind second press", got)
+	}
+}
+
+// Min results leave the vote out, and the text must not read as "no vote".
+func TestFormatPoll_SaysWhenTheVoteIsUnknown(t *testing.T) {
+	out := formatPoll(&telegram.Poll{Question: "q", VoteUnknown: true, Options: []telegram.PollOption{{Text: "a"}}})
+	if !strings.Contains(out, "does not show your vote") {
+		t.Errorf("output = %q, want the unknown-vote note", out)
 	}
 }

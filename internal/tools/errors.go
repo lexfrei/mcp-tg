@@ -327,6 +327,9 @@ func explainMTProtoCode(raw string) string {
 	case strings.Contains(raw, "RANDOM_ID_DUPLICATE"):
 		return "telegram already accepted a send with this random ID; the message was most " +
 			"likely delivered — check the chat before sending it again"
+	case strings.Contains(raw, "BOT_RESPONSE_TIMEOUT"):
+		return "the bot received the press but did not answer in time, so it may already have acted; " +
+			"check whether it did before pressing again"
 	case strings.Contains(raw, "REPLY_MESSAGE_ID_INVALID"):
 		return "the reply target message does not exist in this chat"
 	case strings.Contains(raw, "MESSAGE_ID_INVALID"):

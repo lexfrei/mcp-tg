@@ -92,7 +92,9 @@ func DialogsListTool() *mcp.Tool {
 		Name: "tg_dialogs_list",
 		Description: "List all Telegram dialogs (chats, groups, channels). " +
 			"Page with offsetDate set to the last dialog's lastMessageDate; the cursor is a timestamp alone, " +
-			"so dialogs whose last message falls in that same second can be skipped or repeated between pages.",
+			"so dialogs whose last message falls in that same second can be skipped or repeated between pages. " +
+			"Pinned dialogs come first whatever their date: when limit is not above the number of pinned chats, " +
+			"the last item can be an old pinned chat, and paging from it skips every newer unpinned dialog.",
 		Annotations: readOnlyAnnotations(),
 	}
 }

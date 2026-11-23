@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/cockroachdb/errors"
@@ -48,8 +49,8 @@ func TestDialogsListHandler_Error(t *testing.T) {
 	}
 }
 
-// limit sizes the wrapper's collections, so an unbounded one could crash the
-// process before the first request. Both tools that page dialogs cap it.
+// The wrapper pages past the server's 100, so the cap bounds the round-trips
+// one call makes. Both tools that page dialogs apply it.
 func TestDialogsListHandlers_RejectALimitAboveTheCap(t *testing.T) {
 	limit := maxDialogsLimit + 1
 
@@ -84,5 +85,13 @@ func TestDialogsListHandler_ReportsLastMessageDate(t *testing.T) {
 
 	if got := structured.Dialogs[0].LastMessageDate; got != 1700000000 {
 		t.Errorf("LastMessageDate = %d, want 1700000000", got)
+	}
+}
+
+// A page that ends on a pinned chat yields an old cursor, so the description
+// warns about it next to the paging instructions.
+func TestDialogsListTool_WarnsAboutPinnedCursor(t *testing.T) {
+	if desc := DialogsListTool().Description; !strings.Contains(desc, "Pinned dialogs come first") {
+		t.Errorf("description does not warn about paging from a pinned dialog: %q", desc)
 	}
 }

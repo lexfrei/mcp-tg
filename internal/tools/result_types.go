@@ -1,6 +1,10 @@
 package tools
 
-import "github.com/lexfrei/mcp-tg/internal/telegram"
+import (
+	"slices"
+
+	"github.com/lexfrei/mcp-tg/internal/telegram"
+)
 
 // DialogItem is a structured dialog entry for JSON results.
 //
@@ -228,9 +232,19 @@ type UserItem struct {
 
 // FolderItem is a structured folder entry for JSON results.
 type FolderItem struct {
-	ID    int    `json:"id"`
-	Title string `json:"title"`
-	Peers int    `json:"peerCount"`
+	ID       int    `json:"id"`
+	Title    string `json:"title"`
+	Emoticon string `json:"emoticon,omitempty"`
+	Peers    int    `json:"peerCount"`
+	// PeerList holds every chat the folder lists, the pinned ones first: it
+	// is the list tg_folders_edit takes back, so a read-edit-write round
+	// trip keeps them. PinnedPeers names which of them are pinned.
+	PeerList     []string `json:"peers,omitempty"`
+	PinnedPeers  []string `json:"pinnedPeers,omitempty"`
+	ExcludePeers []string `json:"excludePeers,omitempty"`
+	Includes     []string `json:"includes,omitempty"`
+	Excludes     []string `json:"excludes,omitempty"`
+	Shared       bool     `json:"shared,omitempty"`
 }
 
 // TopicItem is a structured forum topic entry for JSON results.
@@ -322,12 +336,34 @@ func photosToItems(photos []telegram.Photo) []PhotoItem {
 	return items
 }
 
+// folderToItem maps a folder. peerCount counts every explicitly listed
+// chat, pinned ones included, since a pinned chat is part of the folder.
 func folderToItem(fld *telegram.Folder) FolderItem {
 	return FolderItem{
-		ID:    fld.ID,
-		Title: fld.Title,
-		Peers: len(fld.Peers),
+		ID:           fld.ID,
+		Title:        fld.Title,
+		Emoticon:     fld.Emoticon,
+		Peers:        len(fld.Peers) + len(fld.PinnedPeers),
+		PeerList:     formatPeers(slices.Concat(fld.PinnedPeers, fld.Peers)),
+		PinnedPeers:  formatPeers(fld.PinnedPeers),
+		ExcludePeers: formatPeers(fld.ExcludePeers),
+		Includes:     fld.Includes,
+		Excludes:     fld.Excludes,
+		Shared:       fld.Shared,
 	}
+}
+
+func formatPeers(peers []telegram.InputPeer) []string {
+	if len(peers) == 0 {
+		return nil
+	}
+
+	formatted := make([]string, len(peers))
+	for idx, peer := range peers {
+		formatted[idx] = formatPeer(peer)
+	}
+
+	return formatted
 }
 
 func foldersToItems(folders []telegram.Folder) []FolderItem {

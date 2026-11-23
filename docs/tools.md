@@ -2,9 +2,9 @@
 
 Every tool that takes a `peer` accepts the identifier formats described in [Peers](guides/peers.md). Tools that send or edit text require `parseMode` — see [Messages](guides/messages.md).
 
-## Tools (80)
+## Tools (104)
 
-### Messages (16)
+### Messages (20)
 
 - `tg_messages_list` — List messages in a chat
 - `tg_messages_get` — Get specific messages by ID
@@ -22,6 +22,10 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_messages_get_reactions` — List who reacted to a message
 - `tg_messages_get_scheduled` — List messages scheduled for later delivery
 - `tg_messages_delete_history` — Delete an entire chat history
+- `tg_messages_get_link` — Get the t.me link of a message in a channel or supergroup
+- `tg_messages_get_read_by` — List who read one of your own messages in a small group
+- `tg_messages_unpin_all` — Unpin every pinned message in a chat or forum topic
+- `tg_messages_send_contact` — Send a contact card
 
 ### Dialogs (5)
 
@@ -44,7 +48,7 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_contacts_get_statuses` — Get online statuses of all contacts
 - `tg_contacts_list_blocked` — List blocked users
 
-### Groups (14)
+### Groups (20)
 
 - `tg_groups_list` — List groups
 - `tg_groups_info` — Get group info
@@ -60,8 +64,14 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_groups_members_list` — List group members
 - `tg_groups_admin_set` — Promote or demote an admin with specific rights
 - `tg_groups_slowmode` — Set the slowmode delay
+- `tg_groups_ban` — Ban a user from a channel or supergroup, or lift the ban
+- `tg_groups_invite_check` — Preview the chat behind an invite link without joining
+- `tg_groups_join_invite` — Join a group or channel by its private invite link
+- `tg_groups_upgrade` — Upgrade a basic group to a supergroup
+- `tg_groups_set_forum` — Turn forum topics on or off
+- `tg_groups_admin_log` — Read recent admin actions in a channel or supergroup
 
-### Chat Management (10)
+### Chat Management (11)
 
 - `tg_chats_create` — Create a new group or channel
 - `tg_chats_archive` — Archive or unarchive a chat
@@ -73,13 +83,22 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_chats_set_permissions` — Set default permissions
 - `tg_chats_get_send_as` — List the identities this account may post under in a supergroup or channel
 - `tg_chats_set_send_as` — Set the identity this account posts under by default in a supergroup or channel
+- `tg_chats_delete_photo` — Remove a group or channel photo
 
-### Media & Files (4)
+### Media & Files (7)
 
 - `tg_messages_send_file` — Send a file with caption
 - `tg_media_download` — Download media from a message
 - `tg_media_upload` — Upload a file
 - `tg_media_send_album` — Send a media album
+- `tg_media_send_voice` — Send an audio file as a voice message, or a video as a round video note
+- `tg_media_get_info` — Describe a message's media without downloading it
+- `tg_media_view` — Return a message's photo, image or thumbnail as image content the model can see
+
+### Inline Bots (2)
+
+- `tg_inline_query` — Ask an inline bot (@gif, @vid, @wiki, ...) for results
+- `tg_inline_send` — Send one inline-bot result to the chat it was made for
 
 ### Profile (4)
 
@@ -88,12 +107,13 @@ Every tool that takes a `peer` accepts the identifier formats described in [Peer
 - `tg_profile_set_bio` — Update bio
 - `tg_profile_set_photo` — Set profile photo
 
-### Forum Topics (4)
+### Forum Topics (5)
 
 - `tg_topics_list` — List forum topics
 - `tg_topics_search` — Search forum topics
 - `tg_topics_create` — Create a forum topic
 - `tg_topics_edit` — Rename a forum topic
+- `tg_topics_delete` — Delete a forum topic with all its messages
 
 ### Stickers (3)
 
@@ -105,11 +125,12 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 
 `stickerFileId` is a **decimal string**, not a JSON number. The MCP SDK unmarshals tool arguments into `map[string]any` to apply schema defaults, then re-marshals them, so every JSON number round-trips through `float64`. A sticker document id needs 63 bits and a `float64` mantissa holds 53, which silently corrupts it — `5181593617004757506` arrives as `5181593617004758000`. Quote the id and it survives.
 
-### Drafts (3)
+### Drafts (4)
 
 - `tg_drafts_set` — Set a draft message
 - `tg_drafts_clear` — Clear a draft
 - `tg_messages_clear_all_drafts` — Clear all drafts across every chat
+- `tg_drafts_list` — List the drafts saved in every chat
 
 ### Folders (4)
 
@@ -123,6 +144,15 @@ A sticker is addressed by three numbers, not one: an id, an access hash and a fi
 - `tg_typing_send` — Send typing indicator
 - `tg_online_status_set` — Set online/offline status
 
+### Bots & Polls (6)
+
+- `tg_messages_get_buttons` — List a message's inline or reply keyboard buttons
+- `tg_messages_press_button` — Press a button: a bot callback, a link, or a reply-keyboard text
+- `tg_polls_create` — Send a poll or quiz
+- `tg_polls_get` — Read a poll's options and results
+- `tg_polls_vote` — Vote in a poll, or retract the vote
+- `tg_bots_get_info` — Get a bot's description and command menu
+
 ### Server (1)
 
 - `tg_server_version` — Get build metadata (semver tag, git commit SHA, Go runtime version); reachable before authentication completes
@@ -133,7 +163,7 @@ Every tool carries MCP annotations so a client can reason about its effects befo
 
 | Bucket | Count | Meaning |
 | --- | --- | --- |
-| read-only | 32 | Only reads data |
-| idempotent | 28 | Modifies state, safe to retry |
-| write | 11 | Creates new entities, not idempotent |
-| destructive | 9 | Deletes or removes things |
+| read-only | 43 | Only reads data |
+| idempotent | 32 | Modifies state, safe to retry |
+| write | 16 | Creates new entities, not idempotent |
+| destructive | 13 | Deletes or removes things |

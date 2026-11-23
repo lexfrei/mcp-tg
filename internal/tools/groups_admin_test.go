@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/gotd/td/tgerr"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
@@ -71,24 +72,26 @@ func TestGroupsSetForum(t *testing.T) {
 	mock := &mockClient{peer: channelPeerFor(1)}
 
 	_, result, err := NewGroupsSetForumHandler(mock)(context.Background(), nil, GroupsSetForumParams{Peer: "@team", Enabled: true})
-	if err != nil || mock.lastForum == nil || !*mock.lastForum || result.Output != "Forum topics turned on" {
+	if err != nil || mock.lastForum == nil || !*mock.lastForum || result.Output != "Forum topics are on in @team" {
 		t.Errorf("err = %v, forum = %v, output = %q", err, mock.lastForum, result.Output)
 	}
 }
 
-func TestGroupsAdminLog_ClampsLimitAndFormats(t *testing.T) {
+func TestGroupsAdminLog_DefaultsLimitAndFormats(t *testing.T) {
 	mock := &mockClient{peer: channelPeerFor(1), adminLog: []telegram.AdminLogEvent{
 		{ID: 3, Date: 1700000000, UserID: 5, Action: "change_title", Detail: "A → B"},
 	}}
 
 	_, result, err := NewGroupsAdminLogHandler(mock)(context.Background(), nil,
-		GroupsAdminLogParams{Peer: "@team", Limit: 500, Query: "title"})
+		GroupsAdminLogParams{Peer: "@team", Query: "title", MaxID: "9007199254740993"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if mock.lastAdminLog.Limit != maxAdminLogLimit/2 || mock.lastAdminLog.Query != "title" {
-		t.Errorf("opts = %+v, want the default limit for an out-of-range value", mock.lastAdminLog)
+	// 2^53+1 survives as a string; as a JSON number it would round.
+	if mock.lastAdminLog.Limit != maxAdminLogLimit/2 || mock.lastAdminLog.Query != "title" ||
+		mock.lastAdminLog.MaxID != 9007199254740993 {
+		t.Errorf("opts = %+v, want the default limit and the exact maxId", mock.lastAdminLog)
 	}
 
 	if !strings.Contains(result.Output, "change_title — A → B") {
@@ -117,4 +120,140 @@ func TestChatsDeletePhotoAndTopicsDelete(t *testing.T) {
 
 func channelPeerFor(id int64) telegram.InputPeer {
 	return telegram.InputPeer{Type: telegram.PeerChannel, ID: id, AccessHash: 1}
+}
+
+func TestGroupsAdminLog_RejectsBadPaging(t *testing.T) {
+	for name, tc := range map[string]struct {
+		params GroupsAdminLogParams
+		want   error
+	}{
+		"limit above 100":    {GroupsAdminLogParams{Peer: "@team", Limit: 101}, ErrAdminLogLimit},
+		"negative limit":     {GroupsAdminLogParams{Peer: "@team", Limit: -1}, ErrNegativeLimit},
+		"maxId not a number": {GroupsAdminLogParams{Peer: "@team", MaxID: "12x"}, ErrAdminLogMaxID},
+	} {
+		mock := &mockClient{peer: channelPeerFor(1)}
+
+		_, _, err := NewGroupsAdminLogHandler(mock)(context.Background(), nil, tc.params)
+		if !errors.Is(err, tc.want) || !errors.Is(err, ErrValidation) {
+			t.Errorf("%s: err = %v, want %v as a validation error", name, err, tc.want)
+		}
+	}
+}
+
+// A join request is filed, not failed: a retry would file a second one.
+func TestGroupsJoinInvite_RequestSentIsAResult(t *testing.T) {
+	_, result, err := NewGroupsJoinInviteHandler(clientFailingWith("INVITE_REQUEST_SENT"))(context.Background(), nil,
+		GroupsJoinInviteParams{Link: "+abc"})
+	if err != nil || !result.RequestSent || !strings.Contains(result.Output, "pending") {
+		t.Errorf("result = %+v, err = %v; want a pending join request", result, err)
+	}
+}
+
+// An existing membership is reported as the state, naming the chat when the
+// invite can be read back.
+func TestGroupsJoinInvite_AlreadyMemberNamesTheChat(t *testing.T) {
+	club := telegram.InputPeer{Type: telegram.PeerChannel, ID: 30, AccessHash: 3}
+	mock := &alreadyMemberClient{mockClient: &mockClient{inviteInfo: &telegram.InviteInfo{
+		Title: "Club", Type: telegram.PeerInfoTypeSupergroup, Peer: club, AlreadyJoined: true,
+	}}}
+
+	_, result, err := NewGroupsJoinInviteHandler(mock)(context.Background(), nil, GroupsJoinInviteParams{Link: "+abc"})
+	if err != nil || result.Output != "Already a member of Club [channel:30]" || result.Chat.Peer != club {
+		t.Errorf("result = %+v, err = %v", result, err)
+	}
+}
+
+// alreadyMemberClient fails the join with USER_ALREADY_PARTICIPANT and
+// answers the invite read-back.
+type alreadyMemberClient struct {
+	*mockClient
+}
+
+func (*alreadyMemberClient) JoinByInvite(context.Context, string) (*telegram.PeerInfo, error) {
+	return nil, tgerr.New(400, "USER_ALREADY_PARTICIPANT")
+}
+
+// The wrapper's input refusals are validation errors, not Telegram failures.
+func TestGroupTools_InputRefusalsAreValidationErrors(t *testing.T) {
+	for name, call := range map[string]func(*mockClient) error{
+		"set_forum": func(m *mockClient) error {
+			_, _, err := NewGroupsSetForumHandler(m)(context.Background(), nil, GroupsSetForumParams{Peer: "@x"})
+
+			return err
+		},
+		"upgrade": func(m *mockClient) error {
+			_, _, err := NewGroupsUpgradeHandler(m)(context.Background(), nil, GroupsUpgradeParams{Peer: "@x"})
+
+			return err
+		},
+		"admin_log": func(m *mockClient) error {
+			_, _, err := NewGroupsAdminLogHandler(m)(context.Background(), nil, GroupsAdminLogParams{Peer: "@x"})
+
+			return err
+		},
+		"delete_photo": func(m *mockClient) error {
+			_, _, err := NewChatsDeletePhotoHandler(m)(context.Background(), nil, ChatsDeletePhotoParams{Peer: "@x"})
+
+			return err
+		},
+	} {
+		mock := &mockClient{
+			resolvePeerFn: func(string) (telegram.InputPeer, error) { return channelPeerFor(1), nil },
+			err:           telegram.ErrChannelOnly,
+		}
+
+		err := call(mock)
+		if !errors.Is(err, ErrValidation) {
+			t.Errorf("%s: err = %v, want a validation error", name, err)
+		}
+	}
+}
+
+func TestGroupTools_RejectEmptyPeerAndPassTelegramErrors(t *testing.T) {
+	errBoom := errors.New("boom")
+
+	calls := map[string]func(*mockClient, string) error{
+		"set_forum": func(m *mockClient, peer string) error {
+			_, _, err := NewGroupsSetForumHandler(m)(context.Background(), nil, GroupsSetForumParams{Peer: peer})
+
+			return err
+		},
+		"admin_log": func(m *mockClient, peer string) error {
+			_, _, err := NewGroupsAdminLogHandler(m)(context.Background(), nil, GroupsAdminLogParams{Peer: peer})
+
+			return err
+		},
+		"upgrade": func(m *mockClient, peer string) error {
+			_, _, err := NewGroupsUpgradeHandler(m)(context.Background(), nil, GroupsUpgradeParams{Peer: peer})
+
+			return err
+		},
+		"delete_photo": func(m *mockClient, peer string) error {
+			_, _, err := NewChatsDeletePhotoHandler(m)(context.Background(), nil, ChatsDeletePhotoParams{Peer: peer})
+
+			return err
+		},
+		"join_invite": func(m *mockClient, link string) error {
+			_, _, err := NewGroupsJoinInviteHandler(m)(context.Background(), nil, GroupsJoinInviteParams{Link: link})
+
+			return err
+		},
+	}
+
+	for name, call := range calls {
+		err := call(&mockClient{}, "")
+		if !errors.Is(err, ErrValidation) {
+			t.Errorf("%s with no peer: err = %v, want a validation error", name, err)
+		}
+
+		failing := &mockClient{
+			resolvePeerFn: func(string) (telegram.InputPeer, error) { return channelPeerFor(1), nil },
+			err:           errBoom,
+		}
+
+		err = call(failing, "@x")
+		if !errors.Is(err, errBoom) || errors.Is(err, ErrValidation) {
+			t.Errorf("%s: err = %v, want the Telegram error", name, err)
+		}
+	}
 }

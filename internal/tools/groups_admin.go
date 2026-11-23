@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -11,6 +12,13 @@ import (
 )
 
 const maxAdminLogLimit = 100
+
+// ErrAdminLogLimit is returned when tg_groups_admin_log is asked for more
+// events than Telegram returns in one page.
+var ErrAdminLogLimit = errors.New("limit must not exceed 100")
+
+// ErrAdminLogMaxID is returned when maxId is not a decimal event ID.
+var ErrAdminLogMaxID = errors.New("maxId must be an event ID as a decimal string")
 
 // ErrInviteLinkRequired is returned when an invite tool gets no link.
 var ErrInviteLinkRequired = errors.New("link is required")
@@ -44,7 +52,7 @@ func NewGroupsBanHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsBanPar
 
 		err = client.BanMember(ctx, target.group, target.user, params.UntilDate, unban)
 		if err != nil {
-			return &mcp.CallToolResult{IsError: true}, GroupsBanResult{}, telegramErr("failed to change the ban", err)
+			return &mcp.CallToolResult{IsError: true}, GroupsBanResult{}, groupErr("failed to change the ban", err)
 		}
 
 		output := "Banned " + params.User
@@ -172,8 +180,9 @@ type GroupsJoinInviteParams struct {
 
 // GroupsJoinInviteResult is the output of the tg_groups_join_invite tool.
 type GroupsJoinInviteResult struct {
-	Chat   telegram.PeerInfo `json:"chat"`
-	Output string            `json:"output"`
+	Chat        telegram.PeerInfo `json:"chat,omitzero"`
+	RequestSent bool              `json:"requestSent,omitempty"`
+	Output      string            `json:"output"`
 }
 
 // NewGroupsJoinInviteHandler creates a handler for the tg_groups_join_invite tool.
@@ -190,6 +199,20 @@ func NewGroupsJoinInviteHandler(
 		}
 
 		chat, err := client.JoinByInvite(ctx, params.Link)
+		if alreadyDone(err, "USER_ALREADY_PARTICIPANT") {
+			return nil, alreadyInvited(ctx, client, params.Link), nil
+		}
+
+		// gotd documents INVITE_REQUEST_SENT as "you have successfully
+		// requested to join": the request is filed, and a retry would file a
+		// second one, so it is a result, not a failure.
+		if alreadyDone(err, "INVITE_REQUEST_SENT") {
+			return nil, GroupsJoinInviteResult{
+				RequestSent: true,
+				Output:      "A join request for " + params.Link + " is pending; an admin of the chat has to approve it",
+			}, nil
+		}
+
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsJoinInviteResult{},
 				telegramErr("failed to join by invite link", err)
@@ -199,6 +222,23 @@ func NewGroupsJoinInviteHandler(
 			Chat:   *chat,
 			Output: "Joined " + formatPeerRef(chat.Title, chat.Username, chat.Peer),
 		}, nil
+	}
+}
+
+// alreadyInvited answers a join of a chat the account is already in. The
+// invite is read back to name the chat; when that read fails too, the reply
+// still states the membership, naming the link instead.
+func alreadyInvited(ctx context.Context, client telegram.Client, link string) GroupsJoinInviteResult {
+	info, err := client.CheckInvite(ctx, link)
+	if err != nil || info == nil {
+		return GroupsJoinInviteResult{Output: "Already a member of the chat behind " + link}
+	}
+
+	chat := telegram.PeerInfo{Peer: info.Peer, Title: info.Title, Type: info.Type}
+
+	return GroupsJoinInviteResult{
+		Chat:   chat,
+		Output: "Already a member of " + formatPeerRef(chat.Title, chat.Username, chat.Peer),
 	}
 }
 
@@ -241,7 +281,7 @@ func NewGroupsUpgradeHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsUp
 		channel, err := client.UpgradeToSupergroup(ctx, peer)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsUpgradeResult{},
-				telegramErr("failed to upgrade the group", err)
+				groupErr("failed to upgrade the group", err)
 		}
 
 		return nil, GroupsUpgradeResult{
@@ -289,14 +329,16 @@ func NewGroupsSetForumHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsS
 		}
 
 		err = client.SetForum(ctx, peer, params.Enabled)
-		if err != nil {
+		if err != nil && !alreadyDone(err, "CHAT_NOT_MODIFIED") {
 			return &mcp.CallToolResult{IsError: true}, GroupsSetForumResult{},
-				telegramErr("failed to change forum mode", err)
+				groupErr("failed to change forum mode", err)
 		}
 
-		output := "Forum topics turned off"
+		// Worded as the state, which holds whether this call changed it or a
+		// repeat found it already so (CHAT_NOT_MODIFIED).
+		output := "Forum topics are off in " + params.Peer
 		if params.Enabled {
-			output = "Forum topics turned on"
+			output = "Forum topics are on in " + params.Peer
 		}
 
 		return nil, GroupsSetForumResult{Output: output}, nil
@@ -316,8 +358,8 @@ func GroupsSetForumTool() *mcp.Tool {
 type GroupsAdminLogParams struct {
 	Peer  string `json:"peer"            jsonschema:"Channel or supergroup: @username, t.me/ link, or numeric ID"`
 	Query string `json:"query,omitempty" jsonschema:"Only events matching this text"`
-	Limit int    `json:"limit,omitempty" jsonschema:"Maximum events to return, up to 100 (default 50)"`
-	MaxID int64  `json:"maxId,omitempty" jsonschema:"Only events older than this event ID, for paging"`
+	Limit int    `json:"limit,omitempty" jsonschema:"Maximum events to return, 1-100 (default 50)"`
+	MaxID string `json:"maxId,omitempty" jsonschema:"Only events older than this event ID (a decimal string), for paging"`
 }
 
 // GroupsAdminLogResult is the output of the tg_groups_admin_log tool.
@@ -343,19 +385,59 @@ func NewGroupsAdminLogHandler(client telegram.Client) mcp.ToolHandlerFor[GroupsA
 			return &mcp.CallToolResult{IsError: true}, GroupsAdminLogResult{}, telegramErr("failed to resolve peer", err)
 		}
 
-		limit := params.Limit
-		if limit <= 0 || limit > maxAdminLogLimit {
-			limit = maxAdminLogLimit / 2
+		opts, err := adminLogOpts(&params)
+		if err != nil {
+			return &mcp.CallToolResult{IsError: true}, GroupsAdminLogResult{}, validationErr(err)
 		}
 
-		events, err := client.GetAdminLog(ctx, peer, telegram.AdminLogOpts{Query: params.Query, Limit: limit, MaxID: params.MaxID})
+		events, err := client.GetAdminLog(ctx, peer, opts)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, GroupsAdminLogResult{},
-				telegramErr("failed to read the admin log", err)
+				groupErr("failed to read the admin log", err)
 		}
 
 		return nil, GroupsAdminLogResult{Count: len(events), Events: events, Output: formatAdminLog(events)}, nil
 	}
+}
+
+// adminLogOpts validates the paging parameters. maxId is a decimal string,
+// not a number: event IDs are 64-bit, and go-sdk round-trips JSON numbers
+// through float64, which would round one above 2^53 and make a page skip or
+// repeat events.
+func adminLogOpts(params *GroupsAdminLogParams) (telegram.AdminLogOpts, error) {
+	opts := telegram.AdminLogOpts{Query: params.Query, Limit: params.Limit}
+
+	switch {
+	case params.Limit < 0:
+		return opts, ErrNegativeLimit
+	case params.Limit > maxAdminLogLimit:
+		return opts, ErrAdminLogLimit
+	case params.Limit == 0:
+		opts.Limit = maxAdminLogLimit / 2
+	}
+
+	if params.MaxID != "" {
+		maxID, err := strconv.ParseInt(params.MaxID, 10, 64)
+		if err != nil || maxID < 0 {
+			return opts, ErrAdminLogMaxID
+		}
+
+		opts.MaxID = maxID
+	}
+
+	return opts, nil
+}
+
+// groupErr reports a failed group operation. The wrapper's channel-only and
+// basic-group-only refusals are about the input, raised before any request,
+// so they are validation errors, not Telegram failures.
+func groupErr(msg string, err error) error {
+	if errors.Is(err, telegram.ErrChannelOnly) || errors.Is(err, telegram.ErrBasicGroupOnly) ||
+		errors.Is(err, telegram.ErrNotAGroup) {
+		return validationErr(err)
+	}
+
+	return telegramErr(msg, err)
 }
 
 // GroupsAdminLogTool returns the MCP tool definition for tg_groups_admin_log.

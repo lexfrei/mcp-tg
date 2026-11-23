@@ -7,11 +7,12 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
-	"github.com/gotd/td/tgerr"
 )
 
-// maxTopicDeleteRounds bounds DeleteForumTopic's batch loop; see
-// maxUnpinRounds for the reasoning.
+// maxTopicDeleteRounds bounds DeleteForumTopic's batch loop. The server
+// deletes a topic's history in batches and reports a non-zero offset while
+// some is left, so the loop repeats the call; the bound keeps a server that
+// never reports zero from turning one tool call into an endless one.
 const maxTopicDeleteRounds = 1000
 
 // ErrChannelOnly is returned for an operation Telegram offers only on
@@ -25,6 +26,14 @@ var ErrBasicGroupOnly = errors.New("only a basic group can be upgraded to a supe
 // ErrInviteNeedsWebView is returned when an invite link leads to a paid
 // subscription, which can only be joined through the bot's web view.
 var ErrInviteNeedsWebView = errors.New("this invite link needs a paid subscription confirmed in an official Telegram app")
+
+// ErrNotAGroup is returned when a chat operation is asked of something that
+// is neither a basic group nor a channel or supergroup.
+var ErrNotAGroup = errors.New("this works only for groups and channels")
+
+// ErrNoChatInReply is returned when an updates envelope that must name a chat
+// carries none.
+var ErrNoChatInReply = errors.New("the reply names no chat")
 
 // ErrTopicDeleteIncomplete is returned when a topic still has history after
 // maxTopicDeleteRounds batches.
@@ -94,11 +103,10 @@ func (w *Wrapper) CheckInvite(ctx context.Context, link string) (*InviteInfo, er
 
 // JoinByInvite joins the chat behind a private invite link and returns it.
 func (w *Wrapper) JoinByInvite(ctx context.Context, link string) (*PeerInfo, error) {
+	// USER_ALREADY_PARTICIPANT and INVITE_REQUEST_SENT come back as the
+	// error they are: the tool layer turns each into the state it states
+	// (alreadyDone), like every other already-done refusal.
 	result, err := w.api.MessagesImportChatInvite(ctx, inviteHash(link))
-	if tgerr.Is(err, "USER_ALREADY_PARTICIPANT") {
-		return w.alreadyJoined(ctx, link)
-	}
-
 	if err != nil {
 		return nil, errors.Wrap(err, "joining by invite link")
 	}
@@ -110,22 +118,10 @@ func (w *Wrapper) JoinByInvite(ctx context.Context, link string) (*PeerInfo, err
 
 	chat, found := firstChat(joined.Updates)
 	if !found {
-		return &PeerInfo{Type: PeerInfoTypeChat}, nil
+		return nil, errors.Wrap(ErrNoChatInReply, "the join succeeded; find the chat with tg_dialogs_list")
 	}
 
 	return chat, nil
-}
-
-// alreadyJoined answers a join of a chat the account is already in with
-// that chat, which is what the caller was after — verified live, a repeat
-// join otherwise surfaces as a bare USER_ALREADY_PARTICIPANT.
-func (w *Wrapper) alreadyJoined(ctx context.Context, link string) (*PeerInfo, error) {
-	info, err := w.CheckInvite(ctx, link)
-	if err != nil {
-		return nil, err
-	}
-
-	return &PeerInfo{Peer: info.Peer, Title: info.Title, Type: info.Type}, nil
 }
 
 // UpgradeToSupergroup migrates a basic group into a new supergroup and
@@ -140,9 +136,11 @@ func (w *Wrapper) UpgradeToSupergroup(ctx context.Context, peer InputPeer) (*Pee
 		return nil, errors.Wrap(err, "upgrading to supergroup")
 	}
 
+	// The new supergroup is reported only to this attempt, so a reply that
+	// does not name it must say so rather than report an empty success.
 	channel, found := migratedChannel(updates, peer.ID)
 	if !found {
-		return &PeerInfo{Type: PeerInfoTypeSupergroup}, nil
+		return nil, errors.Wrap(ErrNoChatInReply, "the group was upgraded; find the new supergroup with tg_dialogs_list")
 	}
 
 	w.cache.Store(channel.Peer)
@@ -218,6 +216,11 @@ func (w *Wrapper) GetAdminLog(ctx context.Context, peer InputPeer, opts AdminLog
 
 // DeleteChatPhoto removes the photo of a group or channel.
 func (w *Wrapper) DeleteChatPhoto(ctx context.Context, peer InputPeer) error {
+	// A user's ID sent as a basic-group ID could match some other group.
+	if peer.Type != PeerChat && peer.Type != PeerChannel {
+		return ErrNotAGroup
+	}
+
 	if peer.Type == PeerChannel {
 		_, err := w.api.ChannelsEditPhoto(ctx, &tg.ChannelsEditPhotoRequest{
 			Channel: InputChannelFromPeer(peer),
@@ -309,12 +312,12 @@ func chatInfo(chat tg.ChatClass) *InviteInfo {
 // firstChat returns the first group or channel carried by an updates
 // envelope, which is the joined chat for importChatInvite.
 func firstChat(updates tg.UpdatesClass) (*PeerInfo, bool) {
-	envelope, ok := updates.(*tg.Updates)
+	_, _, chats, ok := unwrapUpdates(updates)
 	if !ok {
 		return nil, false
 	}
 
-	for _, chat := range envelope.Chats {
+	for _, chat := range chats {
 		if info, found := chatPeerInfo(chat); found {
 			return info, true
 		}
@@ -325,16 +328,16 @@ func firstChat(updates tg.UpdatesClass) (*PeerInfo, bool) {
 
 // migratedChannel finds the supergroup a basic group was migrated into. The
 // envelope carries the old chat with migrated_to naming the new channel; when
-// it does not, the only channel in the envelope is the answer.
+// it does not, the last channel in the envelope is taken.
 func migratedChannel(updates tg.UpdatesClass, chatID int64) (*PeerInfo, bool) {
-	envelope, ok := updates.(*tg.Updates)
+	_, _, chats, ok := unwrapUpdates(updates)
 	if !ok {
 		return nil, false
 	}
 
 	var target int64
 
-	for _, chat := range envelope.Chats {
+	for _, chat := range chats {
 		old, isChat := chat.(*tg.Chat)
 		if !isChat || old.ID != chatID {
 			continue
@@ -349,7 +352,7 @@ func migratedChannel(updates tg.UpdatesClass, chatID int64) (*PeerInfo, bool) {
 
 	var fallback *PeerInfo
 
-	for _, chat := range envelope.Chats {
+	for _, chat := range chats {
 		channel, isChannel := chat.(*tg.Channel)
 		if !isChannel {
 			continue

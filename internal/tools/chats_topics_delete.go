@@ -37,13 +37,15 @@ func NewChatsDeletePhotoHandler(
 				telegramErr("failed to resolve peer", err)
 		}
 
+		// CHAT_NOT_MODIFIED is a chat that has no photo to remove: the
+		// postcondition holds, so the reply states it.
 		err = client.DeleteChatPhoto(ctx, peer)
-		if err != nil {
+		if err != nil && !alreadyDone(err, "CHAT_NOT_MODIFIED") {
 			return &mcp.CallToolResult{IsError: true}, ChatsDeletePhotoResult{},
-				telegramErr("failed to delete the chat photo", err)
+				groupErr("failed to delete the chat photo", err)
 		}
 
-		return nil, ChatsDeletePhotoResult{Output: "Chat photo removed"}, nil
+		return nil, ChatsDeletePhotoResult{Output: params.Peer + " has no chat photo"}, nil
 	}
 }
 

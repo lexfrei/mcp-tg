@@ -195,9 +195,15 @@ type waiter struct {
 }
 
 // fromBaseline waits for messages newer than after, or, when after is 0,
-// newer than the newest one at call time.
+// newer than the newest one at call time. The baseline read then doubles as
+// the first look: nothing on it is newer than itself, and reading the same
+// page again right away would break the minGap between reads.
 func (wait *waiter) fromBaseline(ctx context.Context, after int) (MessagesWaitResult, error) {
+	var baselineAt time.Time
+
 	if after == 0 {
+		baselineAt = time.Now()
+
 		newest, err := newestMessageID(ctx, wait.client, wait.peer)
 		if err != nil {
 			return MessagesWaitResult{}, telegramErr("failed to read the chat", err)
@@ -206,50 +212,93 @@ func (wait *waiter) fromBaseline(ctx context.Context, after int) (MessagesWaitRe
 		after = newest
 	}
 
-	return wait.run(ctx, after)
+	return wait.run(ctx, after, baselineAt)
 }
 
-func (wait *waiter) run(ctx context.Context, after int) (MessagesWaitResult, error) {
+// run waits for messages newer than after. A non-zero lastRead is the time
+// of a read already made at that baseline, which stands in for the first.
+func (wait *waiter) run(ctx context.Context, after int, lastRead time.Time) (MessagesWaitResult, error) {
 	deadline := time.NewTimer(wait.timeout)
 	defer deadline.Stop()
 
 	ticker := time.NewTicker(wait.poll)
 	defer ticker.Stop()
 
-	expired := false
+	readAt, read, expired := lastRead, lastRead.IsZero(), false
 
 	for {
-		readAt := time.Now()
+		if read {
+			readAt = time.Now()
 
-		page, err := newMessages(ctx, wait.client, wait.peer, after, wait.filter)
-		if err != nil {
-			return MessagesWaitResult{}, telegramErr("failed to read new messages", err)
+			result, found, err := wait.look(ctx, after)
+			if err != nil || found {
+				return result, err
+			}
+
+			if expired {
+				return wait.timedOut(after), nil
+			}
 		}
 
-		if len(page.fresh) > 0 {
-			return buildMessagesWaitResult(page), nil
-		}
+		read = true
 
-		if expired {
-			return wait.timedOut(after), nil
-		}
-
-		woken, err := wait.next(ctx, deadline.C, ticker.C)
-		if err != nil {
-			return MessagesWaitResult{}, err
-		}
-
-		if !woken {
-			return wait.timedOut(after), nil
-		}
-
-		// A signal may come right after a read; hold the next read back so a
-		// burst of messages costs one read per minGap, not one per message.
-		expired, err = wait.pause(ctx, deadline.C, time.Until(readAt.Add(wait.minGap)))
+		outcome, err := wait.rest(ctx, deadline.C, ticker.C, readAt)
 		if err != nil {
 			return MessagesWaitResult{}, err
 		}
+
+		if outcome == giveUp {
+			return wait.timedOut(after), nil
+		}
+
+		expired = outcome == readLast
 	}
+}
+
+// restOutcome is how a rest between reads ended.
+type restOutcome int
+
+const (
+	readDue  restOutcome = iota // read again and keep waiting
+	readLast                    // the timeout ran out during the pause: one last read is owed
+	giveUp                      // the timeout ran out with no read owed
+)
+
+// rest blocks until the next read is due.
+func (wait *waiter) rest(ctx context.Context, deadline, ticker <-chan time.Time, readAt time.Time) (restOutcome, error) {
+	woken, err := wait.next(ctx, deadline, ticker)
+	if err != nil {
+		return giveUp, err
+	}
+
+	if !woken {
+		return giveUp, nil
+	}
+
+	// A signal may come right after a read; hold the next read back so a
+	// burst of messages costs one read per minGap, not one per message.
+	expired, err := wait.pause(ctx, deadline, time.Until(readAt.Add(wait.minGap)))
+	if expired {
+		return readLast, err
+	}
+
+	return readDue, err
+}
+
+// look reads one page and reports whether it ends the wait. A truncated
+// page does even when the filter rejects all of it: the awaited message may
+// be among the unread older ones, and waiting on would report that none came.
+func (wait *waiter) look(ctx context.Context, after int) (MessagesWaitResult, bool, error) {
+	page, err := newMessages(ctx, wait.client, wait.peer, after, wait.filter)
+	if err != nil {
+		return MessagesWaitResult{}, false, telegramErr("failed to read new messages", err)
+	}
+
+	if len(page.fresh) == 0 && !page.truncated {
+		return MessagesWaitResult{}, false, nil
+	}
+
+	return buildMessagesWaitResult(page), true, nil
 }
 
 // next blocks until a reason to read again. It reports false when the
@@ -297,10 +346,12 @@ func (wait *waiter) timedOut(after int) MessagesWaitResult {
 }
 
 // newPage is one wait read: the new messages that pass the filter, oldest
-// first, and whether newer-than-baseline messages may lie beyond the page.
+// first, whether newer-than-baseline messages may lie beyond the page, and
+// the page's oldest and newest message IDs.
 type newPage struct {
-	fresh     []telegram.Message
-	truncated bool
+	fresh          []telegram.Message
+	truncated      bool
+	oldest, newest int
 }
 
 // newMessages reads one page of up to 100 messages. When more than that
@@ -315,12 +366,13 @@ func newMessages(
 	}
 
 	page := newPage{fresh: make([]telegram.Message, 0, len(msgs))}
-	oldest := 0
 
 	for idx := range msgs {
-		if oldest == 0 || msgs[idx].ID < oldest {
-			oldest = msgs[idx].ID
+		if page.oldest == 0 || msgs[idx].ID < page.oldest {
+			page.oldest = msgs[idx].ID
 		}
+
+		page.newest = max(page.newest, msgs[idx].ID)
 
 		if msgs[idx].ID > after && filter.admits(&msgs[idx]) {
 			page.fresh = append(page.fresh, msgs[idx])
@@ -329,25 +381,36 @@ func newMessages(
 
 	// The page was full and even its oldest message is new: what arrived
 	// between after and that one was not read.
-	page.truncated = hasMore && oldest > after+1
+	page.truncated = hasMore && page.oldest > after+1
 
 	slices.SortFunc(page.fresh, func(left, right telegram.Message) int { return left.ID - right.ID })
 
 	return page, nil
 }
 
+// buildMessagesWaitResult reports a page with new messages or a truncated
+// one. lastMessageId is the newest message returned, or, when the filter
+// rejected the whole page, the page's newest, so passing it back waits past
+// the page instead of reading it again.
 func buildMessagesWaitResult(page newPage) MessagesWaitResult {
 	msgs := page.fresh
 	output := formatMessages(msgs)
+	last := page.newest
+
+	if len(msgs) == 0 {
+		output = "No new message on the newest page passed the filter.\n"
+	} else {
+		last = msgs[len(msgs)-1].ID
+	}
 
 	if page.truncated {
 		output = fmt.Sprintf("More than one page of messages arrived; older ones were not read. "+
-			"Page them with tg_messages_list (offsetId %d).\n", msgs[0].ID) + output
+			"Page them with tg_messages_list (offsetId %d).\n", page.oldest) + output
 	}
 
 	return MessagesWaitResult{
 		Count:         len(msgs),
-		LastMessageID: msgs[len(msgs)-1].ID,
+		LastMessageID: last,
 		Truncated:     page.truncated,
 		Participants:  participantsFromMessages(msgs),
 		Messages:      messagesToItems(msgs),
@@ -363,7 +426,8 @@ func MessagesWaitTool() *mcp.Tool {
 			"To wait for a reply, pass the messageId of the message you sent as afterMessageId: " +
 			"a quick reply can land before this call starts, and the default baseline would then skip it. " +
 			"Pass the returned lastMessageId back to keep waiting. One call reads the newest 100 messages: " +
-			"when more arrived since afterMessageId, truncated is set and the older ones must be paged with tg_messages_list",
+			"when more arrived since afterMessageId, truncated is set (even with count 0, when the filter rejected the whole page) " +
+			"and the older ones must be paged with tg_messages_list",
 		Annotations: readOnlyAnnotations(),
 	}
 }

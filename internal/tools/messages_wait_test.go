@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -114,8 +115,7 @@ func TestMessagesWait_DefaultBaselineIsTheNewestMessage(t *testing.T) {
 		done <- result
 	}()
 
-	<-script.reads // the baseline
-	<-script.reads // the first look, which finds nothing
+	<-script.reads // the baseline, which is also the first look
 
 	script.add(waitMessage(11, waitFriendID))
 	listener.signal <- struct{}{}
@@ -314,7 +314,7 @@ func TestWaiter_SignalsInARowCostBoundedReads(t *testing.T) {
 		timeout: 500 * time.Millisecond, poll: time.Hour, minGap: 100 * time.Millisecond,
 	}
 
-	result, err := wait.run(context.Background(), 0)
+	result, err := wait.run(context.Background(), 0, time.Time{})
 
 	close(stop)
 
@@ -392,5 +392,161 @@ func TestMessagesWait_StopsOnCancellation(t *testing.T) {
 
 	if time.Since(started) > 5*time.Second {
 		t.Error("the wait did not stop on cancellation")
+	}
+}
+
+// The reviewer's case: the reply is the oldest new message and a busy chat
+// buried it under a full page that the from filter rejects. The wait must
+// report the truncation at once, not wait out the timeout with none found.
+func TestMessagesWait_TruncatedPageEndsTheWaitWhenTheFilterRejectsIt(t *testing.T) {
+	script := &historyScript{}
+	script.add(waitMessage(2, waitFriendID))
+
+	for id := 3; id <= 151; id++ {
+		script.add(waitMessage(id, waitOtherID))
+	}
+
+	mock := newWaitMock(script)
+	mock.historyHasMore = true
+
+	started := time.Now()
+
+	_, result, err := NewMessagesWaitHandler(mock, newFakeListener())(context.Background(), nil,
+		MessagesWaitParams{Peer: "@friend", From: "2", AfterMessageID: 1, TimeoutSeconds: 5})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.TimedOut || !result.Truncated || result.Count != 0 {
+		t.Fatalf("result = %+v, want truncated with no messages, not a timeout", result)
+	}
+
+	if result.LastMessageID != 151 {
+		t.Errorf("lastMessageId = %d, want the page's newest 151 so the next call waits past it",
+			result.LastMessageID)
+	}
+
+	if !strings.Contains(result.Output, "tg_messages_list (offsetId 52)") {
+		t.Errorf("output = %q, want it to point at tg_messages_list from the page's oldest message", result.Output)
+	}
+
+	if time.Since(started) > 2*time.Second {
+		t.Error("the truncated page did not end the wait at once")
+	}
+}
+
+// The default baseline is read once and serves as the first look, so the
+// first wait read keeps minGap from it instead of repeating it at once.
+func TestWaiter_BaselineReadIsTheFirstLook(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		reads []time.Time
+	)
+
+	mock := newWaitMock(&historyScript{})
+	mock.getHistoryFn = func(telegram.InputPeer, telegram.HistoryOpts) ([]telegram.Message, int, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		reads = append(reads, time.Now())
+
+		return []telegram.Message{waitMessage(10, waitFriendID)}, 1, nil
+	}
+
+	signal := make(chan struct{}, 1)
+	signal <- struct{}{}
+
+	wait := waiter{
+		client: mock, peer: mock.peer, filter: &waitFilter{}, signal: signal,
+		timeout: 500 * time.Millisecond, poll: time.Hour, minGap: 200 * time.Millisecond,
+	}
+
+	result, err := wait.fromBaseline(context.Background(), 0)
+	if err != nil || !result.TimedOut || result.LastMessageID != 10 {
+		t.Fatalf("result = %+v, err = %v; want a timeout at baseline 10", result, err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(reads) < 2 {
+		t.Fatalf("reads = %d, want the baseline and the read the signal asked for", len(reads))
+	}
+
+	if gap := reads[1].Sub(reads[0]); gap < wait.minGap {
+		t.Errorf("the first two reads were %v apart, want at least %v", gap, wait.minGap)
+	}
+}
+
+// The deadline lands while a read is held back by minGap: the wait still
+// makes its last read, and a message that arrived in time is returned.
+func TestWaiter_DeadlineDuringPauseMakesALastRead(t *testing.T) {
+	script := &historyScript{reads: make(chan struct{}, 4)}
+	script.add(waitMessage(10, waitFriendID))
+
+	mock := newWaitMock(script)
+	signal := make(chan struct{}, 1)
+
+	wait := waiter{
+		client: mock, peer: mock.peer, filter: &waitFilter{}, signal: signal,
+		timeout: 200 * time.Millisecond, poll: time.Hour, minGap: 5 * time.Second,
+	}
+
+	go func() {
+		<-script.reads
+
+		script.add(waitMessage(11, waitFriendID))
+		signal <- struct{}{}
+	}()
+
+	started := time.Now()
+
+	result, err := wait.run(context.Background(), 10, time.Time{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if result.TimedOut || result.Count != 1 || result.Messages[0].ID != 11 {
+		t.Fatalf("result = %+v, want message 11 from the last read, not a timeout", result)
+	}
+
+	if elapsed := time.Since(started); elapsed >= wait.minGap {
+		t.Errorf("returned after %v: the deadline did not cut the %v pause short", elapsed, wait.minGap)
+	}
+}
+
+func TestWaiter_CancellationDuringPause(t *testing.T) {
+	script := &historyScript{reads: make(chan struct{}, 4)}
+	script.add(waitMessage(10, waitFriendID))
+
+	mock := newWaitMock(script)
+	signal := make(chan struct{}, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	wait := waiter{
+		client: mock, peer: mock.peer, filter: &waitFilter{}, signal: signal,
+		timeout: time.Minute, poll: time.Hour, minGap: 5 * time.Second,
+	}
+
+	go func() {
+		<-script.reads
+
+		signal <- struct{}{}
+
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	started := time.Now()
+
+	_, err := wait.run(ctx, 10, time.Time{})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+
+	if elapsed := time.Since(started); elapsed >= wait.minGap {
+		t.Errorf("returned after %v: cancellation did not cut the %v pause short", elapsed, wait.minGap)
 	}
 }

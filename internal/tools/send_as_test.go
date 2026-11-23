@@ -444,6 +444,32 @@ func TestResolveSendAs_AcceptsSelfWithAccessHash(t *testing.T) {
 	}
 }
 
+func TestMediaSendVoiceHandler_PassesSendAs(t *testing.T) {
+	mock := sendAsMock()
+
+	_, _, err := NewMediaSendVoiceHandler(mock, nil)(context.Background(), emptyToolRequest(), MediaSendVoiceParams{
+		Peer: "@group", Path: "/tmp/voice.ogg", SendAs: new(sendAsRef),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertSendAsChannel(t, mock.lastVoiceOpts.Send.SendAs)
+}
+
+func TestInlineSendHandler_PassesSendAs(t *testing.T) {
+	mock := sendAsMock()
+
+	_, _, err := NewInlineSendHandler(mock)(context.Background(), nil, InlineSendParams{
+		Peer: "@group", QueryID: "123", ResultID: "r1", SendAs: new(sendAsRef),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertSendAsChannel(t, mock.lastSendOpts.SendAs)
+}
+
 func TestMessagesSendContactHandler_PassesSendAs(t *testing.T) {
 	mock := sendAsMock()
 

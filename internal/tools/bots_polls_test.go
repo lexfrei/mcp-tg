@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/errors"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
@@ -150,9 +151,32 @@ func TestPollsVote_PassesIndexesAndRetracts(t *testing.T) {
 		t.Errorf("output = %q", result.Output)
 	}
 
-	_, result, err = handler(context.Background(), nil, PollsVoteParams{Peer: "@chat", MessageID: 9})
+	_, result, err = handler(context.Background(), nil, PollsVoteParams{Peer: "@chat", MessageID: 9, Options: []int{}})
 	if err != nil || len(mock.lastVote) != 0 || !strings.Contains(result.Output, "Retracted") {
 		t.Errorf("retract: err = %v, indexes = %v, output = %q", err, mock.lastVote, result.Output)
+	}
+}
+
+// Leaving options out must not retract the vote: only an explicit [] does.
+func TestPollsVote_OmittedOptionsAreRefused(t *testing.T) {
+	mock := &mockClient{peer: botPeer(), lastVote: []int{7}}
+
+	_, _, err := NewPollsVoteHandler(mock)(context.Background(), nil, PollsVoteParams{Peer: "@chat", MessageID: 9})
+	if !errors.Is(err, ErrPollVoteOptionsRequired) || !errors.Is(err, ErrValidation) {
+		t.Errorf("err = %v, want ErrPollVoteOptionsRequired as a validation error", err)
+	}
+
+	if !slices.Equal(mock.lastVote, []int{7}) {
+		t.Errorf("an omitted options list reached VotePoll with %v", mock.lastVote)
+	}
+
+	schema, err := jsonschema.For[PollsVoteParams](nil)
+	if err != nil {
+		t.Fatalf("schema: %v", err)
+	}
+
+	if !slices.Contains(schema.Required, "options") {
+		t.Errorf("schema required = %v, want options in it", schema.Required)
 	}
 }
 
@@ -184,7 +208,7 @@ func TestExplainMTProtoCode_BotResponseTimeout(t *testing.T) {
 // Min results leave the vote out, and the text must not read as "no vote".
 func TestFormatPoll_SaysWhenTheVoteIsUnknown(t *testing.T) {
 	out := formatPoll(&telegram.Poll{Question: "q", VoteUnknown: true, Options: []telegram.PollOption{{Text: "a"}}})
-	if !strings.Contains(out, "does not show your vote") {
+	if !strings.Contains(out, "does not show your vote") || strings.Contains(out, "read the poll again") {
 		t.Errorf("output = %q, want the unknown-vote note", out)
 	}
 }

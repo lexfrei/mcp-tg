@@ -120,7 +120,7 @@ func (w *Wrapper) PressButton(ctx context.Context, peer InputPeer, msgID, row, c
 			return nil, ErrButtonNotFound
 		}
 
-		return w.pressReply(ctx, peer, btn, extractTopicID(raw.ReplyTo))
+		return w.pressReply(ctx, peer, msgID, btn, extractTopicID(raw.ReplyTo))
 	default:
 		return nil, ErrNoButtons
 	}
@@ -191,15 +191,30 @@ func (w *Wrapper) pressInline(
 	}
 }
 
-// pressReply sends the button's text into the topic of the message that
-// carries the keyboard: without it, a press in a forum topic would post to
-// General.
-func (w *Wrapper) pressReply(ctx context.Context, peer InputPeer, btn *tg.KeyboardButton, topicID int) (*ButtonPress, error) {
-	if _, plain := btn.Type.(*tg.ButtonTypeDefault); !plain && btn.Type != nil {
+// pressReply sends the button's text the way a client does: into the topic
+// of the message that carries the keyboard (without it, a press in a forum
+// topic would post to General), and, outside a private chat, as a reply to
+// that message. A bot in privacy mode, the default, gets only commands and
+// replies to its own messages in a group, so a bare text would never reach
+// it; Telegram Desktop replies there too (HistoryWidget::sendBotCommand).
+// A web-app button sends nothing: its URL is returned, as for an inline one.
+func (w *Wrapper) pressReply(
+	ctx context.Context, peer InputPeer, msgID int, btn *tg.KeyboardButton, topicID int,
+) (*ButtonPress, error) {
+	switch kind := btn.Type.(type) {
+	case nil, *tg.ButtonTypeDefault:
+	case *tg.ButtonTypeSimpleWebView:
+		return &ButtonPress{Kind: ButtonKindWebView, URL: kind.URL}, nil
+	default:
 		return nil, errors.Wrapf(ErrButtonUnsupported, "kind %s", ButtonKindRequest)
 	}
 
-	msg, err := w.SendMessage(ctx, peer, btn.Text, SendOpts{ParseMode: ParseModePlain, TopicID: topicID})
+	opts := SendOpts{ParseMode: ParseModePlain, TopicID: topicID}
+	if peer.Type != PeerUser {
+		opts.ReplyTo = msgID
+	}
+
+	msg, err := w.SendMessage(ctx, peer, btn.Text, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -289,10 +304,14 @@ func otherInlineKind(kind tg.InlineButtonTypeClass) string {
 }
 
 func convertReplyButton(btn *tg.KeyboardButton, row, column int) MessageButton {
-	kind := ButtonKindReply
-	if _, plain := btn.Type.(*tg.ButtonTypeDefault); !plain && btn.Type != nil {
-		kind = ButtonKindRequest
+	out := MessageButton{Row: row, Column: column, Text: btn.Text, Kind: ButtonKindRequest}
+
+	switch kind := btn.Type.(type) {
+	case nil, *tg.ButtonTypeDefault:
+		out.Kind = ButtonKindReply
+	case *tg.ButtonTypeSimpleWebView:
+		out.Kind, out.URL = ButtonKindWebView, kind.URL
 	}
 
-	return MessageButton{Row: row, Column: column, Text: btn.Text, Kind: kind}
+	return out
 }

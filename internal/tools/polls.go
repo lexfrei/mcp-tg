@@ -21,6 +21,10 @@ var ErrPollTooFewOptions = errors.New("a poll needs at least 2 options")
 // ErrQuizCorrectOption is returned when a quiz's correctOption is not one of its options.
 var ErrQuizCorrectOption = errors.New("a quiz needs correctOption, the index of one of the options")
 
+// ErrPollVoteOptionsRequired is returned when tg_polls_vote is called without
+// options: an omitted list must not read as a retraction.
+var ErrPollVoteOptionsRequired = errors.New("options is required: the option indexes to vote for, or [] to retract the vote")
+
 // ErrQuizMultipleChoice is returned for a quiz that also allows several answers.
 var ErrQuizMultipleChoice = errors.New("a quiz has exactly one correct answer and cannot be multiple choice")
 
@@ -170,9 +174,9 @@ func PollsGetTool() *mcp.Tool {
 
 // PollsVoteParams defines the parameters for the tg_polls_vote tool.
 type PollsVoteParams struct {
-	Peer      string `json:"peer"              jsonschema:"@username, t.me/ link, or numeric ID"`
-	MessageID int    `json:"messageId"         jsonschema:"ID of the message carrying the poll"`
-	Options   []int  `json:"options,omitempty" jsonschema:"Zero-based option indexes from tg_polls_get; empty retracts the vote"`
+	Peer      string `json:"peer"      jsonschema:"@username, t.me/ link, or numeric ID"`
+	MessageID int    `json:"messageId" jsonschema:"ID of the message carrying the poll"`
+	Options   []int  `json:"options"   jsonschema:"Zero-based option indexes from tg_polls_get; an explicit [] retracts the vote"`
 }
 
 // PollsVoteResult is the output of the tg_polls_vote tool.
@@ -187,6 +191,13 @@ func NewPollsVoteHandler(client telegram.Client) mcp.ToolHandlerFor[PollsVotePar
 		_ *mcp.CallToolRequest,
 		params PollsVoteParams,
 	) (*mcp.CallToolResult, PollsVoteResult, error) {
+		// A nil list is an omitted (or null) one; only an explicit [] retracts.
+		// Without this a caller that forgot the parameter would silently
+		// remove the account's vote.
+		if params.Options == nil {
+			return &mcp.CallToolResult{IsError: true}, PollsVoteResult{}, validationErr(ErrPollVoteOptionsRequired)
+		}
+
 		peer, err := resolveMessageTarget(ctx, client, params.Peer, params.MessageID)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, PollsVoteResult{}, err
@@ -233,7 +244,7 @@ func formatPoll(poll *telegram.Poll) string {
 	buf.WriteString(")")
 
 	if poll.VoteUnknown {
-		buf.WriteString("\nThis read does not show your vote; read the poll again to see it")
+		buf.WriteString("\nTelegram did not say which option(s) you chose, so this read does not show your vote")
 	}
 
 	for _, option := range poll.Options {

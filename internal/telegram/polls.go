@@ -37,9 +37,10 @@ type Poll struct {
 	Quiz           bool         `json:"quiz,omitempty"`
 	MultipleChoice bool         `json:"multipleChoice,omitempty"`
 	PublicVoters   bool         `json:"publicVoters,omitempty"`
-	// VoteUnknown is set when Telegram sent min results, which leave out
-	// which options this account chose: no option being chosen then says
-	// nothing about the account's vote.
+	// VoteUnknown is set when Telegram sent only min results, which leave
+	// out which options this account chose, and messages.getPollResults did
+	// not return the full ones: no option being chosen then says nothing
+	// about the account's vote.
 	VoteUnknown bool `json:"voteUnknown,omitempty"`
 }
 
@@ -86,10 +87,48 @@ func (w *Wrapper) GetPoll(ctx context.Context, peer InputPeer, msgID int) (*Poll
 		return nil, ErrNotAPoll
 	}
 
+	// Min results leave out which options this account chose. Telegram
+	// documents messages.getPollResults as the way to get the full ones; if
+	// that read fails, the poll is still returned, marked VoteUnknown.
+	if media.Results.Min {
+		if full, ok := w.fullPollResults(ctx, peer, msgID, media.Poll.ID); ok {
+			media.Results = full
+		}
+	}
+
 	poll := convertPoll(media)
 	poll.MessageID = msgID
 
 	return poll, nil
+}
+
+// fullPollResults asks for a poll's results with messages.getPollResults.
+// They arrive as an updateMessagePoll; ok is false when the call fails or
+// the reply carries no non-min results for this poll.
+func (w *Wrapper) fullPollResults(ctx context.Context, peer InputPeer, msgID int, pollID int64) (tg.PollResults, bool) {
+	result, err := w.api.MessagesGetPollResults(ctx, &tg.MessagesGetPollResultsRequest{
+		Peer:  InputPeerToTG(peer),
+		MsgID: msgID,
+	})
+	if err != nil {
+		return tg.PollResults{}, false
+	}
+
+	updates, _, _, ok := unwrapUpdates(result)
+	if !ok {
+		if short, isShort := result.(*tg.UpdateShort); isShort {
+			updates = []tg.UpdateClass{short.Update}
+		}
+	}
+
+	for _, update := range updates {
+		pollUpdate, isPoll := update.(*tg.UpdateMessagePoll)
+		if isPoll && pollUpdate.PollID == pollID && !pollUpdate.Results.Min {
+			return pollUpdate.Results, true
+		}
+	}
+
+	return tg.PollResults{}, false
 }
 
 // VotePoll votes for the options at the given indexes; an empty list retracts

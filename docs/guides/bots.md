@@ -9,9 +9,9 @@ What a bot attaches to a message — a keyboard, a poll — is not part of the m
 | Kind | Pressing it |
 | --- | --- |
 | `callback` | Sends the button's data to the bot and returns its answer: `message` (the toast or alert text), `alert` (shown as a modal), and sometimes a `url` |
-| `url`, `webview`, `url_auth` | Returns the `url`; nothing is opened |
+| `url`, `webview`, `url_auth` | Returns the `url`; nothing is opened. A web-app button on a reply keyboard is a `webview` too |
 | `copy` | Returns the `copyText` |
-| `reply` | A reply-keyboard button: sends its text as a message to the chat and returns `sentMessageId` |
+| `reply` | A reply-keyboard button: sends its text as a message to the chat and returns `sentMessageId`. Outside a private chat the text goes out as a reply to the keyboard's message, as a Telegram client sends it: a bot in privacy mode sees nothing else in a group |
 | `switch_inline`, `game`, `buy`, `user_profile`, `request`, `other` | Refused |
 
 The press reads the message again first, so it uses the keyboard as it is now: a bot that edited its buttons since you listed them gets the current callback data, and a button that moved is reported as missing rather than pressing whatever now sits at that position. A callback button marked `requiresPassword` (bot ownership transfer and the like) is refused, because it would need the account's 2FA password.
@@ -26,7 +26,7 @@ Most bots answer a press by editing the message or sending a new one: `tg_messag
 
 `tg_polls_get` reads the question, each option with its `index`, and the results. Telegram only shows results to an account that voted or once the poll is closed, so before that `voters` stays 0.
 
-`tg_polls_vote` votes by option `index`. Passing several indexes is only accepted by a `multipleChoice` poll; an empty list retracts the vote. To vote as a channel instead of the account, set the chat's default identity first — see [Posting as a channel](send-as.md).
+`tg_polls_vote` votes by option `index`. Passing several indexes is only accepted by a `multipleChoice` poll. `options` is required: an explicit empty list `[]` retracts the vote, and leaving the parameter out is refused rather than read as a retraction. To vote as a channel instead of the account, set the chat's default identity first — see [Posting as a channel](send-as.md).
 
 ## Bot info
 

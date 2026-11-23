@@ -45,13 +45,18 @@ func TestConvertButtons_ReplyKeyboard(t *testing.T) {
 		{Buttons: []tg.KeyboardButton{
 			{Text: "Menu", Type: &tg.ButtonTypeDefault{}},
 			{Text: "Share phone", Type: &tg.ButtonTypeRequestPhone{}},
+			{Text: "Open app", Type: &tg.ButtonTypeSimpleWebView{URL: "https://app.example/x"}},
 		}},
 	}}
 
 	got := convertButtons(markup)
 
-	if len(got) != 2 || got[0].Kind != ButtonKindReply || got[1].Kind != ButtonKindRequest {
-		t.Fatalf("got %+v, want a reply button then a request button", got)
+	if len(got) != 3 || got[0].Kind != ButtonKindReply || got[1].Kind != ButtonKindRequest {
+		t.Fatalf("got %+v, want a reply button, a request button and a web-app button", got)
+	}
+
+	if got[2].Kind != ButtonKindWebView || got[2].URL != "https://app.example/x" {
+		t.Errorf("web-app button = %+v, want kind webview with its URL", got[2])
 	}
 }
 

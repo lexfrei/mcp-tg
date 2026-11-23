@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
@@ -206,5 +207,190 @@ func TestMessagesWait_EmptyPeer(t *testing.T) {
 	_, _, err := handler(context.Background(), nil, MessagesWaitParams{})
 	if !errors.Is(err, ErrPeerRequired) {
 		t.Errorf("err = %v, want ErrPeerRequired", err)
+	}
+}
+
+// A chat whose newest message is a service one reads as empty at Limit 1,
+// since the history drops service messages. The baseline must come from the
+// same 100-message read the wait makes, or that read hands back old messages
+// as new.
+func TestMessagesWait_BaselineSurvivesAServiceNewestMessage(t *testing.T) {
+	var old []telegram.Message
+	for id := 10; id >= 5; id-- {
+		old = append(old, waitMessage(id, waitFriendID))
+	}
+
+	mock := newWaitMock(&historyScript{})
+	mock.getHistoryFn = func(_ telegram.InputPeer, opts telegram.HistoryOpts) ([]telegram.Message, int, error) {
+		if opts.Limit == 1 {
+			return nil, 0, nil
+		}
+
+		return old, len(old), nil
+	}
+
+	_, result, err := NewMessagesWaitHandler(mock, newFakeListener())(
+		context.Background(), nil, MessagesWaitParams{Peer: "@friend", TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.TimedOut || result.Count != 0 || result.LastMessageID != 10 {
+		t.Errorf("result = %+v, want a timeout at baseline 10, not old messages returned as new", result)
+	}
+}
+
+// When more than a page arrived since afterMessageId, the result says so
+// instead of silently skipping the older ones.
+func TestMessagesWait_ReportsTruncationPastOnePage(t *testing.T) {
+	script := &historyScript{}
+	for id := 2; id <= 151; id++ {
+		script.add(waitMessage(id, waitFriendID))
+	}
+
+	mock := newWaitMock(script)
+	mock.historyHasMore = true
+
+	_, result, err := NewMessagesWaitHandler(mock, newFakeListener())(
+		context.Background(), nil, MessagesWaitParams{Peer: "@friend", AfterMessageID: 1, TimeoutSeconds: 1})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !result.Truncated || result.Count != 100 || result.Messages[0].ID != 52 || result.LastMessageID != 151 {
+		t.Errorf("truncated = %v, count = %d, lastMessageId = %d; want truncated, 100 messages 52..151",
+			result.Truncated, result.Count, result.LastMessageID)
+	}
+}
+
+func TestMessagesWait_NoTruncationWhenThePageCoversTheGap(t *testing.T) {
+	script := &historyScript{}
+	script.add(waitMessage(11, waitFriendID), waitMessage(10, waitFriendID))
+
+	mock := newWaitMock(script)
+	mock.historyHasMore = true
+
+	_, result, err := NewMessagesWaitHandler(mock, newFakeListener())(
+		context.Background(), nil, MessagesWaitParams{Peer: "@friend", AfterMessageID: 10, TimeoutSeconds: 1})
+	if err != nil || result.Truncated || result.Count != 1 {
+		t.Errorf("result = %+v, err = %v; want message 11, not truncated", result, err)
+	}
+}
+
+// A stream of wake-ups must not turn into a read per message.
+func TestWaiter_SignalsInARowCostBoundedReads(t *testing.T) {
+	var (
+		mu    sync.Mutex
+		reads int
+	)
+
+	mock := newWaitMock(&historyScript{})
+	mock.getHistoryFn = func(telegram.InputPeer, telegram.HistoryOpts) ([]telegram.Message, int, error) {
+		mu.Lock()
+		reads++
+		mu.Unlock()
+
+		return nil, 0, nil
+	}
+
+	signal := make(chan struct{}, 1)
+	stop := make(chan struct{})
+
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case signal <- struct{}{}:
+			default:
+			}
+
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	wait := waiter{
+		client: mock, peer: mock.peer, filter: &waitFilter{}, signal: signal,
+		timeout: 500 * time.Millisecond, poll: time.Hour, minGap: 100 * time.Millisecond,
+	}
+
+	result, err := wait.run(context.Background(), 0)
+
+	close(stop)
+
+	if err != nil || !result.TimedOut {
+		t.Fatalf("result = %+v, err = %v; want a timeout", result, err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// 500ms at one read per 100ms, plus the first read and the one the
+	// deadline cuts short.
+	if reads > 7 {
+		t.Errorf("reads = %d over 500ms of constant signals, want at most 7", reads)
+	}
+}
+
+func TestMessagesWait_AcceptsTheTimeoutBounds(t *testing.T) {
+	for _, seconds := range []int{1, maxWaitTimeout} {
+		got, err := waitTimeout(seconds)
+		if err != nil || got != time.Duration(seconds)*time.Second {
+			t.Errorf("timeoutSeconds=%d: got %v, %v", seconds, got, err)
+		}
+	}
+}
+
+func TestMessagesWait_PropagatesClientErrors(t *testing.T) {
+	errBoom := errors.New("boom")
+
+	for name, mock := range map[string]*mockClient{
+		"ResolvePeer": func() *mockClient {
+			mock := newWaitMock(&historyScript{})
+			mock.resolvePeerFn = func(string) (telegram.InputPeer, error) { return telegram.InputPeer{}, errBoom }
+
+			return mock
+		}(),
+		"GetSelf": func() *mockClient {
+			mock := newWaitMock(&historyScript{})
+			mock.err = errBoom
+
+			return mock
+		}(),
+		"GetHistory": func() *mockClient {
+			mock := newWaitMock(&historyScript{})
+			mock.getHistoryFn = func(telegram.InputPeer, telegram.HistoryOpts) ([]telegram.Message, int, error) {
+				return nil, 0, errBoom
+			}
+
+			return mock
+		}(),
+	} {
+		result, _, err := NewMessagesWaitHandler(mock, newFakeListener())(
+			context.Background(), nil, MessagesWaitParams{Peer: "@friend", TimeoutSeconds: 1})
+		if !errors.Is(err, errBoom) || result == nil || !result.IsError {
+			t.Errorf("%s failing: err = %v, want it passed through as a tool error", name, err)
+		}
+	}
+}
+
+func TestMessagesWait_StopsOnCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+
+	started := time.Now()
+
+	result, _, err := NewMessagesWaitHandler(newWaitMock(&historyScript{}), newFakeListener())(
+		ctx, nil, MessagesWaitParams{Peer: "@friend", TimeoutSeconds: 60})
+	if !errors.Is(err, context.Canceled) || result == nil || !result.IsError {
+		t.Errorf("err = %v, want context.Canceled as a tool error", err)
+	}
+
+	if time.Since(started) > 5*time.Second {
+		t.Error("the wait did not stop on cancellation")
 	}
 }

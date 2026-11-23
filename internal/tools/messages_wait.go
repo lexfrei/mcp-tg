@@ -19,6 +19,12 @@ const (
 	// update stream is the fast path, not a guarantee, and a gap in it must
 	// cost a short delay rather than a missed message.
 	waitPollInterval = 15 * time.Second
+
+	// waitMinReadGap is the least time between two history reads. The
+	// listener coalesces a burst into one signal but does not limit how
+	// often signals come: in a busy chat every message would cost a
+	// getHistory, and a FLOOD_WAIT there stalls every tool on the connection.
+	waitMinReadGap = 2 * time.Second
 )
 
 // ErrWaitTimeoutRange is returned when timeoutSeconds is outside 1..300.
@@ -44,6 +50,7 @@ type MessagesWaitResult struct {
 	Count         int               `json:"count"`
 	TimedOut      bool              `json:"timedOut"`
 	LastMessageID int               `json:"lastMessageId"`
+	Truncated     bool              `json:"truncated,omitempty"`
 	Participants  []ParticipantItem `json:"participants,omitempty"`
 	Messages      []MessageItem     `json:"messages,omitempty"`
 	Output        string            `json:"output"`
@@ -90,16 +97,12 @@ func NewMessagesWaitHandler(
 		listening := listener.Listen(peer)
 		defer listening.Stop()
 
-		after := params.AfterMessageID
-		if after == 0 {
-			after, err = newestMessageID(ctx, client, peer)
-			if err != nil {
-				return &mcp.CallToolResult{IsError: true}, MessagesWaitResult{},
-					telegramErr("failed to read the chat", err)
-			}
+		wait := waiter{
+			client: client, peer: peer, filter: &filter, signal: listening.Signal,
+			timeout: timeout, poll: waitPollInterval, minGap: waitMinReadGap,
 		}
 
-		result, err := waitForMessages(ctx, client, peer, after, &filter, listening.Signal, timeout)
+		result, err := wait.fromBaseline(ctx, params.AfterMessageID)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MessagesWaitResult{}, err
 		}
@@ -153,87 +156,202 @@ func (filter *waitFilter) admits(msg *telegram.Message) bool {
 	return filter.includeOwn || !ownMessage
 }
 
+// newestMessageID is the default baseline: the newest visible message of
+// the same one-page read that newMessages makes. A one-message read would
+// not do: service messages (a join, a pin, a call record) are dropped from
+// the history, so a chat whose newest message is one would read as empty,
+// the baseline would be 0, and the first wait read would hand back up to
+// 100 OLD messages as new. When the whole page is service messages, 0 is
+// safe: the read never pages, so a visible message can only enter that
+// window by being newer than the page.
 func newestMessageID(ctx context.Context, client telegram.Client, peer telegram.InputPeer) (int, error) {
-	msgs, _, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{Limit: 1, SinglePage: true})
+	msgs, _, _, err := client.GetHistory(ctx, peer, waitHistoryOpts())
 	if err != nil {
-		return 0, errors.Wrap(err, "reading the newest message")
+		return 0, errors.Wrap(err, "reading the newest messages")
 	}
 
-	if len(msgs) == 0 {
-		return 0, nil
+	newest := 0
+	for idx := range msgs {
+		newest = max(newest, msgs[idx].ID)
 	}
 
-	return msgs[0].ID, nil
+	return newest, nil
 }
 
-// waitForMessages re-reads the chat on every wake-up and poll tick until a
-// message newer than after passes the filter, or the timeout runs out.
-func waitForMessages(
-	ctx context.Context, client telegram.Client, peer telegram.InputPeer, after int,
-	filter *waitFilter, signal <-chan struct{}, timeout time.Duration,
-) (MessagesWaitResult, error) {
-	deadline := time.NewTimer(timeout)
+func waitHistoryOpts() telegram.HistoryOpts {
+	return telegram.HistoryOpts{Limit: telegram.DefaultLimit, SinglePage: true}
+}
+
+// waiter re-reads the chat on every wake-up and poll tick until a message
+// newer than the baseline passes the filter, or the timeout runs out.
+type waiter struct {
+	client  telegram.Client
+	peer    telegram.InputPeer
+	filter  *waitFilter
+	signal  <-chan struct{}
+	timeout time.Duration
+	poll    time.Duration
+	minGap  time.Duration
+}
+
+// fromBaseline waits for messages newer than after, or, when after is 0,
+// newer than the newest one at call time.
+func (wait *waiter) fromBaseline(ctx context.Context, after int) (MessagesWaitResult, error) {
+	if after == 0 {
+		newest, err := newestMessageID(ctx, wait.client, wait.peer)
+		if err != nil {
+			return MessagesWaitResult{}, telegramErr("failed to read the chat", err)
+		}
+
+		after = newest
+	}
+
+	return wait.run(ctx, after)
+}
+
+func (wait *waiter) run(ctx context.Context, after int) (MessagesWaitResult, error) {
+	deadline := time.NewTimer(wait.timeout)
 	defer deadline.Stop()
 
-	ticker := time.NewTicker(waitPollInterval)
+	ticker := time.NewTicker(wait.poll)
 	defer ticker.Stop()
 
+	expired := false
+
 	for {
-		msgs, err := newMessages(ctx, client, peer, after, filter)
+		readAt := time.Now()
+
+		page, err := newMessages(ctx, wait.client, wait.peer, after, wait.filter)
 		if err != nil {
 			return MessagesWaitResult{}, telegramErr("failed to read new messages", err)
 		}
 
-		if len(msgs) > 0 {
-			return buildMessagesWaitResult(msgs), nil
+		if len(page.fresh) > 0 {
+			return buildMessagesWaitResult(page), nil
 		}
 
-		select {
-		case <-ctx.Done():
-			return MessagesWaitResult{}, errors.Wrap(ctx.Err(), "waiting for messages")
-		case <-deadline.C:
-			return MessagesWaitResult{
-				TimedOut:      true,
-				LastMessageID: after,
-				Output:        fmt.Sprintf("No new messages after %d within %s", after, timeout),
-			}, nil
-		case <-signal:
-		case <-ticker.C:
+		if expired {
+			return wait.timedOut(after), nil
+		}
+
+		woken, err := wait.next(ctx, deadline.C, ticker.C)
+		if err != nil {
+			return MessagesWaitResult{}, err
+		}
+
+		if !woken {
+			return wait.timedOut(after), nil
+		}
+
+		// A signal may come right after a read; hold the next read back so a
+		// burst of messages costs one read per minGap, not one per message.
+		expired, err = wait.pause(ctx, deadline.C, time.Until(readAt.Add(wait.minGap)))
+		if err != nil {
+			return MessagesWaitResult{}, err
 		}
 	}
 }
 
-// newMessages returns the messages newer than after that pass the filter,
-// oldest first. One page of up to 100 is read: a wait reports arrivals, and
-// a caller that fell further behind should page with tg_messages_list.
+// next blocks until a reason to read again. It reports false when the
+// timeout ran out first.
+func (wait *waiter) next(ctx context.Context, deadline, ticker <-chan time.Time) (bool, error) {
+	select {
+	case <-ctx.Done():
+		return false, errors.Wrap(ctx.Err(), "waiting for messages")
+	case <-deadline:
+		return false, nil
+	case <-wait.signal:
+		return true, nil
+	case <-ticker:
+		return true, nil
+	}
+}
+
+// pause sleeps for gap, cut short by cancellation or the deadline. It
+// reports whether the deadline fired: its timer fires once, so the loop must
+// be told, make its last read and stop, rather than wait on it again.
+func (wait *waiter) pause(ctx context.Context, deadline <-chan time.Time, gap time.Duration) (bool, error) {
+	if gap <= 0 {
+		return false, nil
+	}
+
+	pause := time.NewTimer(gap)
+	defer pause.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false, errors.Wrap(ctx.Err(), "waiting for messages")
+	case <-deadline:
+		return true, nil
+	case <-pause.C:
+		return false, nil
+	}
+}
+
+func (wait *waiter) timedOut(after int) MessagesWaitResult {
+	return MessagesWaitResult{
+		TimedOut:      true,
+		LastMessageID: after,
+		Output:        fmt.Sprintf("No new messages after %d within %s", after, wait.timeout),
+	}
+}
+
+// newPage is one wait read: the new messages that pass the filter, oldest
+// first, and whether newer-than-baseline messages may lie beyond the page.
+type newPage struct {
+	fresh     []telegram.Message
+	truncated bool
+}
+
+// newMessages reads one page of up to 100 messages. When more than that
+// arrived since after, the page holds only the newest and the rest are
+// reported as truncated, for the caller to page with tg_messages_list.
 func newMessages(
 	ctx context.Context, client telegram.Client, peer telegram.InputPeer, after int, filter *waitFilter,
-) ([]telegram.Message, error) {
-	msgs, _, _, err := client.GetHistory(ctx, peer, telegram.HistoryOpts{Limit: telegram.DefaultLimit, SinglePage: true})
+) (newPage, error) {
+	msgs, _, hasMore, err := client.GetHistory(ctx, peer, waitHistoryOpts())
 	if err != nil {
-		return nil, errors.Wrap(err, "reading history")
+		return newPage{}, errors.Wrap(err, "reading history")
 	}
 
-	fresh := make([]telegram.Message, 0, len(msgs))
+	page := newPage{fresh: make([]telegram.Message, 0, len(msgs))}
+	oldest := 0
 
 	for idx := range msgs {
+		if oldest == 0 || msgs[idx].ID < oldest {
+			oldest = msgs[idx].ID
+		}
+
 		if msgs[idx].ID > after && filter.admits(&msgs[idx]) {
-			fresh = append(fresh, msgs[idx])
+			page.fresh = append(page.fresh, msgs[idx])
 		}
 	}
 
-	slices.SortFunc(fresh, func(left, right telegram.Message) int { return left.ID - right.ID })
+	// The page was full and even its oldest message is new: what arrived
+	// between after and that one was not read.
+	page.truncated = hasMore && oldest > after+1
 
-	return fresh, nil
+	slices.SortFunc(page.fresh, func(left, right telegram.Message) int { return left.ID - right.ID })
+
+	return page, nil
 }
 
-func buildMessagesWaitResult(msgs []telegram.Message) MessagesWaitResult {
+func buildMessagesWaitResult(page newPage) MessagesWaitResult {
+	msgs := page.fresh
+	output := formatMessages(msgs)
+
+	if page.truncated {
+		output = fmt.Sprintf("More than one page of messages arrived; older ones were not read. "+
+			"Page them with tg_messages_list (offsetId %d).\n", msgs[0].ID) + output
+	}
+
 	return MessagesWaitResult{
 		Count:         len(msgs),
 		LastMessageID: msgs[len(msgs)-1].ID,
+		Truncated:     page.truncated,
 		Participants:  participantsFromMessages(msgs),
 		Messages:      messagesToItems(msgs),
-		Output:        formatMessages(msgs),
+		Output:        output,
 	}
 }
 
@@ -244,7 +362,8 @@ func MessagesWaitTool() *mcp.Tool {
 		Description: "Wait until a new message arrives in a Telegram chat, then return it. " +
 			"To wait for a reply, pass the messageId of the message you sent as afterMessageId: " +
 			"a quick reply can land before this call starts, and the default baseline would then skip it. " +
-			"Pass the returned lastMessageId back to keep waiting without missing anything in between",
+			"Pass the returned lastMessageId back to keep waiting. One call reads the newest 100 messages: " +
+			"when more arrived since afterMessageId, truncated is set and the older ones must be paged with tg_messages_list",
 		Annotations: readOnlyAnnotations(),
 	}
 }

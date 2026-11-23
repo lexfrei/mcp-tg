@@ -250,6 +250,8 @@ func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 		// Not creating, but a button press the bot acts on: a resend is a
 		// second press.
 		"button press": &tg.MessagesGetBotCallbackAnswerRequest{Peer: &tg.InputPeerUser{UserID: 1, AccessHash: 1}},
+		// Creates a supergroup reported only to the attempt that created it.
+		"supergroup upgrade": &tg.MessagesMigrateChatRequest{ChatID: 1},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var buf bytes.Buffer

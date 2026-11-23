@@ -213,7 +213,7 @@ Level routing: FLOOD_WAIT retries → WARN (`flood_wait.go`), 500-class server-e
 
 ### Forum topics
 
-Tools that send messages (`messages_send`, `messages_send_file`, `media_send_album`) accept `topicId` to target a specific forum topic. `messages_list` accepts `topicId` to filter messages by topic (uses `MessagesGetReplies` API instead of `MessagesGetHistory`). Message output includes `topicId` extracted from `MessageReplyHeader.ReplyToTopID`.
+Tools that send messages (`messages_send`, `messages_send_file`, `media_send_album`, `messages_send_contact`, `media_send_voice`) accept `topicId` to target a specific forum topic. `messages_list` accepts `topicId` to filter messages by topic (uses `MessagesGetReplies` API instead of `MessagesGetHistory`). Message output includes `topicId` extracted from `MessageReplyHeader.ReplyToTopID`.
 
 ### History pagination
 
@@ -300,7 +300,7 @@ Known CommonMark gaps documented in `docs/guides/messages.md` ("Markdown — Kno
 
 MTProto's `send_as` field appears on exactly six requests, which map onto nine tools: `messages.sendMessage`, `messages.sendMedia` (backs `tg_messages_send_file`, `tg_stickers_send`, `tg_media_send_voice` and `tg_messages_send_contact`), `messages.sendMultiMedia`, `messages.forwardMessages`, `messages.createForumTopic`, `messages.sendInlineBotResult` (`tg_inline_send`). All nine take an optional `sendAs` string.
 
-Wiring: `SendOpts.SendAs *InputPeer` for the five methods that take an options struct (`SendMessage`, `SendFile`, `SendAlbum`, `SendInlineResult`, and `SendVoice` through `VoiceOpts.Send`); a trailing `sendAs *InputPeer` argument for `ForwardMessages` / `CreateForumTopic` / `SendSticker`. `applySendAs(sendAs, req.SetSendAs)` (`wrapper_helpers.go`) sets the conditional field for all six request types via the method value — do NOT inline the `if sendAs != nil` check per call site, `dupl` will flag it.
+Wiring: `SendOpts.SendAs *InputPeer` for the six methods that take an options struct (`SendMessage`, `SendFile`, `SendAlbum`, `SendContact`, `SendInlineResult`, and `SendVoice` through `VoiceOpts.Send`); a trailing `sendAs *InputPeer` argument for `ForwardMessages` / `CreateForumTopic` / `SendSticker`. `applySendAs(sendAs, req.SetSendAs)` (`wrapper_helpers.go`) sets the conditional field for all six request types via the method value — do NOT inline the `if sendAs != nil` check per call site, `dupl` will flag it.
 
 `nil` does NOT mean "post as the account". It leaves the flag clear, and the server then applies the chat's saved default — verified on a live account: with a channel set as the chat default, a send with no `send_as` posts as that channel. This matches the official clients. Do not "fix" it by substituting `inputPeerSelf`: that would make `tg_chats_set_send_as` govern reactions but not messages, which is neither Telegram's model nor a useful one.
 

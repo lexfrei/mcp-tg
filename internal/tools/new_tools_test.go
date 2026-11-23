@@ -1186,6 +1186,8 @@ func TestMessagesListHandler_Happy(t *testing.T) {
 func TestMessagesListHandler_WithTopicID(t *testing.T) {
 	topicID := 42
 	mock := &mockClient{
+		peer:     telegram.InputPeer{Type: telegram.PeerChannel, ID: 10, AccessHash: 1},
+		group:    &telegram.GroupInfo{IsForum: true},
 		messages: []telegram.Message{{ID: 1}},
 		total:    1,
 	}

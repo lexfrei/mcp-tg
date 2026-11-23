@@ -63,6 +63,10 @@ func formatDrafts(drafts []telegram.Draft) string {
 			fmt.Fprintf(&buf, "\nreply to: %d", draft.ReplyTo)
 		}
 
+		if draft.HasMedia {
+			buf.WriteString("\nmedia: attached")
+		}
+
 		buf.WriteString("\ntext: " + draft.Text)
 	}
 

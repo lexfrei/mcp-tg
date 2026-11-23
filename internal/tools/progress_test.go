@@ -147,3 +147,33 @@ func TestMediaUploadHandler_NoProgressWithoutToken(t *testing.T) {
 		t.Error("Progress callback must be nil without a progress token")
 	}
 }
+
+func TestMediaSendVoiceHandler_WiresProgressWhenTokenPresent(t *testing.T) {
+	mock := &mockClient{message: &telegram.Message{ID: 1}}
+	handler := NewMediaSendVoiceHandler(mock, nil)
+
+	_, _, err := handler(context.Background(), requestWithToken("tok"),
+		MediaSendVoiceParams{Peer: "@x", Path: "/tmp/x.ogg"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	if mock.lastVoiceOpts.Send.Progress == nil {
+		t.Error("Progress callback must be wired when a progress token is present")
+	}
+}
+
+func TestMediaSendVoiceHandler_NoProgressWithoutToken(t *testing.T) {
+	mock := &mockClient{message: &telegram.Message{ID: 1}}
+	handler := NewMediaSendVoiceHandler(mock, nil)
+
+	_, _, err := handler(context.Background(), requestWithToken(nil),
+		MediaSendVoiceParams{Peer: "@x", Path: "/tmp/x.ogg"})
+	if err != nil {
+		t.Fatalf("handler: %v", err)
+	}
+
+	if mock.lastVoiceOpts.Send.Progress != nil {
+		t.Error("Progress callback must be nil without a progress token")
+	}
+}

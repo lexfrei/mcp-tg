@@ -6,6 +6,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/bin"
+	"github.com/gotd/td/telegram/downloader"
 	"github.com/gotd/td/tg"
 )
 
@@ -82,5 +83,52 @@ func TestViewMedia_NothingToView(t *testing.T) {
 	_, err := mediaWrapper(nil).ViewMedia(t.Context(), mediaPeer, 10, 5000)
 	if !errors.Is(err, ErrNothingToView) {
 		t.Errorf("err = %v, want ErrNothingToView", err)
+	}
+}
+
+// viewInvoker serves one message and answers every file read with the same
+// bytes and storage type.
+type viewInvoker struct {
+	message  *tg.Message
+	fileType tg.StorageFileTypeClass
+}
+
+func (v *viewInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
+	switch input.(type) {
+	case *tg.MessagesGetMessagesRequest:
+		return encodeAndDecode(&tg.MessagesMessages{Messages: []tg.MessageClass{v.message}}, output)
+	case *tg.UploadGetFileRequest:
+		return encodeAndDecode(&tg.UploadFile{Type: v.fileType, Bytes: []byte{1, 2, 3}}, output)
+	default:
+		return errors.Wrapf(errUnexpectedRequest, "%T", input)
+	}
+}
+
+// A thumbnail is labelled by the type the server reports for its bytes; the
+// JPEG guess stays only when the server reports none.
+func TestViewMedia_LabelsAThumbnailByItsStorageType(t *testing.T) {
+	doc := documentMedia("application/pdf")
+	doc.Document.(*tg.Document).Thumbs = []tg.PhotoSizeClass{&tg.PhotoSize{Type: "m", W: 320, H: 320, Size: 3}}
+
+	for want, fileType := range map[string]tg.StorageFileTypeClass{
+		"image/png":  &tg.StorageFilePng{},
+		"image/webp": &tg.StorageFileWebp{},
+		"image/gif":  &tg.StorageFileGif{},
+		"image/jpeg": &tg.StorageFileUnknown{},
+	} {
+		msg := &tg.Message{ID: 10, PeerID: &tg.PeerUser{UserID: 5}}
+		msg.SetMedia(doc)
+
+		wrapper := newWrapperWithInvoker(&viewInvoker{message: msg, fileType: fileType})
+		wrapper.down = downloader.NewDownloader()
+
+		image, err := wrapper.ViewMedia(t.Context(), mediaPeer, 10, 5000)
+		if err != nil {
+			t.Fatalf("%T: unexpected error: %v", fileType, err)
+		}
+
+		if image.MimeType != want {
+			t.Errorf("%T: MimeType = %q, want %q", fileType, image.MimeType, want)
+		}
 	}
 }

@@ -66,25 +66,27 @@ func parseProxy(raw string) (*Proxy, error) {
 
 // parseURL parses the value without letting it into the error. url.Parse
 // quotes the whole raw value in its error, a SOCKS5 password included, and
-// main logs startup errors where the service managers keep them. Only the
-// parser's own reason is safe to pass on.
+// main logs startup errors where the service managers keep them. Its own
+// reason is not safe either: a "/", "?" or "#" in a password ends the
+// authority early, and the reason then quotes the password as a port. So the
+// error carries a fixed text only.
 func parseURL(raw string) (*url.URL, error) {
 	link, err := url.Parse(raw)
-	if err == nil {
-		return link, nil
+	if err != nil {
+		return nil, errors.Wrap(ErrInvalidProxy, "the value is not a valid URL")
 	}
 
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
-		return nil, errors.Wrap(ErrInvalidProxy, urlErr.Err.Error())
-	}
-
-	return nil, ErrInvalidProxy
+	return link, nil
 }
 
 func parseSOCKS5(link *url.URL) (*Proxy, error) {
 	if link.Port() == "" || link.Hostname() == "" {
 		return nil, errors.Wrap(ErrInvalidProxy, "socks5 proxy needs host and port")
+	}
+
+	if hasTrailer(link) {
+		return nil, errors.Wrap(ErrInvalidProxy, "a socks5 proxy takes no path, query or fragment; "+
+			"percent-encode /, ? and # in the password")
 	}
 
 	err := validatePort(link.Port())
@@ -99,7 +101,20 @@ func parseSOCKS5(link *url.URL) (*Proxy, error) {
 		proxy.Password, _ = link.User.Password()
 	}
 
+	// The dialer sends credentials only with a user, so a lone password would
+	// be dropped and the connection would go out without authentication.
+	if proxy.User == "" && proxy.Password != "" {
+		return nil, errors.Wrap(ErrInvalidProxy, "a socks5 password needs a user")
+	}
+
 	return proxy, nil
+}
+
+// hasTrailer reports anything after host:port. A "/" in a password ends the
+// authority early, so a digit-only password would load as the proxy port with
+// the rest left in the path; a SOCKS5 link has nothing there.
+func hasTrailer(link *url.URL) bool {
+	return (link.Path != "" && link.Path != "/") || link.RawQuery != "" || link.ForceQuery || link.Fragment != ""
 }
 
 func parseMTProxy(query url.Values) (*Proxy, error) {

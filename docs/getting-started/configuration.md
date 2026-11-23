@@ -27,10 +27,10 @@ The download directory's default has no single spelling: the code derives it fro
 
 `TELEGRAM_PROXY` routes every connection to Telegram — the server's and `mcp-tg login`'s alike — through a proxy. Two kinds are accepted:
 
-- SOCKS5: `socks5://host:port`, or `socks5://user:password@host:port` with authentication.
+- SOCKS5: `socks5://host:port`, or `socks5://user:password@host:port` with authentication. Percent-encode `/`, `?`, `#`, `@` and `%` in the user or password (`/` is `%2F`). Nothing may follow `host:port`, and a password needs a user.
 - MTProxy: the share link Telegram hands out, in either spelling — `tg://proxy?server=HOST&port=PORT&secret=SECRET` or `https://t.me/proxy?server=HOST&port=PORT&secret=SECRET`. Hex secrets and the base64 fake-TLS (`ee…`) ones both work.
 
-A value that is neither, or one with a port outside 1–65535 or an MTProxy secret Telegram would not accept, fails configuration loading rather than falling back to a direct connection, so a typo cannot quietly bypass the proxy. The error names what is wrong but never repeats the value: a SOCKS5 password or an MTProxy secret stays out of the log. HTTP proxies are not supported: MTProto is not HTTP.
+A value that is neither, a SOCKS5 link with a path, query or fragment, or one with a port outside 1–65535 or an MTProxy secret Telegram would not accept, fails configuration loading rather than falling back to a direct connection, so a typo cannot quietly bypass the proxy. The error names what is wrong but never repeats the value: a SOCKS5 password or an MTProxy secret stays out of the log. HTTP proxies are not supported: MTProto is not HTTP.
 
 ## Command-line flags
 

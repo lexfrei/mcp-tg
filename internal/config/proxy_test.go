@@ -46,6 +46,19 @@ func TestLoad_SOCKS5Proxy(t *testing.T) {
 	}
 }
 
+// A trailing "/" is harmless, and a percent-encoded "/" in the password is how
+// such a password is spelled.
+func TestLoad_SOCKS5ProxyEncodedPassword(t *testing.T) {
+	cfg, err := loadWithProxy(t, "socks5://alice:12%2F34@127.0.0.1:1080/")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if cfg.Proxy.Addr != "127.0.0.1:1080" || cfg.Proxy.User != "alice" || cfg.Proxy.Password != "12/34" {
+		t.Errorf("proxy = %+v", cfg.Proxy)
+	}
+}
+
 // Real-length secrets: a "dd" secured one (tag + 16 bytes) and an "ee"
 // fake-TLS one (tag + 16 bytes + the cloak host).
 var (
@@ -101,6 +114,14 @@ func TestLoad_InvalidProxyFails(t *testing.T) {
 		"tg://proxy?server=x&port=abc&secret=" + hex.EncodeToString(securedSecret),
 		"tg://proxy?server=x&port=65536&secret=" + hex.EncodeToString(securedSecret),
 		"t.me/proxy?server=x&port=443&secret=" + hex.EncodeToString(securedSecret),
+		// A "/" in a digit-only password ends the authority early: the user
+		// and password would become the proxy address.
+		"socks5://alice:12345/x@host:1080",
+		"socks5://host:1080/path",
+		"socks5://host:1080?x=1",
+		"socks5://host:1080#x",
+		// A password without a user would be dropped at dial time.
+		"socks5://:pw@host:1080",
 	} {
 		_, err := loadWithProxy(t, value)
 		if !errors.Is(err, config.ErrInvalidProxy) {
@@ -119,6 +140,12 @@ func TestLoad_InvalidProxyKeepsSecretsOutOfTheError(t *testing.T) {
 		// url.Parse quotes the whole raw input, userinfo included.
 		{"socks5://alice:hunter2@host:10x80", "hunter2"},
 		{"socks5://alice:hunter2%zz@host:1080", "hunter2"},
+		{"socks5://alice:hunter2%zz@host:1080", "%zz"},
+		// A "/", "?" or "#" in the password ends the authority early, and the
+		// parser's own reason then quotes the password as a port.
+		{"socks5://alice:hunter2/x@host:1080", "hunter2"},
+		{"socks5://alice:hunter2#x@host:1080", "hunter2"},
+		{"socks5://alice:hunter2?x@host:1080", "hunter2"},
 		// A secret too short for MTProxy: gotd quotes it in its own error.
 		{"tg://proxy?server=x&port=443&secret=ab12", "ab12"},
 		{"tg://proxy?server=x&port=443&secret=ab12", string([]byte{0xab, 0x12})},

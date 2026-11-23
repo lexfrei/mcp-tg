@@ -33,6 +33,13 @@ func validateTopicID(
 		return nil
 	}
 
+	// A negative id is not "no topic": the wrapper sets top_msg_id only for a
+	// positive one, so -3 on a forum would quietly widen a topic-scoped call
+	// (an unpin-all, a send) to the whole chat.
+	if topicID < 0 {
+		return validationErr(ErrNegativeTopicID)
+	}
+
 	if peer.Type != telegram.PeerChannel {
 		return ErrTopicIDOnNonForum
 	}
@@ -419,4 +426,25 @@ func peerLabel(peer telegram.InputPeer, username string) string {
 		// trust the wrong deep-link form.
 		return fmt.Sprintf("%s:%d", unknownPeerType, peer.ID)
 	}
+}
+
+// resolveMessageTarget validates a peer + message ID pair and resolves the
+// peer, for the tools that act on one existing message.
+func resolveMessageTarget(
+	ctx context.Context, client telegram.Client, ref string, msgID int,
+) (telegram.InputPeer, error) {
+	if ref == "" {
+		return telegram.InputPeer{}, validationErr(ErrPeerRequired)
+	}
+
+	if msgID == 0 {
+		return telegram.InputPeer{}, validationErr(ErrMessageIDRequired)
+	}
+
+	peer, err := client.ResolvePeer(ctx, ref)
+	if err != nil {
+		return telegram.InputPeer{}, telegramErr("failed to resolve peer", err)
+	}
+
+	return peer, nil
 }

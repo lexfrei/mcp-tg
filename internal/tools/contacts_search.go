@@ -67,8 +67,9 @@ func NewContactsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[Contact
 // ContactsSearchTool returns the MCP tool definition for tg_contacts_search.
 func ContactsSearchTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_contacts_search",
-		Description: "Search Telegram contacts by query",
+		Name: "tg_contacts_search",
+		Description: "Search Telegram contacts by query. Only users are returned; " +
+			"tg_chats_search_public covers public chats, channels and bots as well",
 		Annotations: readOnlyAnnotations(),
 	}
 }

@@ -20,6 +20,11 @@ func TestConvertPrivacyRules(t *testing.T) {
 		{"nobody", []tg.PrivacyRuleClass{&tg.PrivacyValueDisallowAll{}}, PrivacyNobody},
 		{"no rules", nil, PrivacyNobody},
 		{"premium only", []tg.PrivacyRuleClass{&tg.PrivacyValueAllowPremium{}, &tg.PrivacyValueDisallowAll{}}, PrivacyMixed},
+		// An unsupported rule after a supported base still makes it mixed:
+		// reading this back as contacts would drop the premium rule on a set.
+		{"premium after contacts", []tg.PrivacyRuleClass{
+			&tg.PrivacyValueAllowContacts{}, &tg.PrivacyValueAllowPremium{}, &tg.PrivacyValueDisallowAll{},
+		}, PrivacyMixed},
 	}
 
 	for _, tc := range cases {

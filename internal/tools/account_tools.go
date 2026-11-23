@@ -103,6 +103,17 @@ func formatPrivacy(setting *telegram.PrivacySetting) string {
 	return buf.String()
 }
 
+// ErrPrivacyExceptionNotUser is returned when a privacy exception names a
+// group or channel: the exception lists hold users only.
+var ErrPrivacyExceptionNotUser = errors.New("privacy exceptions must be users")
+
+// ErrPrivacyExceptionUnresolved is returned when a privacy exception resolves
+// without an access hash.
+var ErrPrivacyExceptionUnresolved = errors.New(
+	"privacy exception user could not be resolved with an access hash; " +
+		"read the setting with tg_privacy_get first, or pass an @username",
+)
+
 // PrivacySetParams defines the parameters for the tg_privacy_set tool.
 type PrivacySetParams struct {
 	Key           string   `json:"key"                     jsonschema:"Which setting, as in tg_privacy_get"`
@@ -142,12 +153,12 @@ func privacyUpdate(ctx context.Context, client telegram.Client, params *PrivacyS
 		return nil, validationErr(ErrPrivacyKeyRequired)
 	}
 
-	allow, err := resolvePeers(ctx, client, params.AllowUsers)
+	allow, err := resolvePrivacyUsers(ctx, client, params.AllowUsers, "allowUsers")
 	if err != nil {
 		return nil, err
 	}
 
-	disallow, err := resolvePeers(ctx, client, params.DisallowUsers)
+	disallow, err := resolvePrivacyUsers(ctx, client, params.DisallowUsers, "disallowUsers")
 	if err != nil {
 		return nil, err
 	}
@@ -155,13 +166,28 @@ func privacyUpdate(ctx context.Context, client telegram.Client, params *PrivacyS
 	return &telegram.PrivacyUpdate{Key: params.Key, Value: params.Value, AllowUsers: allow, DisallowUsers: disallow}, nil
 }
 
-func resolvePeers(ctx context.Context, client telegram.Client, refs []string) ([]telegram.InputPeer, error) {
+// resolvePrivacyUsers resolves a privacy exception list. Each entry must be a
+// user with an access hash: InputUserFromPeer would otherwise send a channel's
+// ID dressed up as a user, or an inputUser with access_hash 0, and the server's
+// error names neither list. A numeric ID the client has never seen resolves
+// with hash 0, so that case names the remedy.
+func resolvePrivacyUsers(
+	ctx context.Context, client telegram.Client, refs []string, param string,
+) ([]telegram.InputPeer, error) {
 	peers := make([]telegram.InputPeer, 0, len(refs))
 
 	for _, ref := range refs {
 		peer, err := client.ResolvePeer(ctx, ref)
 		if err != nil {
 			return nil, telegramErr("failed to resolve "+ref, err)
+		}
+
+		if peer.Type != telegram.PeerUser {
+			return nil, validationErr(errors.Wrapf(ErrPrivacyExceptionNotUser, "%s: %q", param, ref))
+		}
+
+		if peer.AccessHash == 0 {
+			return nil, validationErr(errors.Wrapf(ErrPrivacyExceptionUnresolved, "%s: %q", param, ref))
 		}
 
 		peers = append(peers, peer)
@@ -245,8 +271,13 @@ func NewChatsSearchPublicHandler(
 			return &mcp.CallToolResult{IsError: true}, ChatsSearchPublicResult{}, validationErr(ErrQueryRequired)
 		}
 
+		limitErr := validateLimit(params.Limit)
+		if limitErr != nil {
+			return &mcp.CallToolResult{IsError: true}, ChatsSearchPublicResult{}, validationErr(limitErr)
+		}
+
 		limit := params.Limit
-		if limit <= 0 {
+		if limit == 0 {
 			limit = defaultPublicSearchLimit
 		}
 
@@ -264,7 +295,9 @@ func ChatsSearchPublicTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name: "tg_chats_search_public",
 		Description: "Search public Telegram channels, groups, bots and users by name or username — " +
-			"beyond the chats the account already has",
+			"beyond the chats the account already has. Lists the account's own matches first, then global ones, " +
+			"without duplicates, labels bots, and takes a limit. tg_dialogs_search and tg_contacts_search " +
+			"wrap the same search but return the raw dialogs or only contacts",
 		Annotations: readOnlyAnnotations(),
 	}
 }
@@ -311,7 +344,7 @@ func NewContactsListHandler(client telegram.Client) mcp.ToolHandlerFor[ContactsL
 func ContactsListTool() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "tg_contacts_list",
-		Description: "List every contact of the Telegram account, with phone numbers where saved",
+		Description: "List every contact of the Telegram account. Phone numbers, where saved, appear in the text output only",
 		Annotations: readOnlyAnnotations(),
 	}
 }
@@ -344,12 +377,14 @@ type ContactsImportParams struct {
 	Contacts []ImportContact `json:"contacts" jsonschema:"Contacts to add by phone number"`
 }
 
-// ContactsImportResult is the output of the tg_contacts_import tool.
+// ContactsImportResult is the output of the tg_contacts_import tool. Every
+// input number is in exactly one of imported, retry and notFound.
 type ContactsImportResult struct {
-	Imported int        `json:"imported"`
-	Skipped  int        `json:"skipped"`
-	Users    []UserItem `json:"users"`
-	Output   string     `json:"output"`
+	Imported []telegram.ImportedContact `json:"imported"`
+	Retry    []string                   `json:"retry,omitempty"`
+	NotFound []string                   `json:"notFound,omitempty"`
+	Users    []UserItem                 `json:"users"`
+	Output   string                     `json:"output"`
 }
 
 // NewContactsImportHandler creates a handler for the tg_contacts_import tool.
@@ -374,13 +409,33 @@ func NewContactsImportHandler(client telegram.Client) mcp.ToolHandlerFor[Contact
 		}
 
 		return nil, ContactsImportResult{
-			Imported: len(result.Users),
-			Skipped:  result.Skipped,
+			Imported: result.Imported,
+			Retry:    result.Retry,
+			NotFound: result.NotFound,
 			Users:    usersToItems(result.Users),
-			Output: fmt.Sprintf("%d of %d number(s) belong to Telegram users and were added; %d skipped",
-				len(result.Users), len(contacts), result.Skipped),
+			Output:   formatImportResult(result, len(contacts)),
 		}, nil
 	}
+}
+
+func formatImportResult(result *telegram.ImportResult, total int) string {
+	var buf strings.Builder
+
+	fmt.Fprintf(&buf, "%d of %d number(s) added", len(result.Imported), total)
+
+	for _, imported := range result.Imported {
+		fmt.Fprintf(&buf, "\n%s → [user:%d]", imported.Phone, imported.UserID)
+	}
+
+	if len(result.Retry) > 0 {
+		fmt.Fprintf(&buf, "\nrate-limited by Telegram, retry later: %s", strings.Join(result.Retry, ", "))
+	}
+
+	if len(result.NotFound) > 0 {
+		fmt.Fprintf(&buf, "\nnot on Telegram: %s", strings.Join(result.NotFound, ", "))
+	}
+
+	return buf.String()
 }
 
 // ContactsImportTool returns the MCP tool definition for tg_contacts_import.

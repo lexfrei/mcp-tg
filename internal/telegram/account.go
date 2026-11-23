@@ -76,10 +76,20 @@ type PhoneContact struct {
 	LastName  string
 }
 
-// ImportResult reports which imported numbers belong to Telegram users.
+// ImportResult reports what became of each imported number: matched to a
+// Telegram user, rate-limited by Telegram (retry it later), or not on
+// Telegram. Every input number lands in exactly one of the three.
 type ImportResult struct {
-	Users   []User `json:"users"`
-	Skipped int    `json:"skipped"`
+	Users    []User            `json:"users"`
+	Imported []ImportedContact `json:"imported"`
+	Retry    []string          `json:"retry,omitempty"`
+	NotFound []string          `json:"notFound,omitempty"`
+}
+
+// ImportedContact pairs an imported phone number with the user it matched.
+type ImportedContact struct {
+	Phone  string `json:"phone"`
+	UserID int64  `json:"userId"`
 }
 
 // GetPrivacy reads one privacy setting.
@@ -93,6 +103,11 @@ func (w *Wrapper) GetPrivacy(ctx context.Context, key string) (*PrivacySetting, 
 	if err != nil {
 		return nil, errors.Wrap(err, "reading privacy setting")
 	}
+
+	// The reply carries every excepted user with an access hash: caching them
+	// is what lets those IDs be passed back to tg_privacy_set, the documented
+	// read-then-set round trip, for users the account has no dialog with.
+	w.cachePeersOf(rules.Chats, rules.Users)
 
 	setting := convertPrivacyRules(rules.Rules)
 	setting.Key = key
@@ -194,6 +209,10 @@ func (w *Wrapper) ListContacts(ctx context.Context) ([]User, error) {
 		return nil, nil
 	}
 
+	// Contact IDs are the only handle these tools return, so the access
+	// hashes the reply carries are cached for the next call to address them.
+	w.cachePeersOf(nil, contacts.Users)
+
 	return convertUsers(contacts.Users), nil
 }
 
@@ -214,9 +233,42 @@ func (w *Wrapper) ImportContacts(ctx context.Context, contacts []PhoneContact) (
 		return nil, errors.Wrap(err, "importing contacts")
 	}
 
-	users := convertUsers(result.Users)
+	w.cachePeersOf(nil, result.Users)
 
-	return &ImportResult{Users: users, Skipped: len(contacts) - len(result.Imported)}, nil
+	return importResult(contacts, result), nil
+}
+
+// importResult sorts every input number into imported, retry or not found,
+// keyed by the client_id each was sent with (its index).
+func importResult(contacts []PhoneContact, result *tg.ContactsImportedContacts) *ImportResult {
+	out := &ImportResult{Users: convertUsers(result.Users), Imported: make([]ImportedContact, 0, len(result.Imported))}
+	settled := make(map[int64]bool, len(contacts))
+
+	for _, imported := range result.Imported {
+		if imported.ClientID < 0 || imported.ClientID >= int64(len(contacts)) {
+			continue
+		}
+
+		settled[imported.ClientID] = true
+		out.Imported = append(out.Imported, ImportedContact{
+			Phone: contacts[imported.ClientID].Phone, UserID: imported.UserID,
+		})
+	}
+
+	for _, clientID := range result.RetryContacts {
+		if clientID >= 0 && clientID < int64(len(contacts)) && !settled[clientID] {
+			settled[clientID] = true
+			out.Retry = append(out.Retry, contacts[clientID].Phone)
+		}
+	}
+
+	for idx := range contacts {
+		if !settled[int64(idx)] {
+			out.NotFound = append(out.NotFound, contacts[idx].Phone)
+		}
+	}
+
+	return out
 }
 
 // ReorderFolders sets the order of the account's chat folders.
@@ -232,6 +284,9 @@ func (w *Wrapper) ReorderFolders(ctx context.Context, folderIDs []int) error {
 func convertPrivacyRules(rules []tg.PrivacyRuleClass) *PrivacySetting {
 	setting := &PrivacySetting{Value: PrivacyNobody}
 	base := ""
+	// A rule tg_privacy_set cannot express makes the whole setting mixed,
+	// wherever it sits: a simplified value would drop it on the way back.
+	mixed := false
 
 	for _, rule := range rules {
 		switch typed := rule.(type) {
@@ -239,24 +294,41 @@ func convertPrivacyRules(rules []tg.PrivacyRuleClass) *PrivacySetting {
 			setting.AllowUsers = append(setting.AllowUsers, typed.Users...)
 		case *tg.PrivacyValueDisallowUsers:
 			setting.DisallowUsers = append(setting.DisallowUsers, typed.Users...)
-		case *tg.PrivacyValueAllowAll:
-			base = firstBase(base, PrivacyEverybody)
-		case *tg.PrivacyValueAllowContacts:
-			base = firstBase(base, PrivacyContacts)
-		case *tg.PrivacyValueAllowCloseFriends:
-			base = firstBase(base, PrivacyCloseFriends)
-		case *tg.PrivacyValueDisallowAll:
-			base = firstBase(base, PrivacyNobody)
 		default:
-			base = firstBase(base, PrivacyMixed)
+			value, known := privacyBase(rule)
+			if !known {
+				mixed = true
+			}
+
+			base = firstBase(base, value)
 		}
 	}
 
-	if base != "" {
+	switch {
+	case mixed:
+		setting.Value = PrivacyMixed
+	case base != "":
 		setting.Value = base
 	}
 
 	return setting
+}
+
+// privacyBase maps a base rule to its value, and reports false for a rule
+// tg_privacy_set cannot express.
+func privacyBase(rule tg.PrivacyRuleClass) (string, bool) {
+	switch rule.(type) {
+	case *tg.PrivacyValueAllowAll:
+		return PrivacyEverybody, true
+	case *tg.PrivacyValueAllowContacts:
+		return PrivacyContacts, true
+	case *tg.PrivacyValueAllowCloseFriends:
+		return PrivacyCloseFriends, true
+	case *tg.PrivacyValueDisallowAll:
+		return PrivacyNobody, true
+	default:
+		return "", false
+	}
 }
 
 // firstBase keeps the first base rule: Telegram applies rules in order, so a
@@ -325,7 +397,7 @@ func peerInfoFrom(peer InputPeer, chats []tg.ChatClass, users []tg.UserClass) (P
 			if user, ok := class.(*tg.User); ok && user.ID == peer.ID {
 				kind := PeerInfoTypeUser
 				if user.Bot {
-					kind = "bot"
+					kind = PeerInfoTypeBot
 				}
 
 				return PeerInfo{

@@ -20,6 +20,8 @@ const (
 	PeerInfoTypeChat       = "chat"
 	PeerInfoTypeChannel    = "channel"
 	PeerInfoTypeSupergroup = "supergroup"
+	// PeerInfoTypeBot labels a user that is a bot, in public search results.
+	PeerInfoTypeBot = "bot"
 )
 
 // DefaultLimit is the page size used by GetDialogs / GetHistory /

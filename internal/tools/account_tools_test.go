@@ -96,8 +96,12 @@ func TestChatsSearchPublic(t *testing.T) {
 
 func TestContactsListAndImport(t *testing.T) {
 	mock := &mockClient{
-		users:        []telegram.User{{ID: 5, FirstName: "Ann", Phone: "15550100"}},
-		importResult: &telegram.ImportResult{Users: []telegram.User{{ID: 6, FirstName: "Bob"}}, Skipped: 1},
+		users: []telegram.User{{ID: 5, FirstName: "Ann", Phone: "15550100"}},
+		importResult: &telegram.ImportResult{
+			Users:    []telegram.User{{ID: 6, FirstName: "Bob"}},
+			Imported: []telegram.ImportedContact{{Phone: "+15550101", UserID: 6}},
+			NotFound: []string{"+15550102"},
+		},
 	}
 
 	_, list, err := NewContactsListHandler(mock)(context.Background(), nil, ContactsListParams{})
@@ -108,7 +112,9 @@ func TestContactsListAndImport(t *testing.T) {
 	_, imported, err := NewContactsImportHandler(mock)(context.Background(), nil, ContactsImportParams{Contacts: []ImportContact{
 		{Phone: "+15550101", FirstName: "Bob"}, {Phone: "+15550102", FirstName: "Nobody"},
 	}})
-	if err != nil || imported.Imported != 1 || imported.Skipped != 1 || len(mock.lastImported) != 2 {
+	if err != nil || len(imported.Imported) != 1 || imported.Imported[0].UserID != 6 ||
+		len(imported.NotFound) != 1 || len(mock.lastImported) != 2 ||
+		!strings.Contains(imported.Output, "+15550101 → [user:6]") || !strings.Contains(imported.Output, "not on Telegram: +15550102") {
 		t.Errorf("import: err = %v, result = %+v", err, imported)
 	}
 
@@ -124,5 +130,53 @@ func TestFoldersReorder(t *testing.T) {
 	_, _, err := NewFoldersReorderHandler(mock)(context.Background(), nil, FoldersReorderParams{FolderIDs: []int{3, 1, 2}})
 	if err != nil || !slices.Equal(mock.lastFolderOrder, []int{3, 1, 2}) {
 		t.Errorf("err = %v, order = %v", err, mock.lastFolderOrder)
+	}
+}
+
+func TestFoldersReorder_RequiresTheOrder(t *testing.T) {
+	_, _, err := NewFoldersReorderHandler(&mockClient{})(context.Background(), nil, FoldersReorderParams{})
+	if !errors.Is(err, ErrFolderOrderRequired) {
+		t.Errorf("err = %v, want ErrFolderOrderRequired", err)
+	}
+}
+
+func TestChatsSearchPublic_RejectsANegativeLimit(t *testing.T) {
+	_, _, err := NewChatsSearchPublicHandler(&mockClient{})(context.Background(), nil,
+		ChatsSearchPublicParams{Query: "x", Limit: -1})
+	if !errors.Is(err, ErrNegativeLimit) {
+		t.Errorf("err = %v, want ErrNegativeLimit", err)
+	}
+}
+
+// An exception must be a user with an access hash; anything else would reach
+// the server as a malformed inputUser whose error names neither list.
+func TestPrivacySet_RejectsExceptionsThatAreNotResolvedUsers(t *testing.T) {
+	for name, tc := range map[string]struct {
+		peer   telegram.InputPeer
+		params PrivacySetParams
+		want   error
+		names  string
+	}{
+		"channel in allowUsers": {
+			telegram.InputPeer{Type: telegram.PeerChannel, ID: 9, AccessHash: 1},
+			PrivacySetParams{Key: "phone_number", Value: telegram.PrivacyNobody, AllowUsers: []string{"@news"}},
+			ErrPrivacyExceptionNotUser, "allowUsers",
+		},
+		"hash-0 user in disallowUsers": {
+			telegram.InputPeer{Type: telegram.PeerUser, ID: 9},
+			PrivacySetParams{Key: "phone_number", Value: telegram.PrivacyNobody, DisallowUsers: []string{"9"}},
+			ErrPrivacyExceptionUnresolved, "disallowUsers",
+		},
+	} {
+		mock := &mockClient{peer: tc.peer}
+
+		_, _, err := NewPrivacySetHandler(mock)(context.Background(), nil, tc.params)
+		if !errors.Is(err, tc.want) || !errors.Is(err, ErrValidation) || !strings.Contains(err.Error(), tc.names) {
+			t.Errorf("%s: err = %v, want %v naming %s", name, err, tc.want, tc.names)
+		}
+
+		if mock.lastPrivacyUpdate != nil {
+			t.Errorf("%s: a rejected exception reached SetPrivacy", name)
+		}
 	}
 }

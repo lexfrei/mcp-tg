@@ -141,3 +141,95 @@ func TestInlineSend_Validation(t *testing.T) {
 		t.Errorf("non-numeric queryId: err = %v", err)
 	}
 }
+
+func TestMediaTools_RejectMissingInput(t *testing.T) {
+	ctx := context.Background()
+
+	for name, tc := range map[string]struct {
+		call func() error
+		want error
+	}{
+		"inline_query no bot": {func() error {
+			_, _, err := NewInlineQueryHandler(&mockClient{})(ctx, nil, InlineQueryParams{Peer: "@x", Query: "q"})
+
+			return err
+		}, ErrBotRequired},
+		"inline_query no peer": {func() error {
+			_, _, err := NewInlineQueryHandler(&mockClient{})(ctx, nil, InlineQueryParams{Bot: "@gif", Query: "q"})
+
+			return err
+		}, ErrPeerRequired},
+		"get_info no peer": {func() error {
+			_, _, err := NewMediaGetInfoHandler(&mockClient{})(ctx, nil, MediaGetInfoParams{MessageID: 1})
+
+			return err
+		}, ErrPeerRequired},
+		"get_info no message": {func() error {
+			_, _, err := NewMediaGetInfoHandler(&mockClient{})(ctx, nil, MediaGetInfoParams{Peer: "@x"})
+
+			return err
+		}, ErrMessageIDRequired},
+		"view no peer": {func() error {
+			_, _, err := NewMediaViewHandler(&mockClient{})(ctx, nil, MediaViewParams{MessageID: 1})
+
+			return err
+		}, ErrPeerRequired},
+		"view no message": {func() error {
+			_, _, err := NewMediaViewHandler(&mockClient{})(ctx, nil, MediaViewParams{Peer: "@x"})
+
+			return err
+		}, ErrMessageIDRequired},
+		"send_voice no path": {func() error {
+			_, _, err := NewMediaSendVoiceHandler(&mockClient{}, nil)(ctx, nil, MediaSendVoiceParams{Peer: "@x"})
+
+			return err
+		}, ErrPathRequired},
+	} {
+		err := tc.call()
+		if !errors.Is(err, tc.want) {
+			t.Errorf("%s: err = %v, want %v", name, err, tc.want)
+		}
+	}
+}
+
+func TestMediaTools_PropagateClientErrors(t *testing.T) {
+	ctx := context.Background()
+	errBoom := errors.New("boom")
+
+	failing := func() *mockClient {
+		return &mockClient{
+			err: errBoom,
+			resolvePeerFn: func(string) (telegram.InputPeer, error) {
+				return telegram.InputPeer{Type: telegram.PeerUser, ID: 5, AccessHash: 1}, nil
+			},
+		}
+	}
+
+	for name, call := range map[string]func() error{
+		"get_info": func() error {
+			_, _, err := NewMediaGetInfoHandler(failing())(ctx, nil, MediaGetInfoParams{Peer: "@x", MessageID: 1})
+
+			return err
+		},
+		"view": func() error {
+			_, _, err := NewMediaViewHandler(failing())(ctx, nil, MediaViewParams{Peer: "@x", MessageID: 1})
+
+			return err
+		},
+		"inline_query": func() error {
+			_, _, err := NewInlineQueryHandler(failing())(ctx, nil, InlineQueryParams{Bot: "@gif", Peer: "@x", Query: "q"})
+
+			return err
+		},
+		"inline_send": func() error {
+			_, _, err := NewInlineSendHandler(failing())(ctx, nil, InlineSendParams{Peer: "@x", QueryID: "1", ResultID: "r"})
+
+			return err
+		},
+	} {
+		err := call()
+		if !errors.Is(err, errBoom) {
+			t.Errorf("%s: err = %v, want the client error", name, err)
+		}
+	}
+}

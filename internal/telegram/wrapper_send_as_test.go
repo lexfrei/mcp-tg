@@ -32,6 +32,7 @@ type sendAsInvoker struct {
 	multiMedia  *tg.MessagesSendMultiMediaRequest
 	forward     *tg.MessagesForwardMessagesRequest
 	createTopic *tg.MessagesCreateForumTopicRequest
+	inline      *tg.MessagesSendInlineBotResultRequest
 }
 
 func (s *sendAsInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
@@ -61,6 +62,10 @@ func (s *sendAsInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.
 		return encodeResp(&tg.Updates{}, output)
 	case *tg.MessagesCreateForumTopicRequest:
 		s.createTopic = req
+
+		return encodeResp(&tg.Updates{}, output)
+	case *tg.MessagesSendInlineBotResultRequest:
+		s.inline = req
 
 		return encodeResp(&tg.Updates{}, output)
 	default:
@@ -283,5 +288,90 @@ func TestCreateForumTopic_OmitsSendAsWhenNil(t *testing.T) {
 
 	if _, ok := inv.createTopic.GetSendAs(); ok {
 		t.Error("send_as flag is set even though sendAs is nil")
+	}
+}
+
+func TestSendVoice_SetsSendAsAndOmitsItWhenNil(t *testing.T) {
+	identity := sendAsIdentity()
+
+	for name, sendAs := range map[string]*InputPeer{"set": &identity, "nil": nil} {
+		inv := &sendAsInvoker{}
+
+		_, err := newSendAsWrapper(inv).SendVoice(t.Context(), targetPeer(), writeTempFile(t, "voice.ogg", 16),
+			&VoiceOpts{Duration: 3, Send: SendOpts{SendAs: sendAs}})
+		if err != nil {
+			t.Fatalf("%s: SendVoice: %v", name, err)
+		}
+
+		got, ok := inv.sendMedia.GetSendAs()
+		if ok != (sendAs != nil) {
+			t.Fatalf("%s: send_as flag set = %v", name, ok)
+		}
+
+		if ok {
+			assertSendAsIdentity(t, got)
+		}
+	}
+}
+
+// A voice message carries an audio attribute with voice set; a video note a
+// round video attribute. Both reach messages.sendMedia.
+func TestSendVoice_PutsTheRightAttributeOnTheWire(t *testing.T) {
+	for name, opts := range map[string]*VoiceOpts{
+		"voice":      {Duration: 3},
+		"video note": {VideoNote: true, Duration: 4},
+	} {
+		inv := &sendAsInvoker{}
+
+		_, err := newSendAsWrapper(inv).SendVoice(t.Context(), targetPeer(), writeTempFile(t, "clip.bin", 16), opts)
+		if err != nil {
+			t.Fatalf("%s: SendVoice: %v", name, err)
+		}
+
+		media, ok := inv.sendMedia.Media.(*tg.InputMediaUploadedDocument)
+		if !ok || len(media.Attributes) != 1 {
+			t.Fatalf("%s: media = %#v", name, inv.sendMedia.Media)
+		}
+
+		switch attr := media.Attributes[0].(type) {
+		case *tg.DocumentAttributeAudio:
+			if opts.VideoNote || !attr.Voice || attr.Duration != 3 {
+				t.Errorf("%s: audio attribute = %+v", name, attr)
+			}
+		case *tg.DocumentAttributeVideo:
+			if !opts.VideoNote || !attr.RoundMessage || attr.Duration != 4 {
+				t.Errorf("%s: video attribute = %+v", name, attr)
+			}
+		default:
+			t.Errorf("%s: attribute = %T", name, attr)
+		}
+	}
+}
+
+// messages.sendInlineBotResult is a send_as request type of its own, so the
+// wiring is pinned separately.
+func TestSendInlineResult_SetsSendAsAndOmitsItWhenNil(t *testing.T) {
+	identity := sendAsIdentity()
+
+	for name, sendAs := range map[string]*InputPeer{"set": &identity, "nil": nil} {
+		inv := &sendAsInvoker{}
+
+		_, err := newSendAsWrapper(inv).SendInlineResult(t.Context(), targetPeer(), 99, "r1", SendOpts{SendAs: sendAs})
+		if err != nil {
+			t.Fatalf("%s: SendInlineResult: %v", name, err)
+		}
+
+		got, ok := inv.inline.GetSendAs()
+		if ok != (sendAs != nil) {
+			t.Fatalf("%s: send_as flag set = %v", name, ok)
+		}
+
+		if ok {
+			assertSendAsIdentity(t, got)
+		}
+
+		if inv.inline.QueryID != 99 || inv.inline.ID != "r1" {
+			t.Errorf("%s: request = %+v, want query 99 result r1", name, inv.inline)
+		}
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"context"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/tg"
@@ -23,8 +22,6 @@ const (
 	videoNoteSide = 384
 
 	mimeJPEG = "image/jpeg"
-
-	mediaTypeVideo = "video"
 )
 
 // ErrNothingToView is returned when a message has no photo, image or
@@ -144,20 +141,29 @@ func (w *Wrapper) GetMediaInfo(ctx context.Context, peer InputPeer, msgID int) (
 		return nil, err
 	}
 
+	// The type label is MessagePayloadType's, the vocabulary tg_messages_list
+	// reports and the docs pin; the attributes add only sizes, dimensions,
+	// duration and the file name.
 	switch media := raw.Media.(type) {
 	case *tg.MessageMediaPhoto:
-		return photoInfo(media), nil
+		info := photoInfo(media)
+		info.Type = MessagePayloadType(media)
+
+		return info, nil
 	case *tg.MessageMediaDocument:
 		doc, ok := media.Document.(*tg.Document)
 		if !ok {
 			return nil, ErrNoMedia
 		}
 
-		return documentInfo(doc), nil
+		info := documentInfo(doc)
+		info.Type = MessagePayloadType(media)
+
+		return info, nil
 	case nil:
 		return nil, ErrNoMedia
 	default:
-		return &MediaInfo{Type: strings.TrimPrefix(media.TypeName(), "messageMedia")}, nil
+		return &MediaInfo{Type: MessagePayloadType(media)}, nil
 	}
 }
 
@@ -265,7 +271,7 @@ func convertInlineResult(result tg.BotInlineResultClass) InlineResult {
 }
 
 func photoInfo(media *tg.MessageMediaPhoto) *MediaInfo {
-	info := &MediaInfo{Type: "photo", MimeType: mimeJPEG}
+	info := &MediaInfo{MimeType: mimeJPEG}
 
 	photo, ok := media.Photo.(*tg.Photo)
 	if !ok {
@@ -283,7 +289,7 @@ func photoInfo(media *tg.MessageMediaPhoto) *MediaInfo {
 }
 
 func documentInfo(doc *tg.Document) *MediaInfo {
-	info := &MediaInfo{Type: "document", MimeType: doc.MimeType, Size: doc.Size}
+	info := &MediaInfo{MimeType: doc.MimeType, Size: doc.Size}
 
 	for _, attr := range doc.Attributes {
 		applyDocumentAttribute(info, attr)
@@ -297,20 +303,21 @@ func applyDocumentAttribute(info *MediaInfo, attr tg.DocumentAttributeClass) {
 	case *tg.DocumentAttributeFilename:
 		info.FileName = filepath.Base(typed.FileName)
 	case *tg.DocumentAttributeAudio:
-		// A video note carries an audio attribute next to its video one;
-		// the video attribute names the kind, whichever comes first.
-		if info.Type != mediaTypeVideo {
-			info.Type, info.Duration = "audio", float64(typed.Duration)
+		// A video note carries an audio attribute next to its video one; the
+		// video's duration is the precise one, so the audio's fills in only
+		// when nothing set it.
+		if info.Duration == 0 {
+			info.Duration = float64(typed.Duration)
 		}
 
 		info.Voice, info.Title, info.Performer = typed.Voice, typed.Title, typed.Performer
 	case *tg.DocumentAttributeVideo:
-		info.Type, info.Duration, info.VideoNote = mediaTypeVideo, typed.Duration, typed.RoundMessage
+		info.Duration, info.VideoNote = typed.Duration, typed.RoundMessage
 		info.Width, info.Height = typed.W, typed.H
 	case *tg.DocumentAttributeImageSize:
 		info.Width, info.Height = typed.W, typed.H
 	case *tg.DocumentAttributeSticker:
-		info.Type, info.Sticker = "sticker", true
+		info.Sticker = true
 	case *tg.DocumentAttributeAnimated:
 		info.Animated = true
 	}
@@ -329,6 +336,9 @@ func viewLocation(media tg.MessageMediaClass, maxBytes int) (tg.InputFileLocatio
 		}
 
 		thumb, size := viewPhotoSize(photo.Sizes)
+		if thumb == "" {
+			return nil, "", 0
+		}
 
 		return &tg.InputPhotoFileLocation{
 			ID: photo.ID, AccessHash: photo.AccessHash, FileReference: photo.FileReference, ThumbSize: thumb,
@@ -349,18 +359,51 @@ func viewLocation(media tg.MessageMediaClass, maxBytes int) (tg.InputFileLocatio
 func documentViewLocation(doc *tg.Document, maxBytes int) (tg.InputFileLocationClass, string, int) {
 	location := &tg.InputDocumentFileLocation{ID: doc.ID, AccessHash: doc.AccessHash, FileReference: doc.FileReference}
 
-	if strings.HasPrefix(doc.MimeType, "image/") && doc.Size <= int64(maxBytes) {
+	if wholeImageFits(doc, maxBytes) {
 		return location, doc.MimeType, int(doc.Size)
 	}
 
-	if len(doc.Thumbs) == 0 {
+	// An empty thumb_size downloads the ORIGINAL file, so a document whose
+	// only thumbs are stripped or path sizes has nothing to view: sending it
+	// on would hand a PDF to the client labelled as a JPEG.
+	thumb, size := viewPhotoSize(doc.Thumbs)
+	if thumb == "" {
 		return nil, "", 0
 	}
 
-	thumb, size := viewPhotoSize(doc.Thumbs)
 	location.ThumbSize = thumb
 
 	return location, mimeJPEG, size
+}
+
+// viewableImageType reports the image types vision APIs commonly accept
+// (Anthropic's take exactly these). HEIC, TIFF, BMP and SVG are image/* too,
+// and a client handed one would have its request refused.
+func viewableImageType(mimeType string) bool {
+	switch mimeType {
+	case "image/jpeg", "image/png", "image/gif", "image/webp":
+		return true
+	default:
+		return false
+	}
+}
+
+// wholeImageFits reports whether an image document can be viewed as it is:
+// a type the client can take, within maxBytes, and no larger than viewMaxSide
+// on either side. Anything else falls back to its JPEG thumbnail, which is
+// what keeps the size bound the photo path has.
+func wholeImageFits(doc *tg.Document, maxBytes int) bool {
+	if !viewableImageType(doc.MimeType) || doc.Size > int64(maxBytes) {
+		return false
+	}
+
+	for _, attr := range doc.Attributes {
+		if size, ok := attr.(*tg.DocumentAttributeImageSize); ok {
+			return size.W > 0 && size.H > 0 && max(size.W, size.H) <= viewMaxSide
+		}
+	}
+
+	return false
 }
 
 // viewPhotoSize returns the type letter and byte size of the largest photo

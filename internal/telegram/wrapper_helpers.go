@@ -517,15 +517,17 @@ func (w *Wrapper) createBasicChat(ctx context.Context, title string, users []Inp
 func extractDialogs(result tg.MessagesDialogsClass) []Dialog {
 	switch res := result.(type) {
 	case *tg.MessagesDialogs:
-		return buildDialogs(res.Dialogs, res.Chats, res.Users)
+		return buildDialogs(res.Dialogs, res.Messages, res.Chats, res.Users)
 	case *tg.MessagesDialogsSlice:
-		return buildDialogs(res.Dialogs, res.Chats, res.Users)
+		return buildDialogs(res.Dialogs, res.Messages, res.Chats, res.Users)
 	default:
 		return nil
 	}
 }
 
-func buildDialogs(dialogs []tg.DialogClass, chats []tg.ChatClass, users []tg.UserClass) []Dialog {
+func buildDialogs(
+	dialogs []tg.DialogClass, messages []tg.MessageClass, chats []tg.ChatClass, users []tg.UserClass,
+) []Dialog {
 	result := make([]Dialog, 0, len(dialogs))
 
 	chatMap := buildChatMap(chats)
@@ -541,7 +543,14 @@ func buildDialogs(dialogs []tg.DialogClass, chats []tg.ChatClass, users []tg.Use
 			continue
 		}
 
-		entry := Dialog{UnreadCount: dialog.UnreadCount}
+		folderID, _ := dialog.GetFolderID()
+
+		entry := Dialog{
+			UnreadCount:     dialog.UnreadCount,
+			LastMessageDate: findMessageDate(messages, dialog.Peer, dialog.TopMessage),
+			Archived:        folderID == warmArchiveFolderID,
+			Pinned:          dialog.Pinned,
+		}
 		fillDialogPeer(&entry, dialog.Peer, chatMap, userMap)
 
 		result = append(result, entry)
@@ -1438,11 +1447,27 @@ func extractFolders(result *tg.MessagesDialogFilters) []Folder {
 
 	folders := make([]Folder, 0, len(result.Filters))
 
-	for _, f := range result.Filters {
-		if filter, ok := f.(*tg.DialogFilter); ok {
+	for _, raw := range result.Filters {
+		switch filter := raw.(type) {
+		case *tg.DialogFilter:
 			folders = append(folders, Folder{
-				ID:    filter.ID,
-				Title: filter.Title.Text,
+				ID:           filter.ID,
+				Title:        filter.Title.Text,
+				Emoticon:     filter.Emoticon,
+				Peers:        inputPeersFromTG(filter.IncludePeers),
+				PinnedPeers:  inputPeersFromTG(filter.PinnedPeers),
+				ExcludePeers: inputPeersFromTG(filter.ExcludePeers),
+				Includes:     folderIncludes(filter),
+				Excludes:     folderExcludes(filter),
+			})
+		case *tg.DialogFilterChatlist:
+			folders = append(folders, Folder{
+				ID:          filter.ID,
+				Title:       filter.Title.Text,
+				Emoticon:    filter.Emoticon,
+				Peers:       inputPeersFromTG(filter.IncludePeers),
+				PinnedPeers: inputPeersFromTG(filter.PinnedPeers),
+				Shared:      true,
 			})
 		}
 	}
@@ -1641,7 +1666,7 @@ func participantFilter(
 		return &tg.ChannelParticipantsAdmins{}
 	case "banned":
 		return &tg.ChannelParticipantsBanned{}
-	case "bots":
+	case kindBots:
 		return &tg.ChannelParticipantsBots{}
 	case "kicked":
 		return &tg.ChannelParticipantsKicked{}

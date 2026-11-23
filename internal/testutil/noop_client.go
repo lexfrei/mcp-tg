@@ -344,3 +344,61 @@ func (NoopClient) SendContact(
 func (NoopClient) GetAllDrafts(_ context.Context) ([]telegram.Draft, error) {
 	return nil, nil
 }
+
+func (NoopClient) GetMessageButtons(_ context.Context, _ telegram.InputPeer, _ int) ([]telegram.MessageButton, error) {
+	return nil, nil
+}
+
+func (NoopClient) PressButton(_ context.Context, _ telegram.InputPeer, _, _, _ int) (*telegram.ButtonPress, error) {
+	return &telegram.ButtonPress{}, nil
+}
+
+func (NoopClient) GetBotInfo(_ context.Context, _ telegram.InputPeer) (*telegram.BotInfo, error) {
+	return &telegram.BotInfo{}, nil
+}
+
+func (NoopClient) SendPoll(_ context.Context, _ telegram.InputPeer, _ *telegram.PollOpts) (*telegram.Message, error) {
+	return &telegram.Message{}, nil
+}
+
+func (NoopClient) GetPoll(_ context.Context, _ telegram.InputPeer, _ int) (*telegram.Poll, error) {
+	return &telegram.Poll{}, nil
+}
+
+func (NoopClient) VotePoll(_ context.Context, _ telegram.InputPeer, _ int, _ []int) error {
+	return nil
+}
+
+func (NoopClient) BanMember(_ context.Context, _, _ telegram.InputPeer, _ int, _ bool) error {
+	return nil
+}
+
+func (NoopClient) CheckInvite(_ context.Context, _ string) (*telegram.InviteInfo, error) {
+	return &telegram.InviteInfo{}, nil
+}
+
+func (NoopClient) JoinByInvite(_ context.Context, _ string) (*telegram.PeerInfo, error) {
+	return &telegram.PeerInfo{}, nil
+}
+
+func (NoopClient) UpgradeToSupergroup(_ context.Context, _ telegram.InputPeer) (*telegram.PeerInfo, error) {
+	return &telegram.PeerInfo{}, nil
+}
+
+func (NoopClient) SetForum(_ context.Context, _ telegram.InputPeer, _ bool) error {
+	return nil
+}
+
+func (NoopClient) GetAdminLog(
+	_ context.Context, _ telegram.InputPeer, _ telegram.AdminLogOpts,
+) ([]telegram.AdminLogEvent, error) {
+	return nil, nil
+}
+
+func (NoopClient) DeleteChatPhoto(_ context.Context, _ telegram.InputPeer) error {
+	return nil
+}
+
+func (NoopClient) DeleteForumTopic(_ context.Context, _ telegram.InputPeer, _ int) error {
+	return nil
+}

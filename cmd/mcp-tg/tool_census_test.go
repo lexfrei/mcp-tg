@@ -22,11 +22,11 @@ import (
 //
 // When a tool is added, update these numbers AND the two documents.
 const (
-	wantToolsTotal       = 91
-	wantReadOnlyTools    = 39
-	wantIdempotentTools  = 29
-	wantWriteTools       = 14
-	wantDestructiveTools = 9
+	wantToolsTotal       = 105
+	wantReadOnlyTools    = 44
+	wantIdempotentTools  = 32
+	wantWriteTools       = 16
+	wantDestructiveTools = 13
 
 	// The docs advertise these beside the tool total, so they are pinned
 	// the same way. A resource template counts as a resource: the docs

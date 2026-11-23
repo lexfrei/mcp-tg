@@ -155,9 +155,16 @@ type Dialog struct {
 	Title       string    `json:"title"`
 	Username    string    `json:"username,omitempty"`
 	UnreadCount int       `json:"unreadCount,omitempty"`
-	LastMessage *Message  `json:"lastMessage,omitempty"`
-	IsChannel   bool      `json:"isChannel,omitempty"`
-	IsGroup     bool      `json:"isGroup,omitempty"`
+	// LastMessageDate is the Unix time of the dialog's top message, the
+	// value to pass back as OffsetDate to continue the listing.
+	LastMessageDate int `json:"lastMessageDate,omitempty"`
+	// Archived and Pinned are the server's own view of the dialog: whether
+	// it sits in the archive folder, and whether it is pinned there.
+	Archived    bool     `json:"archived,omitempty"`
+	Pinned      bool     `json:"pinned,omitempty"`
+	LastMessage *Message `json:"lastMessage,omitempty"`
+	IsChannel   bool     `json:"isChannel,omitempty"`
+	IsGroup     bool     `json:"isGroup,omitempty"`
 }
 
 // GroupInfo holds detailed information about a group, supergroup or channel.
@@ -224,10 +231,22 @@ type Photo struct {
 }
 
 // Folder represents a Telegram chat folder (filter).
+//
+// Peers are the explicitly included chats and PinnedPeers the ones pinned
+// on top of the folder (also part of it). Includes and Excludes name the
+// rule-based parts: chat kinds the folder adds wholesale (contacts,
+// non_contacts, groups, broadcasts, bots) and kinds it hides (muted, read,
+// archived). Shared marks a folder shared by invite link (a chatlist).
 type Folder struct {
-	ID    int         `json:"id"`
-	Title string      `json:"title"`
-	Peers []InputPeer `json:"peers,omitempty"`
+	ID           int         `json:"id"`
+	Title        string      `json:"title"`
+	Emoticon     string      `json:"emoticon,omitempty"`
+	Peers        []InputPeer `json:"peers,omitempty"`
+	PinnedPeers  []InputPeer `json:"pinnedPeers,omitempty"`
+	ExcludePeers []InputPeer `json:"excludePeers,omitempty"`
+	Includes     []string    `json:"includes,omitempty"`
+	Excludes     []string    `json:"excludes,omitempty"`
+	Shared       bool        `json:"shared,omitempty"`
 }
 
 // ReactionUser is one peer's reaction to a message.
@@ -438,10 +457,12 @@ type ReactionOpts struct {
 	Remove bool
 }
 
-// DialogOpts configures dialog listing.
+// DialogOpts configures dialog listing. Archived lists the archive
+// instead of the main chat list; the server returns one or the other.
 type DialogOpts struct {
 	Limit      int
 	OffsetDate int
+	Archived   bool
 }
 
 // TopicOpts configures forum topic listing.

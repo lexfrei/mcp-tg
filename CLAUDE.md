@@ -2,7 +2,7 @@
 
 ## What is this
 
-MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 85 tools + resources + prompts via MCP.
+MCP server for Telegram Client API (MTProto, not Bot API). Uses gotd/td for protocol, exposes 90 tools + resources + prompts via MCP.
 
 ## Build & Test
 
@@ -82,8 +82,9 @@ internal/telegram/           Telegram abstraction layer
   invite_link.go             Invite links: the primary link read from the full chat, plus list, create and revoke
   send_as.go                 send_as identity: GetSendAs, SetDefaultSendAs, peer-cache seeding
   media_extra.go             Voice/video-note sends, media metadata, in-memory image view (ViewMedia), inline bot query/send
+  message_utils.go           Message link, read receipts, unpin-all, all drafts, contact cards
   subscriptions.go           SubscriptionBroker: routes new-message updates to watching resource URIs (ResourceUpdater sink)
-internal/tools/              MCP tool handlers (85 tools)
+internal/tools/              MCP tool handlers (90 tools)
   annotations.go             Tool annotation helpers (readOnly, idempotent, write, destructive)
   errors.go                  Error sentinels
   helpers.go                 Shared helpers (deref, formatPeer, formatPeerRef, formatUserName, peerLabel)
@@ -117,9 +118,9 @@ internal/testutil/           NoopClient for registration tests
 
 ### Tool annotations
 
-- `readOnlyAnnotations()` — tools that only read data (35 tools)
-- `idempotentAnnotations()` — tools that modify state but are safe to retry (28 tools)
-- `writeAnnotations()` — tools that create new entities, not idempotent (13 tools)
+- `readOnlyAnnotations()` — tools that only read data (38 tools)
+- `idempotentAnnotations()` — tools that modify state but are safe to retry (29 tools)
+- `writeAnnotations()` — tools that create new entities, not idempotent (14 tools)
 - `destructiveAnnotations()` — tools that delete/remove things (9 tools)
 
 The four counts must sum to the tool total. `TestToolCensus_MatchesTheDocumentedCounts` (`cmd/mcp-tg/tool_census_test.go`) pins them against the registered server, so a stale number fails CI instead of surviving into the next PR — which is how `readOnly` sat one short for a whole release. `TestDocsAnnotationTable_MatchesTheCensus` then pins the published table in `docs/tools.md` against those same constants, so the site cannot drift from the server either.
@@ -297,7 +298,7 @@ Known CommonMark gaps documented in `docs/guides/messages.md` ("Markdown — Kno
 
 ### Send-as identity (posting as a channel)
 
-MTProto's `send_as` field appears on exactly six requests, which map onto eight tools: `messages.sendMessage`, `messages.sendMedia` (backs `tg_messages_send_file`, `tg_stickers_send` and `tg_media_send_voice`), `messages.sendMultiMedia`, `messages.forwardMessages`, `messages.createForumTopic`, `messages.sendInlineBotResult` (`tg_inline_send`). All eight take an optional `sendAs` string.
+MTProto's `send_as` field appears on exactly six requests, which map onto nine tools: `messages.sendMessage`, `messages.sendMedia` (backs `tg_messages_send_file`, `tg_stickers_send`, `tg_media_send_voice` and `tg_messages_send_contact`), `messages.sendMultiMedia`, `messages.forwardMessages`, `messages.createForumTopic`, `messages.sendInlineBotResult` (`tg_inline_send`). All nine take an optional `sendAs` string.
 
 Wiring: `SendOpts.SendAs *InputPeer` for the five methods that take an options struct (`SendMessage`, `SendFile`, `SendAlbum`, `SendInlineResult`, and `SendVoice` through `VoiceOpts.Send`); a trailing `sendAs *InputPeer` argument for `ForwardMessages` / `CreateForumTopic` / `SendSticker`. `applySendAs(sendAs, req.SetSendAs)` (`wrapper_helpers.go`) sets the conditional field for all six request types via the method value — do NOT inline the `if sendAs != nil` check per call site, `dupl` will flag it.
 
@@ -311,7 +312,7 @@ Both new tools reject non-`PeerChannel` peers before the round trip (`telegram.E
 
 Posting as yourself for a single message, in a chat whose default is a channel, works: pass your own numeric ID as `sendAs`. It resolves with an access hash because the account always has a Saved Messages dialog, so `resolveSendAs` accepts it and `InputPeerUser` is what reaches the wire. Verified end-to-end. `inputPeerSelf` is therefore needed only by `SetDefaultSendAs`, where the identity is absent rather than resolved.
 
-Verified against a live account: a rejected identity comes back as `CHAT_ADMIN_REQUIRED` (channel you don't administrate) or `CHAT_WRITE_FORBIDDEN` (foreign user), NOT `SEND_AS_PEER_INVALID` — that code exists in the schema but the server rarely reaches for it. Both read as a chat-permission problem, so `sendErr` (`tools/errors.go`) names `sendAs` as a suspect whenever one was supplied. Do not "simplify" the eight send tools back to plain `telegramErr`.
+Verified against a live account: a rejected identity comes back as `CHAT_ADMIN_REQUIRED` (channel you don't administrate) or `CHAT_WRITE_FORBIDDEN` (foreign user), NOT `SEND_AS_PEER_INVALID` — that code exists in the schema but the server rarely reaches for it. Both read as a chat-permission problem, so `sendErr` (`tools/errors.go`) names `sendAs` as a suspect whenever one was supplied. Do not "simplify" the nine send tools back to plain `telegramErr`.
 
 Also verified: a channel that is the chat default reacts as itself, and `messages.getMessageReactionsList` returns its title in `Chats`, not `Users` — `extractReactionUsers` reads both and carries `ReactionUser.PeerType`.
 

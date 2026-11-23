@@ -115,6 +115,9 @@ var ErrEmojiRequired = errors.New("emoji is required")
 // ErrTopicIDRequired is returned when a topic ID parameter is missing.
 var ErrTopicIDRequired = errors.New("topic ID is required")
 
+// ErrNegativeTopicID is returned when topicId is negative.
+var ErrNegativeTopicID = errors.New("topicId must not be negative")
+
 // ErrTopicIDOnNonForum is returned when topicId is supplied for a chat
 // that is not a forum-enabled supergroup.
 var ErrTopicIDOnNonForum = errors.New(

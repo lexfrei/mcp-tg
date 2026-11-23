@@ -375,3 +375,64 @@ func TestSendInlineResult_SetsSendAsAndOmitsItWhenNil(t *testing.T) {
 		}
 	}
 }
+
+func TestSendContact_SetsSendAs(t *testing.T) {
+	inv := &sendAsInvoker{}
+	identity := sendAsIdentity()
+
+	_, err := newSendAsWrapper(inv).SendContact(t.Context(), targetPeer(),
+		Contact{Phone: "+15550100", FirstName: "Ann"}, SendOpts{SendAs: &identity})
+	if err != nil {
+		t.Fatalf("SendContact: %v", err)
+	}
+
+	got, ok := inv.sendMedia.GetSendAs()
+	if !ok {
+		t.Fatal("send_as flag is not set on the request")
+	}
+
+	assertSendAsIdentity(t, got)
+}
+
+func TestSendContact_OmitsSendAsWhenNil(t *testing.T) {
+	inv := &sendAsInvoker{}
+
+	_, err := newSendAsWrapper(inv).SendContact(t.Context(), targetPeer(),
+		Contact{Phone: "+15550100", FirstName: "Ann"}, SendOpts{})
+	if err != nil {
+		t.Fatalf("SendContact: %v", err)
+	}
+
+	if _, ok := inv.sendMedia.GetSendAs(); ok {
+		t.Error("send_as flag is set even though SendOpts.SendAs is nil")
+	}
+}
+
+// The topic, the reply target and silent must reach messages.sendMedia.
+func TestSendContact_CarriesReplyTopicAndSilent(t *testing.T) {
+	inv := &sendAsInvoker{}
+
+	_, err := newSendAsWrapper(inv).SendContact(t.Context(), targetPeer(),
+		Contact{Phone: "+15550100", FirstName: "Ann"}, SendOpts{TopicID: 4, ReplyTo: 9, Silent: true})
+	if err != nil {
+		t.Fatalf("SendContact: %v", err)
+	}
+
+	reply, ok := inv.sendMedia.ReplyTo.(*tg.InputReplyToMessage)
+	if !ok || reply.ReplyToMsgID != 9 {
+		t.Fatalf("reply_to = %#v, want message 9", inv.sendMedia.ReplyTo)
+	}
+
+	if top, set := reply.GetTopMsgID(); !set || top != 4 {
+		t.Errorf("top_msg_id = %d (set %v), want 4", top, set)
+	}
+
+	if !inv.sendMedia.Silent {
+		t.Error("silent did not reach the request")
+	}
+
+	media, ok := inv.sendMedia.Media.(*tg.InputMediaContact)
+	if !ok || media.PhoneNumber != "+15550100" || media.FirstName != "Ann" {
+		t.Errorf("media = %#v, want the contact", inv.sendMedia.Media)
+	}
+}

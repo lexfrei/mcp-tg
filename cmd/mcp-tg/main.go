@@ -657,6 +657,13 @@ func registerTools(
 	tools.AddTool(server, registry, gate, tools.MediaViewTool(), tools.NewMediaViewHandler(client))
 	tools.AddTool(server, registry, gate, tools.InlineQueryTool(), tools.NewInlineQueryHandler(client))
 	tools.AddTool(server, registry, gate, tools.InlineSendTool(), tools.NewInlineSendHandler(client))
+
+	// Message utilities.
+	tools.AddTool(server, registry, gate, tools.MessagesGetLinkTool(), tools.NewMessagesGetLinkHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesGetReadByTool(), tools.NewMessagesGetReadByHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesUnpinAllTool(), tools.NewMessagesUnpinAllHandler(client))
+	tools.AddTool(server, registry, gate, tools.MessagesSendContactTool(), tools.NewMessagesSendContactHandler(client))
+	tools.AddTool(server, registry, gate, tools.DraftsListTool(), tools.NewDraftsListHandler(client))
 }
 
 // newHTTPHandler builds the HTTP handler chain for the MCP server with

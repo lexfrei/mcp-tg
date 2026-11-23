@@ -469,3 +469,16 @@ func TestInlineSendHandler_PassesSendAs(t *testing.T) {
 
 	assertSendAsChannel(t, mock.lastSendOpts.SendAs)
 }
+
+func TestMessagesSendContactHandler_PassesSendAs(t *testing.T) {
+	mock := sendAsMock()
+
+	_, _, err := NewMessagesSendContactHandler(mock)(context.Background(), nil, MessagesSendContactParams{
+		Peer: "@group", Phone: "+15550100", FirstName: "Ann", SendAs: new(sendAsRef),
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	assertSendAsChannel(t, mock.lastSendOpts.SendAs)
+}

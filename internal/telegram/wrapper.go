@@ -1603,6 +1603,13 @@ func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, pe
 
 // DeleteFolder deletes a chat folder.
 func (w *Wrapper) DeleteFolder(ctx context.Context, folderID int) error {
+	// Serialized with creates and edits: a delete resent after a lost answer
+	// would otherwise remove a folder a create took the freed id for in
+	// between, and a delete landing between an edit's read and its write
+	// would be undone by that write.
+	w.folderMu.Lock()
+	defer w.folderMu.Unlock()
+
 	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
 		ID: folderID,
 	})

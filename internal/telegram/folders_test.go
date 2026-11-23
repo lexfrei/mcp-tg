@@ -5,6 +5,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/gotd/td/bin"
@@ -284,17 +285,31 @@ func TestFreeFolderID_FullAccount(t *testing.T) {
 }
 
 // statefulFolderInvoker keeps a folder list that updateDialogFilter writes
-// to, the way the server does: an update on a taken id replaces that folder.
+// to, the way the server does: an update on a taken id replaces that folder,
+// and an update with no filter deletes it.
 type statefulFolderInvoker struct {
 	mu        sync.Mutex
 	filters   map[int]tg.DialogFilterClass
 	listErr   error
 	updateErr error
 	updates   []*tg.MessagesUpdateDialogFilterRequest
-	// listed, when set, is signalled after each list so a test can make
-	// two creates overlap between their read and their write.
-	listed chan struct{}
-	resume chan struct{}
+
+	// window, when set, holds every list and every delete that long, so
+	// an unguarded overlap with another folder write has time to happen.
+	window time.Duration
+	// open counts the read-then-write sequences under way: a list opens
+	// one, the update with a filter that follows closes it. maxOpen is the
+	// most seen at once.
+	open    int
+	maxOpen int
+	// resendDelete applies each delete a second time after the window, the
+	// way a delete whose answer was lost is resent within the same call.
+	// deleting is set between the two copies, and listedInDelete records a
+	// list that ran while it was.
+	resendDelete   bool
+	deleting       bool
+	listedInDelete bool
+	deleteStarted  chan struct{}
 }
 
 func (s *statefulFolderInvoker) Invoke(_ context.Context, input bin.Encoder, output bin.Decoder) error {
@@ -302,10 +317,16 @@ func (s *statefulFolderInvoker) Invoke(_ context.Context, input bin.Encoder, out
 	case *tg.MessagesGetDialogFiltersRequest:
 		return s.list(output)
 	case *tg.MessagesUpdateDialogFilterRequest:
+		if req.Filter == nil {
+			return s.remove(req, output)
+		}
+
 		s.mu.Lock()
 		defer s.mu.Unlock()
 
 		s.updates = append(s.updates, req)
+		s.open--
+
 		if s.updateErr != nil {
 			return s.updateErr
 		}
@@ -318,6 +339,29 @@ func (s *statefulFolderInvoker) Invoke(_ context.Context, input bin.Encoder, out
 	}
 }
 
+func (s *statefulFolderInvoker) remove(req *tg.MessagesUpdateDialogFilterRequest, output bin.Decoder) error {
+	s.mu.Lock()
+	s.updates = append(s.updates, req)
+	delete(s.filters, req.ID)
+	s.deleting = s.resendDelete
+	s.mu.Unlock()
+
+	if s.resendDelete {
+		if s.deleteStarted != nil {
+			close(s.deleteStarted)
+		}
+
+		time.Sleep(s.window)
+
+		s.mu.Lock()
+		delete(s.filters, req.ID)
+		s.deleting = false
+		s.mu.Unlock()
+	}
+
+	return encodeAndDecode(&tg.BoolTrue{}, output)
+}
+
 func (s *statefulFolderInvoker) list(output bin.Decoder) error {
 	s.mu.Lock()
 	if s.listErr != nil {
@@ -326,16 +370,17 @@ func (s *statefulFolderInvoker) list(output bin.Decoder) error {
 		return s.listErr
 	}
 
+	s.open++
+	s.maxOpen = max(s.maxOpen, s.open)
+	s.listedInDelete = s.listedInDelete || s.deleting
+
 	reply := &tg.MessagesDialogFilters{Filters: []tg.DialogFilterClass{&tg.DialogFilterDefault{}}}
 	for _, filter := range s.filters {
 		reply.Filters = append(reply.Filters, filter)
 	}
 	s.mu.Unlock()
 
-	if s.listed != nil {
-		s.listed <- struct{}{}
-		<-s.resume
-	}
+	time.Sleep(s.window)
 
 	return encodeAndDecode(reply, output)
 }
@@ -415,12 +460,11 @@ func TestCreateFolder_PassesTheUpdateErrorThrough(t *testing.T) {
 
 // Two creates in one process must not pick the same id: updateDialogFilter
 // on a taken id is an edit, so the second would silently replace the first.
-// The store holds each create between its read and its write until both have
-// read, which is exactly the overlap an unguarded read-then-write loses to.
+// Each list is held open for a window long enough for an unguarded second
+// create to read the same list, so the overlap is counted, not raced for.
 func TestCreateFolder_ConcurrentCreatesGetDistinctIDs(t *testing.T) {
 	store := newFolderStore()
-	store.listed = make(chan struct{})
-	store.resume = make(chan struct{})
+	store.window = 100 * time.Millisecond
 
 	wrap := newWrapperWithInvoker(store)
 
@@ -435,13 +479,6 @@ func TestCreateFolder_ConcurrentCreatesGetDistinctIDs(t *testing.T) {
 		})
 	}
 
-	// Release each list as it arrives. Unguarded, both lists arrive before
-	// either update; guarded, the second list waits for the first create.
-	for range 2 {
-		<-store.listed
-		store.resume <- struct{}{}
-	}
-
 	group.Wait()
 
 	for idx, err := range errs {
@@ -450,11 +487,50 @@ func TestCreateFolder_ConcurrentCreatesGetDistinctIDs(t *testing.T) {
 		}
 	}
 
-	if results[0].ID == results[1].ID {
-		t.Errorf("both creates got folder id %d; the second replaced the first", results[0].ID)
+	if store.maxOpen != 1 {
+		t.Errorf("%d creates read the list at once, want 1", store.maxOpen)
 	}
 
-	if len(store.filters) != 2 {
-		t.Errorf("store holds %d folder(s), want 2", len(store.filters))
+	if results[0].ID == results[1].ID || len(store.filters) != 2 {
+		t.Errorf("ids %d and %d, store holds %d folder(s); want two distinct folders",
+			results[0].ID, results[1].ID, len(store.filters))
+	}
+}
+
+// A delete whose answer is lost is resent within the same call. A create
+// that read the list between the two copies would take the freed id, report
+// it, and lose its folder to the resent delete.
+func TestDeleteFolder_CreateWaitsForTheResentDelete(t *testing.T) {
+	store := newFolderStore(firstFolderID)
+	store.window = 100 * time.Millisecond
+	store.resendDelete = true
+	store.deleteStarted = make(chan struct{})
+
+	wrap := newWrapperWithInvoker(store)
+
+	var (
+		group     sync.WaitGroup
+		deleteErr error
+		created   *Folder
+		createErr error
+	)
+
+	group.Go(func() { deleteErr = wrap.DeleteFolder(t.Context(), firstFolderID) })
+
+	<-store.deleteStarted
+
+	group.Go(func() { created, createErr = wrap.CreateFolder(t.Context(), "New", nil) })
+	group.Wait()
+
+	if deleteErr != nil || createErr != nil {
+		t.Fatalf("delete: %v, create: %v", deleteErr, createErr)
+	}
+
+	if store.listedInDelete {
+		t.Error("the create read the list while the delete was still being resent")
+	}
+
+	if _, ok := store.filters[created.ID]; !ok {
+		t.Errorf("create reported folder %d, but the store has %d folder(s) and not that one", created.ID, len(store.filters))
 	}
 }

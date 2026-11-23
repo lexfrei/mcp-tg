@@ -155,9 +155,15 @@ type Dialog struct {
 	Title       string    `json:"title"`
 	Username    string    `json:"username,omitempty"`
 	UnreadCount int       `json:"unreadCount,omitempty"`
-	LastMessage *Message  `json:"lastMessage,omitempty"`
-	IsChannel   bool      `json:"isChannel,omitempty"`
-	IsGroup     bool      `json:"isGroup,omitempty"`
+	// LastMessageDate is the Unix time of the dialog's top message, the
+	// value to pass back as OffsetDate to continue the listing.
+	LastMessageDate int `json:"lastMessageDate,omitempty"`
+	// TopMessageID is the ID of that message, the OffsetID of the same
+	// cursor. Internal: the tools page by date alone.
+	TopMessageID int      `json:"-"`
+	LastMessage  *Message `json:"lastMessage,omitempty"`
+	IsChannel    bool     `json:"isChannel,omitempty"`
+	IsGroup      bool     `json:"isGroup,omitempty"`
 }
 
 // GroupInfo holds detailed information about a group, supergroup or channel.
@@ -438,10 +444,15 @@ type ReactionOpts struct {
 	Remove bool
 }
 
-// DialogOpts configures dialog listing.
+// DialogOpts configures dialog listing. OffsetDate, OffsetID and OffsetPeer
+// are messages.getDialogs' cursor: the LastMessageDate, TopMessageID and Peer
+// of the last dialog already read. OffsetDate alone works too, but skips
+// dialogs that share that date with the last one.
 type DialogOpts struct {
 	Limit      int
 	OffsetDate int
+	OffsetID   int
+	OffsetPeer *InputPeer
 }
 
 // TopicOpts configures forum topic listing.

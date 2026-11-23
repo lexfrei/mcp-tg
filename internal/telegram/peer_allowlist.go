@@ -21,9 +21,9 @@ var ErrAccountWideDisabled = errors.New("this operation spans every chat and is 
 // Every tool, resource, prompt and subscription turns its peer argument into
 // an InputPeer through ResolvePeer, so refusing there covers all of them at
 // once. The listings that return peers the caller never named (dialogs,
-// common chats, contacts, the block list) are filtered instead, and the few operations that can only
-// act on the whole account (global search, clearing every draft, folders)
-// are refused outright.
+// common chats, send-as identities, contacts, the block list) are filtered
+// instead, and the few operations that can only act on the whole account
+// (global search, clearing every draft, folders) are refused outright.
 //
 // Entries are resolved lazily, on the first check: the server logs in on
 // the first tool call, so at construction time there may be no session to
@@ -104,14 +104,17 @@ func (list *PeerAllowlist) Allows(ctx context.Context, peer InputPeer) (bool, er
 const allowlistDialogsPage = 100
 
 // allowlistDialogsMaxPages bounds the source pages one GetDialogs reads, so
-// a list whose allowed chats are all near the end costs a bounded scan.
+// a list whose allowed chats are all near the end, or not in the dialog list
+// at all, costs a bounded scan: the walk stops after 5000 dialogs.
 const allowlistDialogsMaxPages = 50
 
 // GetDialogs returns only the dialogs on the list, read on page after page
-// until it holds opts.Limit of them or the dialog list ends. Filtering one
-// source page would hand the caller a short page: the tools read that as
-// the end of the list, and an allowed chat past the first page would look
-// absent.
+// until it holds opts.Limit of them, every entry of the list has turned up,
+// the dialog list ends, or allowlistDialogsMaxPages pages were read.
+// Filtering one source page would hand the caller a short page: the tools
+// read that as the end of the list, and an allowed chat past the first page
+// would look absent. Stopping once every entry has turned up keeps a short
+// list from scanning the whole account on every call.
 func (list *PeerAllowlist) GetDialogs(ctx context.Context, opts DialogOpts) ([]Dialog, error) {
 	limit := opts.Limit
 	if limit <= 0 {
@@ -135,32 +138,47 @@ func (list *PeerAllowlist) GetDialogs(ctx context.Context, opts DialogOpts) ([]D
 			return nil, err
 		}
 
-		next, more := nextDialogsOffset(dialogs, page)
-		if len(kept) >= limit || !more {
+		if len(kept) >= limit || list.allSeen(seen) {
 			break
 		}
 
-		page.OffsetDate = next
+		next, more := nextDialogsPage(dialogs, page)
+		if !more {
+			break
+		}
+
+		page = next
 	}
 
 	return kept, nil
 }
 
-// nextDialogsOffset returns the cursor for the page after dialogs, and
-// whether there is one: a short page is the end of the list, and a page
-// whose last dialog has no date, or the date the page was read at, cannot
-// move the cursor.
-func nextDialogsOffset(dialogs []Dialog, page DialogOpts) (int, bool) {
+// nextDialogsPage returns the request for the page after dialogs, and
+// whether there is one. The cursor is messages.getDialogs' full triple (the
+// last dialog's date, top message and peer), so dialogs sharing a date are
+// not skipped. A short page is the end of the list, and a last dialog
+// without a date, or a cursor that did not move, cannot continue.
+func nextDialogsPage(dialogs []Dialog, page DialogOpts) (DialogOpts, bool) {
 	if len(dialogs) < page.Limit {
-		return 0, false
+		return page, false
 	}
 
-	last := dialogs[len(dialogs)-1].LastMessage
-	if last == nil || last.Date == 0 || last.Date == page.OffsetDate {
-		return 0, false
+	last := dialogs[len(dialogs)-1]
+	if last.LastMessageDate == 0 {
+		return page, false
 	}
 
-	return last.Date, true
+	peer := last.Peer
+	next := page
+	next.OffsetDate, next.OffsetID, next.OffsetPeer = last.LastMessageDate, last.TopMessageID, &peer
+
+	stuck := page.OffsetPeer != nil && next.OffsetDate == page.OffsetDate &&
+		next.OffsetID == page.OffsetID && peer == *page.OffsetPeer
+	if stuck {
+		return page, false
+	}
+
+	return next, true
 }
 
 // SearchContacts returns only the matching contacts on the list.
@@ -219,6 +237,18 @@ func (list *PeerAllowlist) GetCommonChats(ctx context.Context, peer InputPeer) (
 	return filterAllowed(ctx, list, chats, func(info *PeerInfo) InputPeer { return info.Peer })
 }
 
+// GetSendAs returns only the send-as identities on the list: the account
+// may post as channels the caller never named, and their names, IDs and
+// usernames would leak through the listing.
+func (list *PeerAllowlist) GetSendAs(ctx context.Context, peer InputPeer) ([]SendAsOption, error) {
+	options, err := list.Client.GetSendAs(ctx, peer)
+	if err != nil {
+		return nil, errors.Wrap(err, "listing send-as identities")
+	}
+
+	return filterAllowed(ctx, list, options, func(option *SendAsOption) InputPeer { return option.Peer })
+}
+
 // SearchGlobal is refused: its results and cursor span every chat.
 func (*PeerAllowlist) SearchGlobal(context.Context, string, *SearchGlobalOpts) (SearchGlobalPage, error) {
 	return SearchGlobalPage{}, ErrAccountWideDisabled
@@ -250,9 +280,32 @@ func (*PeerAllowlist) DeleteFolder(context.Context, int) error {
 	return ErrAccountWideDisabled
 }
 
+// allSeen reports whether every entry of the list has turned up in the walk.
+// It is only meaningful once the entries are resolved, which the filtering of
+// a non-empty page does first.
+func (list *PeerAllowlist) allSeen(seen map[peerKey]bool) bool {
+	list.mut.Lock()
+	defer list.mut.Unlock()
+
+	for _, resolved := range list.resolved {
+		if !resolved {
+			return false
+		}
+	}
+
+	for key := range list.allowed {
+		if !seen[key] {
+			return false
+		}
+	}
+
+	return true
+}
+
 // appendAllowedDialogs appends the allowed dialogs of a source page not seen
-// on an earlier one (the cursor is a timestamp, so pages can overlap), up to
-// limit.
+// on an earlier one (a server that treats the cursor as inclusive would
+// repeat the boundary dialog), up to limit. Every allowed dialog is marked
+// seen, kept or not, so the walk knows when the whole list has turned up.
 func (list *PeerAllowlist) appendAllowedDialogs(
 	ctx context.Context, kept []Dialog, seen map[peerKey]bool, dialogs []Dialog, limit int,
 ) ([]Dialog, error) {
@@ -263,13 +316,15 @@ func (list *PeerAllowlist) appendAllowedDialogs(
 
 	for _, dialog := range allowed {
 		key := peerKey{typ: dialog.Peer.Type, id: dialog.Peer.ID}
-		if len(kept) >= limit || seen[key] {
+		if seen[key] {
 			continue
 		}
 
 		seen[key] = true
 
-		kept = append(kept, dialog)
+		if len(kept) < limit {
+			kept = append(kept, dialog)
+		}
 	}
 
 	return kept, nil

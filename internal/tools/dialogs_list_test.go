@@ -48,8 +48,8 @@ func TestDialogsListHandler_Error(t *testing.T) {
 	}
 }
 
-// pagingDialogsClient serves a long dialog list a page at a time, older than
-// OffsetDate, the way the wrapper does.
+// pagingDialogsClient serves a long dialog list a page at a time, after the
+// cursor's dialog, the way the wrapper does.
 type pagingDialogsClient struct {
 	*mockClient
 
@@ -57,19 +57,17 @@ type pagingDialogsClient struct {
 }
 
 func (p *pagingDialogsClient) GetDialogs(_ context.Context, opts telegram.DialogOpts) ([]telegram.Dialog, error) {
-	var page []telegram.Dialog
+	start := 0
 
-	for _, dialog := range p.all {
-		if len(page) == min(opts.Limit, 100) {
-			break
-		}
-
-		if opts.OffsetDate == 0 || dialog.LastMessage.Date < opts.OffsetDate {
-			page = append(page, dialog)
+	if opts.OffsetPeer != nil {
+		for idx, dialog := range p.all {
+			if dialog.Peer == *opts.OffsetPeer {
+				start = idx + 1
+			}
 		}
 	}
 
-	return page, nil
+	return p.all[start:min(start+min(opts.Limit, 100), len(p.all))], nil
 }
 
 // With TELEGRAM_ALLOWED_PEERS set, an allowed chat beyond the first source
@@ -78,9 +76,10 @@ func TestDialogsListHandler_AllowlistReachesPastTheFirstPage(t *testing.T) {
 	all := make([]telegram.Dialog, 150)
 	for idx := range all {
 		all[idx] = telegram.Dialog{
-			Peer:        telegram.InputPeer{Type: telegram.PeerUser, ID: int64(1000 + idx)},
-			Title:       "chat",
-			LastMessage: &telegram.Message{Date: 100000 - idx},
+			Peer:            telegram.InputPeer{Type: telegram.PeerUser, ID: int64(1000 + idx)},
+			Title:           "chat",
+			LastMessageDate: 100000 - idx,
+			TopMessageID:    idx + 1,
 		}
 	}
 

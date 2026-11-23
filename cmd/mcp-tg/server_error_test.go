@@ -230,21 +230,8 @@ func TestServerError_DoesNotRetryAnAlreadyAcceptedSend(t *testing.T) {
 // idempotent, so the only guard available is not resending them.
 func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 	for name, request := range map[string]bin.Encoder{
-		"channel": &tg.ChannelsCreateChannelRequest{Title: "example"},
-		"chat":    &tg.MessagesCreateChatRequest{Title: "example"},
-		// CreateFolder sends the filter with no ID, then looks the result up by
-		// title, so a resend has nothing to collide with server-side either.
-		"folder": &tg.MessagesUpdateDialogFilterRequest{
-			Filter: &tg.DialogFilter{Title: tg.TextWithEntities{Text: "example"}},
-		},
-		// The same request with an ID is a folder edit, which IS idempotent.
-		// Held back all the same: safeToResend switches on the request type, and
-		// this pins that the id-bearing form takes the same branch rather than
-		// the deny-list quietly narrowing to the create shape.
-		"folder edit": &tg.MessagesUpdateDialogFilterRequest{
-			ID:     7,
-			Filter: &tg.DialogFilter{ID: 7, Title: tg.TextWithEntities{Text: "example"}},
-		},
+		"channel":       &tg.ChannelsCreateChannelRequest{Title: "example"},
+		"chat":          &tg.MessagesCreateChatRequest{Title: "example"},
 		"profile photo": &tg.PhotosUploadProfilePhotoRequest{},
 		"invite link":   &tg.MessagesExportChatInviteRequest{Peer: &tg.InputPeerChannel{ChannelID: 1, AccessHash: 1}},
 	} {
@@ -267,6 +254,38 @@ func TestServerError_DoesNotResendCreatingRequests(t *testing.T) {
 
 			if buf.Len() != 0 {
 				t.Errorf("a request that is not resent must not log a retry, got: %s", buf.String())
+			}
+		})
+	}
+}
+
+// Every folder request carries an explicit id — a create picks a free one
+// client-side — so a resend re-applies the same folder: create, edit and
+// delete are all resent like any other idempotent call.
+func TestServerError_ResendsFolderRequests(t *testing.T) {
+	for name, request := range map[string]bin.Encoder{
+		"create": &tg.MessagesUpdateDialogFilterRequest{
+			ID:     2,
+			Filter: &tg.DialogFilter{ID: 2, Title: tg.TextWithEntities{Text: "example"}},
+		},
+		"edit": &tg.MessagesUpdateDialogFilterRequest{
+			ID:     7,
+			Filter: &tg.DialogFilter{ID: 7, Title: tg.TextWithEntities{Text: "example"}},
+		},
+		"delete": &tg.MessagesUpdateDialogFilterRequest{ID: 7},
+	} {
+		t.Run(name, func(t *testing.T) {
+			next := &recordingInvoker{errs: []error{interdcError()}}
+
+			mw := newServerErrorMiddleware(slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), testServerErrorDelay)
+
+			err := mw(next)(context.Background(), request, bin.Decoder(nil))
+			if err != nil {
+				t.Fatalf("expected the resend to succeed, got: %v", err)
+			}
+
+			if len(next.inputs) != 2 {
+				t.Errorf("a folder request must be resent, got %d attempts", len(next.inputs))
 			}
 		})
 	}

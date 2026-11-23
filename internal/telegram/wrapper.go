@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -53,6 +54,10 @@ type Wrapper struct {
 	warmSF         singleflight.Group
 	cfg            atomic.Pointer[cachedServerConfig]
 	cfgSF          singleflight.Group
+	// folderMu serializes the folder read-then-write sequences: a create
+	// picks a free id from the list it read, and updateDialogFilter on an id
+	// another create took meanwhile is an edit, not an error.
+	folderMu sync.Mutex
 }
 
 // cryptoRandID generates a cryptographically random int64 for Telegram's RandomID field.
@@ -1532,28 +1537,23 @@ func (w *Wrapper) GetFolders(ctx context.Context) ([]Folder, error) {
 
 // CreateFolder creates a new chat folder.
 func (w *Wrapper) CreateFolder(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
-	includePeers := make([]tg.InputPeerClass, len(peers))
-	for idx, peer := range peers {
-		includePeers[idx] = InputPeerToTG(peer)
-	}
+	// Held across the list, the pick and the update: two overlapping creates
+	// would otherwise both take the same free id, and the second would
+	// replace the first while both report success. Another device can still
+	// race this, as it can the official clients; this process cannot.
+	w.folderMu.Lock()
+	defer w.folderMu.Unlock()
 
-	filter := tg.DialogFilter{
-		Title:        tg.TextWithEntities{Text: title},
-		IncludePeers: includePeers,
-	}
-
-	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
-		Filter: &filter,
-	})
+	existing, err := w.api.MessagesGetDialogFilters(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "creating folder")
+		return nil, errors.Wrap(err, "getting folders")
 	}
 
-	return w.findFolderByTitle(ctx, title, peers)
-}
+	folderID, err := freeFolderID(existing.Filters)
+	if err != nil {
+		return nil, err
+	}
 
-// EditFolder updates an existing chat folder.
-func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error {
 	includePeers := make([]tg.InputPeerClass, len(peers))
 	for idx, peer := range peers {
 		includePeers[idx] = InputPeerToTG(peer)
@@ -1565,9 +1565,37 @@ func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, pe
 		IncludePeers: includePeers,
 	}
 
-	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+	_, err = w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
 		ID:     folderID,
 		Filter: &filter,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "creating folder")
+	}
+
+	return &Folder{ID: folderID, Title: title, Peers: peers}, nil
+}
+
+// EditFolder updates an existing chat folder's title and, when peers is
+// non-nil, the chats it holds. updateDialogFilter replaces the whole
+// filter, so the current one is read back first and everything else it
+// carries — chat-kind rules, excluded chats, emoticon, a shared folder's
+// kind — is sent unchanged; a request built from the title and peers
+// alone would silently wipe it.
+func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, peers []InputPeer) error {
+	// The edit is a read-back-then-write too; serialized with creates so
+	// neither writes from a list the other has already changed.
+	w.folderMu.Lock()
+	defer w.folderMu.Unlock()
+
+	current, err := w.rawFolder(ctx, folderID)
+	if err != nil {
+		return err
+	}
+
+	_, err = w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
+		ID:     folderID,
+		Filter: editedFilter(current, title, peers),
 	})
 
 	return errors.Wrap(err, "editing folder")
@@ -1575,6 +1603,13 @@ func (w *Wrapper) EditFolder(ctx context.Context, folderID int, title string, pe
 
 // DeleteFolder deletes a chat folder.
 func (w *Wrapper) DeleteFolder(ctx context.Context, folderID int) error {
+	// Serialized with creates and edits: a delete resent after a lost answer
+	// would otherwise remove a folder a create took the freed id for in
+	// between, and a delete landing between an edit's read and its write
+	// would be undone by that write.
+	w.folderMu.Lock()
+	defer w.folderMu.Unlock()
+
 	_, err := w.api.MessagesUpdateDialogFilter(ctx, &tg.MessagesUpdateDialogFilterRequest{
 		ID: folderID,
 	})
@@ -2489,19 +2524,4 @@ func (w *Wrapper) getRawMessage(ctx context.Context, peer InputPeer, msgID int) 
 	}
 
 	return firstRawMessage(result)
-}
-
-func (w *Wrapper) findFolderByTitle(ctx context.Context, title string, peers []InputPeer) (*Folder, error) {
-	folders, err := w.GetFolders(ctx)
-	if err != nil {
-		return &Folder{Title: title, Peers: peers}, nil //nolint:nilerr // best-effort: return without ID if listing fails.
-	}
-
-	for _, folder := range folders {
-		if folder.Title == title {
-			return &Folder{ID: folder.ID, Title: title, Peers: peers}, nil
-		}
-	}
-
-	return &Folder{Title: title, Peers: peers}, nil
 }

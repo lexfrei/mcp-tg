@@ -54,6 +54,14 @@ The behaviour behind the [tool reference](../tools.md): the shapes tools return,
 
     [:octicons-arrow-right-24: Reactions](reactions.md)
 
+-   :material-shield-account:{ .lg .middle } **Privacy**
+
+    ---
+
+    Every privacy setting the server can read and change, and how exceptions combine with the value.
+
+    [:octicons-arrow-right-24: Privacy](privacy.md)
+
 -   :material-robot:{ .lg .middle } **Bots and Polls**
 
     ---

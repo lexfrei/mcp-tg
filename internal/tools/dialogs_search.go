@@ -56,8 +56,9 @@ func NewDialogsSearchHandler(client telegram.Client) mcp.ToolHandlerFor[DialogsS
 // DialogsSearchTool returns the MCP tool definition for tg_dialogs_search.
 func DialogsSearchTool() *mcp.Tool {
 	return &mcp.Tool{
-		Name:        "tg_dialogs_search",
-		Description: "Search Telegram dialogs by query",
+		Name: "tg_dialogs_search",
+		Description: "Search Telegram dialogs by query. Returns every chat and user the search answers with, " +
+			"global hits included; tg_chats_search_public orders and dedupes the same search",
 		Annotations: readOnlyAnnotations(),
 	}
 }

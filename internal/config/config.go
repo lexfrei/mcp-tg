@@ -84,6 +84,9 @@ type Config struct {
 	// FileRoots is the directory allowlist for tools that read or write local
 	// files. Empty means no restriction.
 	FileRoots []string
+
+	// Access limits which peers and tools the server exposes.
+	Access Access
 }
 
 // Load reads the full configuration from environment variables, including the
@@ -112,6 +115,13 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	access, err := loadAccess()
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.Access = access
 
 	cfg.HTTPPort = httpPort
 	cfg.HTTPHost = loadHTTPHost()

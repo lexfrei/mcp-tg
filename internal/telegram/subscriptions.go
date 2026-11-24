@@ -45,18 +45,20 @@ type subscriptionKey struct {
 // Subscription drift is a known limitation, cleared only by a process restart:
 // the MCP SDK removes a disconnected session from its OWN subscription registry
 // but does not call the UnsubscribeHandler, so the broker's session set is not
-// pruned on an abnormal disconnect (a crash, or network loss past the KeepAlive
-// window). Delivery stays correct — the SDK's registry is authoritative, so a
-// dead session receives nothing — but two costs accrue over the daemon's
-// lifetime, and neither is bounded by the set of distinct chats: the retained
-// (URI, session) entries grow with cumulative reconnect churn, since each
-// reconnect mints a fresh *ServerSession; and because a lingering dead session
-// keeps subscribers[uri] non-empty, that URI's owner/peerURIs are never cleaned,
-// so every later message in the chat costs a peer lookup and one
-// subscriber_count=0 log line. There is no clean fix: ServerOptions exposes no
-// session-closed callback, the headless path never holds the per-session handle,
-// and a prune-on-zero-live-subscribers scheme would race Watch (which runs
-// before the SDK registers the subscription).
+// pruned on an abnormal disconnect. On stdio that is the process going away;
+// over HTTP it is a client that left without a DELETE, whose session the SDK
+// closes only once the HTTP session timeout (httpSessionTimeout) passes with no
+// request. The broker entry outlives even that. Delivery stays correct — the
+// SDK's registry is authoritative, so a dead session receives nothing — but two
+// costs accrue over the daemon's lifetime, and neither is bounded by the set of
+// distinct chats: the retained (URI, session) entries grow with cumulative
+// reconnect churn, since each reconnect mints a fresh *ServerSession; and
+// because a lingering dead session keeps subscribers[uri] non-empty, that URI's
+// owner/peerURIs are never cleaned, so every later message in the chat costs a
+// peer lookup and one subscriber_count=0 log line. There is no clean fix:
+// ServerOptions exposes no session-closed callback, the headless path never
+// holds the per-session handle, and a prune-on-zero-live-subscribers scheme
+// would race Watch (which runs before the SDK registers the subscription).
 type SubscriptionBroker struct {
 	mu sync.Mutex
 	// subscribers is the set of subscribing sessions per exact URI, mirroring the

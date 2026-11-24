@@ -418,6 +418,7 @@ var (
 	docsFloodAttempts = regexp.MustCompile(`up to (\d+) attempts in total`)
 	docsFloodCap      = regexp.MustCompile(`A delay longer than (\d+) seconds is not slept`)
 	docsDeadline      = regexp.MustCompile(`no answer within (\d+) seconds`)
+	docsSessionTTL    = regexp.MustCompile(`(?m)^\| HTTP session timeout \| (\d+) (minute|hour)s? with no client request \|`)
 	licenseYear       = regexp.MustCompile(`Copyright \(c\) (\d{4})`)
 	mkdocsCopyright   = regexp.MustCompile(`(?m)^copyright:.*?(\d{4}(?:-\d{4})?) `)
 )
@@ -467,6 +468,30 @@ func TestDocsRequestDeadline_MatchesTheCode(t *testing.T) {
 
 	if !strings.Contains(page, "check whether it took effect before repeating it") {
 		t.Errorf("%s must say a missed deadline asks for a check before a repeat", docsIndexPage)
+	}
+}
+
+// TestDocsSessionTimeout_MatchesTheCode pins the HTTP session timeout row of
+// the feature table against httpSessionTimeout.
+func TestDocsSessionTimeout_MatchesTheCode(t *testing.T) {
+	claim := docsSessionTTL.FindStringSubmatch(readDocsPage(t, docsIndexPage))
+	if claim == nil {
+		t.Fatalf("%s no longer states the HTTP session timeout", docsIndexPage)
+	}
+
+	count, err := strconv.Atoi(claim[1])
+	if err != nil {
+		t.Fatalf("%s: unparseable session timeout %q: %v", docsIndexPage, claim[0], err)
+	}
+
+	unit := time.Minute
+	if claim[2] == "hour" {
+		unit = time.Hour
+	}
+
+	if documented := time.Duration(count) * unit; documented != httpSessionTimeout {
+		t.Errorf("%s claims a %v session timeout, httpSessionTimeout is %v",
+			docsIndexPage, documented, httpSessionTimeout)
 	}
 }
 

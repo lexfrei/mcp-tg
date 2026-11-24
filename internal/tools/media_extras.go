@@ -52,7 +52,7 @@ func NewMediaSendVoiceHandler(
 ) mcp.ToolHandlerFor[MediaSendVoiceParams, MediaSendVoiceResult] {
 	return func(
 		ctx context.Context,
-		_ *mcp.CallToolRequest,
+		req *mcp.CallToolRequest,
 		params MediaSendVoiceParams,
 	) (*mcp.CallToolResult, MediaSendVoiceResult, error) {
 		peer, opts, err := prepareVoiceSend(ctx, client, &params, fileRoots)
@@ -60,11 +60,16 @@ func NewMediaSendVoiceHandler(
 			return &mcp.CallToolResult{IsError: true}, MediaSendVoiceResult{}, err
 		}
 
+		fwd := newProgressForwarder(req.Session, req.Params.GetProgressToken(), "Uploading file")
+		opts.Send.Progress = fwd.callback()
+
 		msg, err := client.SendVoice(ctx, peer, params.Path, &opts)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true}, MediaSendVoiceResult{},
 				sendErr("failed to send voice message", err, opts.Send.SendAs)
 		}
+
+		fwd.done(ctx, "File sent")
 
 		result := MediaSendVoiceResult{Output: outputSent}
 		if msg != nil {

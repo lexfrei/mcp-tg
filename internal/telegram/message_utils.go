@@ -41,7 +41,10 @@ type Draft struct {
 	TopicID  int       `json:"topicId,omitempty"`
 	ReplyTo  int       `json:"replyTo,omitempty"`
 	Text     string    `json:"text"`
-	Date     int       `json:"date"`
+	// HasMedia reports an attachment saved with the draft; a media-only
+	// draft has an empty Text.
+	HasMedia bool `json:"hasMedia,omitempty"`
+	Date     int  `json:"date"`
 }
 
 // Contact is a contact card to send.
@@ -183,7 +186,10 @@ func draftsFromUpdates(updates []tg.UpdateClass, rawUsers []tg.UserClass, rawCha
 		}
 
 		peer := extractPeerID(draftUpdate.Peer)
-		item := Draft{Peer: peer, TopicID: draftUpdate.TopMsgID, Text: draft.Message, Date: draft.Date}
+		item := Draft{
+			Peer: peer, TopicID: draftUpdate.TopMsgID, Text: draft.Message, Date: draft.Date,
+			HasMedia: draft.Media != nil,
+		}
 
 		refs := chats
 		if peer.Type == PeerUser {

@@ -49,21 +49,9 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 				telegramErr("failed to resolve peer", err)
 		}
 
-		limitErr := validateMessagesListLimit(deref(params.Limit))
-		if limitErr != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
-				validationErr(limitErr)
-		}
-
-		dateErr := validateDateRange(deref(params.FromDate), deref(params.ToDate))
-		if dateErr != nil {
-			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
-				validationErr(dateErr)
-		}
-
-		if params.Type != "" && !telegram.IsMessageType(params.Type) {
-			return &mcp.CallToolResult{IsError: true}, MessagesListResult{},
-				validationErr(ErrUnknownMessageType)
+		paramsErr := validateMessagesListParams(ctx, client, peer, &params)
+		if paramsErr != nil {
+			return &mcp.CallToolResult{IsError: true}, MessagesListResult{}, validationErr(paramsErr)
 		}
 
 		result, msgs, err := fetchMessages(ctx, client, peer, &params)
@@ -80,6 +68,29 @@ func NewMessagesListHandler(client telegram.Client) mcp.ToolHandlerFor[MessagesL
 
 		return nil, result, nil
 	}
+}
+
+// validateMessagesListParams checks the filters before any history is read.
+// A negative topicId is refused here rather than falling through to the
+// history of the whole chat.
+func validateMessagesListParams(
+	ctx context.Context, client telegram.Client, peer telegram.InputPeer, params *MessagesListParams,
+) error {
+	err := validateMessagesListLimit(deref(params.Limit))
+	if err != nil {
+		return err
+	}
+
+	err = validateDateRange(deref(params.FromDate), deref(params.ToDate))
+	if err != nil {
+		return err
+	}
+
+	if params.Type != "" && !telegram.IsMessageType(params.Type) {
+		return ErrUnknownMessageType
+	}
+
+	return validateTopicID(ctx, client, peer, deref(params.TopicID))
 }
 
 func fetchMessages(

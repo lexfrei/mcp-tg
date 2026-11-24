@@ -58,6 +58,7 @@ func TestMessagesUnpinAll_PassesTopic(t *testing.T) {
 func TestDraftsList(t *testing.T) {
 	mock := &mockClient{drafts: []telegram.Draft{
 		{Peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 5}, Name: "Ann", Username: "ann", Text: "see you", ReplyTo: 7},
+		{Peer: telegram.InputPeer{Type: telegram.PeerUser, ID: 6}, Name: "Bob", HasMedia: true},
 	}}
 
 	_, result, err := NewDraftsListHandler(mock)(context.Background(), nil, DraftsListParams{})
@@ -65,8 +66,13 @@ func TestDraftsList(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result.Count != 1 || !strings.Contains(result.Output, "Ann [@ann]") || !strings.Contains(result.Output, "reply to: 7") {
+	if result.Count != 2 || !strings.Contains(result.Output, "Ann [@ann]") || !strings.Contains(result.Output, "reply to: 7") {
 		t.Errorf("result = %+v", result)
+	}
+
+	// Only the media-only draft says it has an attachment.
+	if strings.Count(result.Output, "media: attached") != 1 {
+		t.Errorf("output does not mark exactly one draft as having media:\n%s", result.Output)
 	}
 }
 

@@ -22,6 +22,9 @@ const (
 	videoNoteSide = 384
 
 	mimeJPEG = "image/jpeg"
+	mimePNG  = "image/png"
+	mimeWebP = "image/webp"
+	mimeGIF  = "image/gif"
 )
 
 // ErrNothingToView is returned when a message has no photo, image or
@@ -186,7 +189,7 @@ func (w *Wrapper) ViewMedia(ctx context.Context, peer InputPeer, msgID, maxBytes
 
 	buf := &cappedBuffer{limit: maxBytes}
 
-	_, err = w.down.Download(w.api, location).Stream(ctx, buf)
+	fileType, err := w.down.Download(w.api, location).Stream(ctx, buf)
 	if err != nil {
 		if errors.Is(err, ErrViewTooLarge) {
 			return nil, ErrViewTooLarge
@@ -195,7 +198,27 @@ func (w *Wrapper) ViewMedia(ctx context.Context, peer InputPeer, msgID, maxBytes
 		return nil, errors.Wrap(err, "downloading image")
 	}
 
-	return &ViewedImage{Data: buf.Bytes(), MimeType: mimeType}, nil
+	return &ViewedImage{Data: buf.Bytes(), MimeType: storageMIME(fileType, mimeType)}, nil
+}
+
+// storageMIME labels the downloaded bytes by the file type the server
+// reports for them. A thumbnail is usually a JPEG but is not promised to be,
+// and a vision API refuses an image whose bytes do not match its label, so
+// the guessed label is kept only when the server does not say
+// (storage.fileUnknown, or a type that is not an image).
+func storageMIME(fileType tg.StorageFileTypeClass, fallback string) string {
+	switch fileType.(type) {
+	case *tg.StorageFileJpeg:
+		return mimeJPEG
+	case *tg.StorageFilePng:
+		return mimePNG
+	case *tg.StorageFileWebp:
+		return mimeWebP
+	case *tg.StorageFileGif:
+		return mimeGIF
+	default:
+		return fallback
+	}
 }
 
 // InlineQuery asks an inline bot (@gif, @vid, @wiki, ...) for results. peer
@@ -381,7 +404,7 @@ func documentViewLocation(doc *tg.Document, maxBytes int) (tg.InputFileLocationC
 // and a client handed one would have its request refused.
 func viewableImageType(mimeType string) bool {
 	switch mimeType {
-	case "image/jpeg", "image/png", "image/gif", "image/webp":
+	case mimeJPEG, mimePNG, mimeGIF, mimeWebP:
 		return true
 	default:
 		return false

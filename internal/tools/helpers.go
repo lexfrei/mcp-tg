@@ -33,9 +33,9 @@ func validateTopicID(
 		return nil
 	}
 
-	// A negative id is not "no topic": the wrapper sets top_msg_id only for a
-	// positive one, so -3 on a forum would quietly widen a topic-scoped call
-	// (an unpin-all, a send) to the whole chat.
+	// A negative id is not "no topic": the send paths set top_msg_id only for
+	// a positive one, so -3 on a forum would quietly widen a topic-scoped call
+	// (a send, a history read) to the whole chat.
 	if topicID < 0 {
 		return validationErr(ErrNegativeTopicID)
 	}

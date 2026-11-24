@@ -2,9 +2,9 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"testing"
 
+	"github.com/cockroachdb/errors"
 	"github.com/lexfrei/mcp-tg/internal/telegram"
 )
 
@@ -266,5 +266,26 @@ func TestMessagesListHandler_TypeFilterBoundsPerRPCToOnePage(t *testing.T) {
 
 	if got := mock.getHistoryOpts[0].Limit; got != telegram.DefaultLimit {
 		t.Errorf("per-RPC Limit = %d, want %d (one server page)", got, telegram.DefaultLimit)
+	}
+}
+
+// A negative topicId must fail, not fall through to the history of the
+// whole chat.
+func TestMessagesListHandler_RejectsANegativeTopic(t *testing.T) {
+	mock := &mockClient{
+		peer:  telegram.InputPeer{Type: telegram.PeerChannel, ID: 10, AccessHash: 1},
+		group: &telegram.GroupInfo{IsForum: true},
+	}
+
+	topic := -3
+
+	_, _, err := NewMessagesListHandler(mock)(context.Background(), nil,
+		MessagesListParams{Peer: "@team", TopicID: &topic})
+	if !errors.Is(err, ErrNegativeTopicID) || !errors.Is(err, ErrValidation) {
+		t.Errorf("err = %v, want ErrNegativeTopicID as a validation error", err)
+	}
+
+	if mock.getHistoryCalls != 0 {
+		t.Errorf("getHistoryCalls = %d, want 0 (rejected before any RPC)", mock.getHistoryCalls)
 	}
 }

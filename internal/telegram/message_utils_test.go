@@ -23,7 +23,10 @@ func TestDraftsFromUpdates(t *testing.T) {
 			&tg.UpdateDraftMessage{
 				Peer:     &tg.PeerChannel{ChannelID: 9},
 				TopMsgID: 3,
-				Draft:    &tg.DraftMessage{Message: "in topic", Date: 200},
+				Draft: &tg.DraftMessage{
+					Message: "in topic", Date: 200,
+					Media: &tg.InputMediaPhoto{ID: &tg.InputPhoto{ID: 1}},
+				},
 			},
 			// A cleared draft arrives as draftMessageEmpty and is not a draft.
 			&tg.UpdateDraftMessage{Peer: &tg.PeerUser{UserID: 6}, Draft: &tg.DraftMessageEmpty{}},
@@ -39,12 +42,14 @@ func TestDraftsFromUpdates(t *testing.T) {
 	}
 
 	first := drafts[0]
-	if first.Peer.ID != 5 || first.Username != "ann" || first.Text != "see you" || first.ReplyTo != 7 {
+	if first.Peer.ID != 5 || first.Username != "ann" || first.Text != "see you" || first.ReplyTo != 7 ||
+		first.HasMedia {
 		t.Errorf("first draft = %+v", first)
 	}
 
 	second := drafts[1]
-	if second.Peer.Type != PeerChannel || second.Name != "Team" || second.TopicID != 3 {
+	if second.Peer.Type != PeerChannel || second.Name != "Team" || second.TopicID != 3 ||
+		!second.HasMedia {
 		t.Errorf("second draft = %+v", second)
 	}
 }

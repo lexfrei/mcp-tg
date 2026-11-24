@@ -17,7 +17,7 @@ func mediaPeer() telegram.InputPeer {
 func TestMediaSendVoice(t *testing.T) {
 	mock := &mockClient{peer: mediaPeer(), message: &telegram.Message{ID: 3}}
 
-	_, result, err := NewMediaSendVoiceHandler(mock, nil)(context.Background(), nil, MediaSendVoiceParams{
+	_, result, err := NewMediaSendVoiceHandler(mock, nil)(context.Background(), emptyToolRequest(), MediaSendVoiceParams{
 		Peer: "@ann", Path: "/tmp/note.mp4", VideoNote: new(true), Duration: 9,
 	})
 	if err != nil {

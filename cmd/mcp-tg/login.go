@@ -137,9 +137,15 @@ func runLogin() error {
 		},
 	}
 
+	resolver, err := newResolver(cfg.Proxy)
+	if err != nil {
+		return err
+	}
+
 	client := telegram.NewClient(cfg.AppID, cfg.AppHash, telegram.Options{
 		SessionStorage: staged,
 		Device:         mcpDevice(),
+		Resolver:       resolver,
 	})
 
 	return errors.Wrap(client.Run(context.Background(), func(ctx context.Context) error {
